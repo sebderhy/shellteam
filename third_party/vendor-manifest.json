@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "name": "xterm.js",
+      "version": "5.5.0 (fit 0.10.0; web-links 0.11.0)",
+      "source": "https://github.com/xtermjs/xterm.js",
+      "license": "MIT",
+      "license_file": "third_party/licenses/xterm.js-LICENSE",
+      "files": {
+        "computer/ai-chat/public/vendor/xterm-5.5.0.min.css": "f7f724aea2bb620a6482bfb8e4bdecfae1152b0c7facef55fbda61f3b6cfedb2",
+        "computer/ai-chat/public/vendor/xterm-5.5.0.min.js": "4196e242ef1cf4c2adead8d97f4a772a69576076f70b095e004b4abbb049e7bf",
+        "computer/ai-chat/public/vendor/xterm-addon-fit-0.10.0.min.js": "a6a7bbb33569f16aa3e18d71425e34d035fc89a0b7e8cba084f8855f91aa38f1",
+        "computer/ai-chat/public/vendor/xterm-addon-web-links-0.11.0.min.js": "aad032d7f5ad1038c7b5295617cf84f6e8ebdb1218efaa427218302ce0d2ae3b",
+        "frontend/static/vendor/xterm-5.5.0.min.css": "f7f724aea2bb620a6482bfb8e4bdecfae1152b0c7facef55fbda61f3b6cfedb2",
+        "frontend/static/vendor/xterm-5.5.0.min.js": "4196e242ef1cf4c2adead8d97f4a772a69576076f70b095e004b4abbb049e7bf",
+        "frontend/static/vendor/xterm-addon-fit-0.10.0.min.js": "a6a7bbb33569f16aa3e18d71425e34d035fc89a0b7e8cba084f8855f91aa38f1",
+        "frontend/static/vendor/xterm-addon-web-links-0.11.0.min.js": "aad032d7f5ad1038c7b5295617cf84f6e8ebdb1218efaa427218302ce0d2ae3b"
+      }
+    },
+    {
+      "name": "Marked",
+      "version": "15.0.6",
+      "source": "https://github.com/markedjs/marked",
+      "license": "MIT and BSD-3-Clause",
+      "license_file": "third_party/licenses/marked-LICENSE.md",
+      "files": {
+        "computer/ai-chat/public/vendor/marked-15.0.6.min.js": "8b10a6173d524fc6c97bc9589ba8383e0212d5c0d617e1519e5f4e6a0c9f224f"
+      }
+    },
+    {
+      "name": "Impeccable (design skills)",
+      "version": "pinned via skills-lock.json (source revision 0a1e1f5ee35e58b2f4c39abfe18e331354119c92)",
+      "source": "https://github.com/pbakaus/impeccable",
+      "license": "Apache-2.0",
+      "license_file": "third_party/licenses/impeccable-LICENSE",
+      "notice_file": "third_party/licenses/impeccable-NOTICE.md",
+      "files": {
+        ".agents/skills/adapt/SKILL.md": "f5a3e11704b27241686849b8f63166ce015e8f9bc73f7716426dfcf8d0710a4d",
+        ".agents/skills/animate/SKILL.md": "b49423383ee0ae3aee15b0d1110d5489e6a069cc90d263de81a1d35ca8c6836a",
+        ".agents/skills/arrange/SKILL.md": "4abcce56de686db5b57c5eb173e86ce1e71527ad801ce63d04fd536e493e9bf2",
+        ".agents/skills/audit/SKILL.md": "b49785151709bf3ff7cc59f2f94e700b1225f8e3fb34db5b618b2447ce0eb191",
+        ".agents/skills/bolder/SKILL.md": "da65481bfe0075ad75277ac93c8dd05109811205c516e2325cf1b86c20c57adc",
+        ".agents/skills/clarify/SKILL.md": "444c3f84e5d2c4b23be55b19b1cca06a7c8232a13880570152097945f9a38fd4",
+        ".agents/skills/colorize/SKILL.md": "b3be70dac5ac225330a6aea04dc501e98f101e27135a7a739739024b410fccf1",
+        ".agents/skills/critique/SKILL.md": "2e2da23126f355fdfbbe1672589ae3a8c811a84965f0b7fefa22242f67c4f374",
+        ".agents/skills/critique/reference/cognitive-load.md": "7653f0a2f60f6d0471581f4b84c24df5408e70f8e2b727a6cdf3872dcf42676f",
+        ".agents/skills/critique/reference/heuristics-scoring.md": "c047724521f6f73e2eecacf62e77498848370a8e4a0b32c900bd87ae9f1134ea",
+        ".agents/skills/critique/reference/personas.md": "61d2197f030a521a2b255582aecef1efc514e6f104e51959ad1c486913158ce2",
+        ".agents/skills/delight/SKILL.md": "36663bf428069f76a82b9d4f08ca7c1667226f10bd5b7cbef7cf90f62fa02d16",
+        ".agents/skills/distill/SKILL.md": "907ab493100a6fe8748b6c179175f5ea8c87bf4d9b24e633a3b0fe14c62a32cb",
+        ".agents/skills/extract/SKILL.md": "b3c65112289c0f9d3815c605132e5792d32b71b1ab53a6596ca7e3a2a68ce88b",
+        ".agents/skills/harden/SKILL.md": "3b771a43bff6289c972835663013fd69f9437759cef69015ab182e0efce557f9",
+        ".agents/skills/impeccable/SKILL.md": "3d8e9f9bc24f51a3b848ee15c4dbb2ae45bb426400634f4eca01fbe38887ba13",
+        ".agents/skills/impeccable/reference/color-and-contrast.md": "3113174f4b0047027338a904e2b0c0084b353f0d5a0e2a94e21d8bf0c3e7e05f",
+        ".agents/skills/impeccable/reference/craft.md": "b62fa61f4364d3c93712d61fffb5a7282e11df7367d8a834dd92d53b6ddf3f53",
+        ".agents/skills/impeccable/reference/interaction-design.md": "7f545df683b1897460cdc8d94adfa1410c4c4a23fdb1545fbe95dc6e9af1b486",
+        ".agents/skills/impeccable/reference/motion-design.md": "c35a59b5f795721c914cfccf9b470e89a5010c563cd85ab46a67031531678f3f",
+        ".agents/skills/impeccable/reference/responsive-design.md": "5add44195a42cf7fa82aecadaad79b8875446b930e06d087d73f3722533fd95a",
+        ".agents/skills/impeccable/reference/spatial-design.md": "10c743ee8245fc1be9e8af2b79dd08b0dae19fcde33d46c9730c000d7e13b7cd",
+        ".agents/skills/impeccable/reference/typography.md": "e7f1479d6ee2baea38fd28850395c6baf8799dd44f07fac287f75573c367f167",
+        ".agents/skills/impeccable/reference/ux-writing.md": "0cd5e958d92be6e2331cb199d6ed5d98597aa20ec4922d4c3df56e7753cfc00c",
+        ".agents/skills/normalize/SKILL.md": "f4d1831b9bd9e1d1f9737940e8388f28777ebc01a56b6cd290be1cb8cfc4b136",
+        ".agents/skills/onboard/SKILL.md": "b1fe690613ff3d309e796c95eb505392b065c4597357e7e1d0928d32d68c1246",
+        ".agents/skills/optimize/SKILL.md": "71caee1a977ed307df1fa74adb9b0e9c13ee168e6fda964f602f0b4dba6b7ea0",
+        ".agents/skills/overdrive/SKILL.md": "d286544a4e7b5ab8a45d05d24869ab10301fc5c363622216c3e6856bc601fd96",
+        ".agents/skills/polish/SKILL.md": "5bee36aa9393526aec1aeea7ca622c4e1c3368a7f6705e6508d01bc7ae4f2f5a",
+        ".agents/skills/quieter/SKILL.md": "6aa792872fc0d235a3882108477ce055e83cad5133b54e0b02052f1d208a6c62",
+        ".agents/skills/shape/SKILL.md": "39f60939117862ff716e0927b4311490ae1a77432a69b931e606a75618bc57b1",
+        ".agents/skills/typeset/SKILL.md": "f922d8e3e4f4c471025abce939867ee2141b04cd123cf5c889f46341be62458e"
+      }
+    }
+  ]
+}

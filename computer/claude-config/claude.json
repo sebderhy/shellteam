@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "context7-mcp",
+      "args": []
+    },
+    "deepwiki": {
+      "type": "http",
+      "url": "https://mcp.deepwiki.com/mcp"
+    },
+    "browser": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--cdp-endpoint", "ws://127.0.0.1:3000", "--output-dir", "/home/user/tmp"]
+    }
+  },
+  "hasCompletedOnboarding": true
+}

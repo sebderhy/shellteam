@@ -1,0 +1,45 @@
+{
+  "autoMemoryEnabled": true,
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__*",
+      "mcp__deepwiki__*",
+      "mcp__browser__*",
+      "mcp__composio__*"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /opt/claude-config/hooks/sanitize-bash.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /opt/claude-config/hooks/precompact-archive.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

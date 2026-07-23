@@ -1,0 +1,29 @@
+[project]
+name = "shellteam"
+version = "0.1.0"
+description = "ShellTeam — a self-hosted cockpit for coding agents on your own VPS"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "websockets>=14.0",
+    "httpx>=0.28",
+    "python-dotenv>=1.0",
+    "python-multipart>=0.0.22",
+    "composio>=0.11",
+    "segno>=1.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+    "respx>=0.22",
+    "pip-audit>=2.9",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,14 @@
+# Nightly trigger for the dreaming sweep (the `dreaming` module).
+# Persistent=true: a box that was off at 03:30 dreams on next boot instead of
+# silently skipping the night. Installed/enabled by install.sh only when the
+# dreaming module is in MODULES; removed by uninstall.sh.
+[Unit]
+Description=ShellTeam dreaming — nightly at 03:30 (local time)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

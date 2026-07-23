@@ -1,0 +1,207 @@
+{
+  "$comment": [
+    "Single source of truth for the model catalog the cockpit offers, per coding-agent family.",
+    "Add a model as soon as it ships \u2014 no code change, no version bump: append it here and restart",
+    "the stack (systemctl --user restart shellteam-api shellteam-ai-chat). Both the Python control",
+    "plane (api/services/model_catalog.py \u2014 Fireworks proxy allowlist + OpenCode provider config)",
+    "and the Node cockpit (computer/ai-chat/lib/model-catalog.mjs \u2014 routing + dropdown) read this file.",
+    "",
+    "match.prefixes drive model->agent routing (a model is also routed by exact membership in an",
+    "agent's models[] list). OpenCode models are Fireworks-hosted and proxied through the control",
+    "plane; each carries its upstream Fireworks id, so adding one only needs a line here.",
+    "'default' (OpenCode) is the model picked when the user selects the OpenCode family.",
+    "",
+    "limit.context = the model's context window in tokens; the cockpit's context-budget meter",
+    "(renderContextMeter in public/app.js) shows usage against it. Claude values are the 1M window",
+    "Claude Code runs on a subscription (Haiku 4.5 stays 200K); Codex is the GPT-5.x 400K window;",
+    "Gemini 3.1 Pro is 2M, 3.6 Flash ~1M. Verified against vendor docs + `agy models` 2026-07-23."
+  ],
+  "agents": [
+    {
+      "id": "claude",
+      "label": "Claude Code",
+      "match": {
+        "prefixes": [
+          "claude-",
+          "sonnet",
+          "opus",
+          "haiku"
+        ]
+      },
+      "models": [
+        {
+          "id": "claude-fable-5",
+          "name": "Fable 5",
+          "limit": { "context": 1000000 }
+        },
+        {
+          "id": "claude-opus-4-8",
+          "name": "Opus 4.8",
+          "limit": { "context": 1000000 }
+        },
+        {
+          "id": "claude-sonnet-5",
+          "name": "Sonnet 5",
+          "limit": { "context": 1000000 }
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "name": "Haiku 4.5",
+          "limit": { "context": 200000 }
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "match": {
+        "prefixes": [
+          "gpt-",
+          "o1",
+          "o3",
+          "o4",
+          "codex-"
+        ]
+      },
+      "$modelsComment": [
+        "GPT-5.6 family (released 2026-07-09): three model sizes — Sol (flagship),",
+        "Terra (balanced), Luna (cost-efficient). Every cockpit entry pins an explicit",
+        "reasoning effort via a model_reasoning_effort `-c` override (`ultra` runs 4",
+        "parallel agents; `max` is the top single-agent effort). The four entries below",
+        "are the Pareto frontier of the Artificial Analysis Coding Agent Index (cost vs",
+        "score) from https://openai.com/index/gpt-5-6/ , ordered strongest→cheapest —",
+        "which is also the order the dropdown renders (both control planes read this",
+        "array top-to-bottom). Context window unchanged from the GPT-5.x 400K.",
+        "Verified against Codex CLI 0.144.0: `ultra` and `max` both accepted on these",
+        "models. Add lower-effort variants (xhigh/medium) here if a cheaper tier is",
+        "wanted — no code change, just restart the stack."
+      ],
+      "models": [
+        {
+          "id": "gpt-5.6-sol-ultra",
+          "name": "GPT-5.6 Sol (ultra)",
+          "cli": "gpt-5.6-sol",
+          "config": [
+            "model_reasoning_effort=\"ultra\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 5.0, "output": 30.0 }
+        },
+        {
+          "id": "gpt-5.6-sol-max",
+          "name": "GPT-5.6 Sol (max)",
+          "cli": "gpt-5.6-sol",
+          "config": [
+            "model_reasoning_effort=\"max\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 5.0, "output": 30.0 }
+        },
+        {
+          "id": "gpt-5.6-terra-max",
+          "name": "GPT-5.6 Terra (max)",
+          "cli": "gpt-5.6-terra",
+          "config": [
+            "model_reasoning_effort=\"max\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 2.5, "output": 15.0 }
+        },
+        {
+          "id": "gpt-5.6-luna-max",
+          "name": "GPT-5.6 Luna (max)",
+          "cli": "gpt-5.6-luna",
+          "config": [
+            "model_reasoning_effort=\"max\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 1.0, "output": 6.0 }
+        }
+      ]
+    },
+    {
+      "id": "antigravity",
+      "label": "Antigravity",
+      "$comment": "Google Antigravity CLI (`agy`). `cli` = the exact --model display name agy expects (from `agy models`); the cockpit id stays a clean slug. Non-streaming: one JSON envelope per turn, resume via --conversation.",
+      "match": {
+        "prefixes": [
+          "gemini-"
+        ]
+      },
+      "models": [
+        {
+          "id": "gemini-3.1-pro",
+          "name": "Gemini 3.1 Pro",
+          "cli": "Gemini 3.1 Pro (High)",
+          "limit": { "context": 2000000 }
+        },
+        {
+          "id": "gemini-3.6-flash",
+          "name": "Gemini 3.6 Flash",
+          "cli": "Gemini 3.6 Flash (Medium)",
+          "limit": { "context": 1048576 }
+        }
+      ]
+    },
+    {
+      "id": "opencode",
+      "label": "OpenCode (included)",
+      "provider": "fireworks",
+      "default": "glm-5p2",
+      "match": {
+        "prefixes": [
+          "glm-",
+          "kimi-",
+          "deepseek-",
+          "qwen"
+        ]
+      },
+      "models": [
+        {
+          "id": "glm-5p2",
+          "name": "GLM 5.2",
+          "upstream": "accounts/fireworks/models/glm-5p2",
+          "limit": {
+            "context": 1048576,
+            "output": 32768
+          }
+        },
+        {
+          "id": "glm-5p1",
+          "name": "GLM 5.1",
+          "upstream": "accounts/fireworks/models/glm-5p1",
+          "limit": {
+            "context": 202752,
+            "output": 32768
+          }
+        },
+        {
+          "id": "kimi-k2p6",
+          "name": "Kimi K2.6",
+          "upstream": "accounts/fireworks/models/kimi-k2p6",
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          },
+          "cost": {
+            "input": 0.95,
+            "output": 4.0
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "upstream": "accounts/fireworks/models/deepseek-v4-pro",
+          "limit": {
+            "context": 1048576,
+            "output": 32768
+          },
+          "cost": {
+            "input": 1.74,
+            "output": 3.48
+          }
+        }
+      ]
+    }
+  ]
+}

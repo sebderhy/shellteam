@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal — ShellTeam</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=3">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=3">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=3">
+    <link rel="shortcut icon" href="/static/favicon.ico?v=3">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=3">
+    <link rel="stylesheet" href="/static/tokens.css">
+    <link rel="stylesheet" href="/static/vendor/xterm-5.5.0.min.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; height: 100%;
+            background: var(--surface-0); color: var(--text-primary);
+            font-family: var(--font-sans);
+        }
+        body { display: flex; flex-direction: column; }
+        #terminal-container {
+            flex: 1; min-height: 0; padding: 8px;
+            background: #110f0d;
+        }
+        .xterm { height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="terminal-container"></div>
+
+    <script src="/static/vendor/xterm-5.5.0.min.js"></script>
+    <script src="/static/vendor/xterm-addon-fit-0.10.0.min.js"></script>
+    <script src="/static/vendor/xterm-addon-web-links-0.11.0.min.js"></script>
+    <script>
+        // Single-user terminal cockpit. On localhost (OWNER_TOKEN unset) no token
+        // is needed — the control plane trusts the caller. For domain deployments
+        // the HttpOnly master session cookie (set by dashboard login / device
+        // enrollment) rides the same-origin WebSocket upgrade by itself — page
+        // JS never sees or stores a credential.
+        const WS_BASE = window.location.origin.replace('http', 'ws');
+        let ws = null;
+        let terminal = null;
+        let fitAddon = null;
+        let pendingResize = null;
+
+        function initTerminal() {
+            const container = document.getElementById('terminal-container');
+            terminal = new window.Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: "'SF Mono', 'Cascadia Code', 'Fira Code', 'Menlo', monospace",
+                theme: {
+                    background: '#110f0d',
+                    foreground: '#e0e0e0',
+                    cursor: '#f59e0b',
+                    selectionBackground: 'rgba(245, 158, 11, 0.3)',
+                },
+                allowProposedApi: true,
+            });
+
+            fitAddon = new window.FitAddon.FitAddon();
+            terminal.loadAddon(fitAddon);
+            terminal.loadAddon(new window.WebLinksAddon.WebLinksAddon());
+            terminal.open(container);
+            fitAddon.fit();
+
+            // Ctrl/Cmd+V pastes (SHE-62). xterm.js has no paste keybinding of
+            // its own — it relies on the browser's native paste event, which is
+            // unreliable inside this iframe, leaving Ctrl+Shift+V as the only
+            // working path. terminal.paste() applies bracketed-paste markers
+            // only when the running app has enabled them (DECSET 2004), so
+            // nothing leaks as literal "[200~" text. Ctrl+Shift+V is left to
+            // the browser's native handling. Copy stays on Ctrl+Shift+C /
+            // right-click (plain Ctrl+C must remain SIGINT in a terminal).
+            terminal.attachCustomKeyEventHandler((e) => {
+                if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyV') {
+                    navigator.clipboard.readText().then((t) => { if (t) terminal.paste(t); });
+                    return false; // swallow the raw ^V byte
+                }
+                return true;
+            });
+
+            connectTerminalWS();
+
+            terminal.onData((data) => {
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(new Blob([data]));
+            });
+
+            // Coalesce refits through rAF. The bare ResizeObserver→fit() chain
+            // oscillated (fit resizes the viewport, which re-fires the observer,
+            // which refits…), and every cycle redrew the terminal — the visible
+            // "flickering borders" of SHE-62. One fit per frame breaks the loop;
+            // onResize already no-ops when cols/rows didn't change.
+            let fitScheduled = false;
+            function scheduleFit() {
+                if (fitScheduled) return;
+                fitScheduled = true;
+                requestAnimationFrame(() => {
+                    fitScheduled = false;
+                    if (fitAddon) fitAddon.fit();
+                });
+            }
+            window.addEventListener('resize', scheduleFit);
+            new ResizeObserver(scheduleFit).observe(container);
+
+            terminal.onResize(({ cols, rows }) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+                } else {
+                    pendingResize = { cols, rows };
+                }
+            });
+        }
+
+        function connectTerminalWS() {
+            ws = new WebSocket(`${WS_BASE}/api/terminal`);
+
+            ws.onopen = function () {
+                console.log('[terminal] WebSocket connected');
+                terminal.focus();
+                if (fitAddon) fitAddon.fit();
+                const size = pendingResize || { cols: terminal.cols, rows: terminal.rows };
+                this.send(JSON.stringify({ type: 'resize', ...size }));
+                pendingResize = null;
+            };
+
+            ws.onmessage = (event) => {
+                if (event.data instanceof Blob) {
+                    event.data.text().then(text => terminal.write(text));
+                } else {
+                    terminal.write(event.data);
+                }
+            };
+
+            ws.onclose = (event) => {
+                console.log('[terminal] WebSocket closed (code ' + event.code + ')');
+                if (event.code === 4001) {
+                    terminal.write('\r\n\x1b[31mAuthentication failed.\x1b[0m Your session expired — reload the dashboard and sign in again.\r\n');
+                    return;
+                }
+                if (event.code === 4002) {
+                    terminal.write('\r\n\x1b[31mComputer is not running.\x1b[0m Start it, then reload.\r\n');
+                    setTimeout(connectTerminalWS, 3000);
+                    return;
+                }
+                if (event.code === 4003) {
+                    terminal.write('\r\n\x1b[31mFailed to start terminal.\x1b[0m Reloading shortly…\r\n');
+                    setTimeout(connectTerminalWS, 3000);
+                    return;
+                }
+                terminal.write('\r\n\x1b[33mConnection closed. Reconnecting…\x1b[0m\r\n');
+                setTimeout(connectTerminalWS, 2000);
+            };
+
+            ws.onerror = () => { /* onclose handles reconnect */ };
+        }
+
+        initTerminal();
+    </script>
+</body>
+</html>

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge — ShellTeam</title>
+    <link rel="stylesheet" href="/static/tokens.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; background: var(--surface-0);
+            color: var(--text-primary); font-family: var(--font-sans); }
+        body { display: flex; flex-direction: column; }
+
+        .bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+            background: var(--surface-1); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .bar h1 { font-size: var(--text-md); margin: 0; font-weight: var(--weight-bold); }
+        .bar .sub { color: var(--text-tertiary); font-size: var(--text-xs); }
+        .bar .spacer { margin-left: auto; }
+        button { font-family: inherit; font-size: var(--text-sm); border-radius: var(--radius-md);
+            border: 1px solid var(--border); background: var(--surface-2);
+            color: var(--text-primary); padding: 6px 14px; cursor: pointer; }
+        button:hover { background: var(--surface-3, #2a3344); }
+        button.primary { background: var(--brand); border-color: transparent; color: var(--surface-0); }
+        button:disabled { opacity: .5; cursor: default; }
+        a { color: var(--brand); }
+
+        .wrap { display: flex; flex: 1; min-height: 0; }
+        .side { width: 280px; flex-shrink: 0; overflow-y: auto; padding: 12px;
+            border-right: 1px solid var(--border); background: var(--surface-1); }
+        .side h2 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-tertiary); margin: 14px 4px 6px; }
+        .side .item { display: block; width: 100%; text-align: left; padding: 6px 10px;
+            margin: 1px 0; border: none; background: none; border-radius: var(--radius-md);
+            color: var(--text-secondary); font-size: var(--text-sm); cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .side .item:hover { background: var(--surface-2); }
+        .side .item.active { background: var(--surface-2); color: var(--text-primary); }
+        .side .item .dim { color: var(--text-tertiary); }
+        .side .detail { padding-left: 24px; font-size: var(--text-xs); }
+
+        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .editor-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+            border-bottom: 1px solid var(--border); font-size: var(--text-sm);
+            color: var(--text-tertiary); }
+        .editor-bar code { background: var(--surface-2); padding: 2px 8px;
+            border-radius: var(--radius-sm, 4px); color: var(--text-secondary);
+            /* Long node paths truncate instead of pushing Save off-screen —
+               same intrinsic-width bug class as the header (audit P1-02). */
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+        textarea { flex: 1; width: 100%; resize: none; border: none; outline: none;
+            background: var(--surface-0); color: var(--text-primary); padding: 16px;
+            font: 13px/1.6 var(--font-mono, ui-monospace, monospace); }
+        .placeholder { flex: 1; display: flex; align-items: center; justify-content: center;
+            color: var(--text-tertiary); font-size: var(--text-sm); text-align: center;
+            padding: 40px; }
+
+        .review { border-top: 1px solid var(--border); background: var(--surface-1);
+            max-height: 40%; overflow-y: auto; flex-shrink: 0; }
+        .review h2 { font-size: var(--text-sm); margin: 0; padding: 10px 14px 4px; }
+        .review .entry { display: flex; gap: 10px; align-items: flex-start;
+            padding: 8px 14px; border-top: 1px solid var(--border); font-size: var(--text-sm); }
+        .review .entry .txt { flex: 1; min-width: 0; }
+        .review .entry .meta { color: var(--text-tertiary); font-size: var(--text-xs); }
+        .review .entry button { padding: 3px 10px; font-size: var(--text-xs); }
+        .toast { position: fixed; bottom: 18px; right: 18px; background: var(--surface-2);
+            border: 1px solid var(--border); border-radius: var(--radius-md);
+            padding: 10px 16px; font-size: var(--text-sm); display: none; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
+        .status-dot.running { background: #fbbf24; animation: pulse 1.2s infinite; }
+        @keyframes pulse { 50% { opacity: .35; } }
+        @media (max-width: 720px) {
+            .wrap { flex-direction: column; }
+            .side { width: 100%; max-height: 38%; border-right: none;
+                border-bottom: 1px solid var(--border); }
+        }
+        /* Phone: the header was one non-wrapping flex row with an intrinsic
+           ~434px minimum — it clipped "Dream now" off-screen at every phone
+           width (release-audit P1-02). Wrap it: title row, then a full-width
+           status/action row. The status text truncates so a long dream error
+           can never push the actions out of the viewport. */
+        @media (max-width: 480px) {
+            .bar { flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
+            .bar .tagline { display: none; }
+            .bar .spacer { flex-basis: 100%; margin: 0; height: 0; }
+            #dream-status { flex: 1; min-width: 0; overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap; }
+            #report-link { flex-shrink: 0; }
+            .bar button { min-height: 44px; }
+        }
+    </style>
+</head>
+<body>
+    <header class="bar">
+        <h1>🌙 Knowledge</h1>
+        <span class="sub tagline">what your computer knows — consolidated nightly, yours to edit</span>
+        <span class="spacer"></span>
+        <span class="status-dot" id="dot"></span>
+        <span class="sub" id="dream-status">…</span>
+        <a class="sub" id="report-link" href="#" target="_blank" style="display:none">last report</a>
+        <button class="primary" id="dream-now">Dream now</button>
+    </header>
+    <div class="wrap">
+        <nav class="side" id="side"></nav>
+        <main class="main">
+            <div class="editor-bar">
+                <code id="path">no file selected</code>
+                <span class="spacer" style="margin-left:auto"></span>
+                <button id="save" disabled>Save</button>
+            </div>
+            <div class="placeholder" id="placeholder">
+                <!-- One child span: the placeholder is a flex container, so bare
+                     text nodes + <b> tags each become flex ITEMS and render as
+                     broken columns at narrow widths. -->
+                <span>Pick a file on the left.<br><br>
+                The <b>user layer</b> is injected into every agent; each <b>project node</b>
+                only into agents spawned in that folder. Your edits always win over the
+                nightly sweep — this is your memory, the machine just maintains it.</span>
+            </div>
+            <textarea id="editor" style="display:none" spellcheck="false"></textarea>
+            <div class="review" id="review" style="display:none">
+                <h2>Review queue <span class="sub" id="review-count"></span></h2>
+                <div id="review-entries"></div>
+            </div>
+            <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        </main>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        let currentPath = null, dirty = false;
+
+        function toast(msg) {
+            const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 2500);
+        }
+        // Every click handler here is async — a rejected save/approve/dream call
+        // must surface, not vanish as an unhandled rejection.
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('knowledge action failed:', e.reason);
+            toast('Failed: ' + (e.reason && e.reason.message || e.reason));
+        });
+        async function api(path, opts) {
+            const r = await fetch(path, opts);
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+            return r.json();
+        }
+
+        function sideItem(label, path, cls = '') {
+            const b = document.createElement('button');
+            b.className = 'item ' + cls;
+            b.innerHTML = label;
+            if (path) b.onclick = () => openFile(path, b);
+            else { b.disabled = true; b.classList.add('dim'); }
+            return b;
+        }
+
+        async function loadTree() {
+            const t = await api('/api/knowledge/tree');
+            const side = $('side'); side.innerHTML = '';
+            let h = document.createElement('h2'); h.textContent = 'You (injected everywhere)';
+            side.appendChild(h);
+            for (const f of t.user_layer)
+                side.appendChild(sideItem(f.path + (f.exists ? '' : ' <span class="dim">(empty)</span>'),
+                                          f.exists ? f.path : null));
+            h = document.createElement('h2'); h.textContent = 'Cross-project (root scope)';
+            side.appendChild(h);
+            for (const f of t.root_layer)
+                side.appendChild(sideItem(f.path + (f.exists ? '' : ' <span class="dim">(empty)</span>'),
+                                          f.exists ? f.path : null));
+            h = document.createElement('h2'); h.textContent = 'Projects (per-folder memory)';
+            side.appendChild(h);
+            if (!t.nodes.length) {
+                const p = document.createElement('div');
+                p.className = 'item dim';
+                p.textContent = 'nothing yet — the first dream fills this';
+                side.appendChild(p);
+            }
+            for (const n of t.nodes) {
+                side.appendChild(sideItem('📁 ~/' + n.node, n.index));
+                for (const d of n.details)
+                    side.appendChild(sideItem(d.split('/').pop(), d, 'detail'));
+            }
+            loadReview();
+        }
+
+        async function openFile(path, btn) {
+            if (dirty && !confirm('Discard unsaved changes?')) return;
+            const f = await api('/api/knowledge/file?path=' + encodeURIComponent(path));
+            currentPath = path; dirty = false;
+            $('path').textContent = path;
+            $('editor').value = f.content;
+            $('editor').style.display = 'block';
+            $('placeholder').style.display = 'none';
+            $('save').disabled = true;
+            document.querySelectorAll('.side .item').forEach(el => el.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+        }
+
+        $('editor').addEventListener('input', () => {
+            dirty = true; $('save').disabled = false;
+        });
+        $('save').onclick = async () => {
+            await api('/api/knowledge/file', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: currentPath, content: $('editor').value }),
+            });
+            dirty = false; $('save').disabled = true; toast('Saved ' + currentPath);
+        };
+
+        async function loadReview() {
+            const q = await api('/api/knowledge/review');
+            const box = $('review'), list = $('review-entries');
+            if (!q.entries.length) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            $('review-count').textContent = q.entries.length + ' proposal(s) the dream was not sure about';
+            list.innerHTML = '';
+            for (const e of q.entries) {
+                const div = document.createElement('div'); div.className = 'entry';
+                const scope = e.node ? '~/' + e.node : 'root';
+                div.innerHTML = `<div class="txt">${escapeHtml(e.op.text)}
+                    <div class="meta">${scope} · ${e.op.file || 'index'} · ${e.op.confidence} · ${e.run}</div></div>`;
+                const ok = document.createElement('button'); ok.textContent = '✓ keep';
+                const no = document.createElement('button'); no.textContent = '✗ drop';
+                ok.onclick = () => decide(e.id, true);
+                no.onclick = () => decide(e.id, false);
+                div.appendChild(ok); div.appendChild(no);
+                list.appendChild(div);
+            }
+        }
+        async function decide(id, approve) {
+            await api('/api/knowledge/review/' + id, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ approve }),
+            });
+            toast(approve ? 'Learned it.' : 'Dropped it.');
+            loadTree();
+        }
+
+        async function refreshStatus() {
+            try {
+                const s = await api('/api/knowledge/dream/status');
+                $('dot').classList.toggle('running', s.running);
+                const st = s.state || {};
+                $('dream-status').textContent = s.running ? 'dreaming…'
+                    : s.error ? 'last run failed'
+                    : st.last_run ? `last dream ${st.last_run} (${st.last_status})`
+                    : 'never dreamed yet';
+                if (s.latest_report) {
+                    $('report-link').href = s.latest_report;
+                    $('report-link').style.display = '';
+                }
+                $('dream-now').disabled = s.running;
+                if (s.error) toast('Dream failed: ' + s.error);
+                return s.running;
+            } catch (e) {
+                // A transient fetch failure must not silently stop the poll and
+                // declare a still-running dream finished — keep polling, loudly.
+                console.error('dream status poll failed:', e);
+                return true;
+            }
+        }
+        $('dream-now').onclick = async () => {
+            await api('/api/knowledge/dream/run', { method: 'POST' });
+            toast('Dreaming started — this can take a few minutes.');
+            const poll = setInterval(async () => {
+                if (!await refreshStatus()) { clearInterval(poll); loadTree(); }
+            }, 4000);
+            refreshStatus();
+        };
+
+        function escapeHtml(s) {
+            return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        loadTree().catch(e => toast('Failed to load: ' + e.message));
+        refreshStatus();
+    </script>
+</body>
+</html>

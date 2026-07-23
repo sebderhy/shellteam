@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    name: Python quality + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+      - name: Critical lint and release-test format
+        run: |
+          # The private lab tree predates repo-wide Ruff adoption. Keep this
+          # release gate baseline-compatible while still rejecting syntax and
+          # undefined-name errors everywhere, and formatting every new QA test.
+          uv run ruff check . --select E9,F63,F7,F82
+          uv run ruff format --check \
+            tests/test_frontend_accessibility.py \
+            tests/test_markdown_links.py \
+            tests/test_vendor_licenses.py
+      - name: Dependency audit
+        run: uv run pip-audit
+      - name: Run tests
+        run: uv run pytest -q
+
+  node:
+    name: Cockpit (node --test) + purity contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: computer/ai-chat
+        run: npm ci --omit=optional
+      - name: Dependency audit
+        working-directory: computer/ai-chat
+        run: npm audit --omit=dev --audit-level=high
+      - name: Run tests (includes the core-purity contract)
+        working-directory: computer/ai-chat
+        run: npm test
+      - name: Registry spawn-args test
+        working-directory: computer/ai-chat
+        run: node --test test-registry.mjs
+
+      # Behavioral gate: the unit suite emulates the server handler, so only a
+      # real two-client run over real sockets can catch a regression in the
+      # WebSocket wiring itself. Self-contained — spawns its own cockpit on a
+      # throwaway HOME, needs no agent CLIs.
+      - name: Fork-race behavioral gate (two live WebSocket clients)
+        run: node scripts/qa/fork-race-ws.mjs
+
+  # install.sh IS the public product's front door, so its linter has to survive
+  # the export. Keeping ShellCheck inside the ORG-stripped release-gates job
+  # silently dropped shell linting from the public repo's CI entirely.
+  shell:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck --severity=warning
+

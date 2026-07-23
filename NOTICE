@@ -1,0 +1,70 @@
+ShellTeam
+=========
+
+This product bundles or depends on third-party open-source software. Their
+licenses are reproduced or linked below, per their terms.
+
+-------------------------------------------------------------------------------
+Steel (steel-browser)
+-------------------------------------------------------------------------------
+Browser automation runtime (Chromium + CDP) used by the optional `browser` MCP
+integration (opt-in: part of `./install.sh --full`).
+
+  Project:  https://github.com/steel-dev/steel-browser
+  License:  Apache License 2.0
+  Copyright (c) Steel.dev
+
+A copy of the Apache License 2.0 is available at:
+  https://www.apache.org/licenses/LICENSE-2.0
+
+-------------------------------------------------------------------------------
+xterm.js (including fit and web-links addons)
+-------------------------------------------------------------------------------
+Terminal emulator front-end vendored in both web surfaces (xterm 5.5.0, fit
+0.10.0, web-links 0.11.0), used by the managed terminals.
+
+  Project:  https://github.com/xtermjs/xterm.js
+  License:  MIT License
+  Complete license: third_party/licenses/xterm.js-LICENSE
+
+-------------------------------------------------------------------------------
+Marked 15.0.6
+-------------------------------------------------------------------------------
+Markdown parser vendored for the cockpit's chat renderer.
+
+  Project:  https://github.com/markedjs/marked
+  License:  MIT License and original Markdown BSD-style license
+  Complete license: third_party/licenses/marked-LICENSE.md
+
+Every redistributed vendor path, version, SHA-256 digest, and license file is
+recorded in third_party/vendor-manifest.json and checked in CI.
+
+-------------------------------------------------------------------------------
+Coding-agent CLIs and tools
+-------------------------------------------------------------------------------
+ShellTeam installs and orchestrates the following CLIs, each distributed under
+its own license by its respective vendor (installed at setup time, not
+redistributed in this repo):
+
+  @anthropic-ai/claude-code   (Anthropic, via npm)
+  @openai/codex               (OpenAI, via npm)
+  agy — Antigravity CLI       (Google, verified release archive)
+  opencode-ai                 (opencode, via npm)
+  @upstash/context7-mcp       (Upstash, via npm)
+  gh — GitHub CLI             (GitHub, via apt)
+
+-------------------------------------------------------------------------------
+Impeccable (design skills)
+
+  The design skills under .agents/skills/ are redistributed from
+  Paul Bakaus's Impeccable project, at source revision
+  0a1e1f5ee35e58b2f4c39abfe18e331354119c92 (per-skill content hashes are
+  pinned in skills-lock.json).
+
+  Source:  https://github.com/pbakaus/impeccable
+  License: Apache License 2.0 — full text at
+           third_party/licenses/impeccable-LICENSE
+  Notices: upstream NOTICE reproduced verbatim at
+           third_party/licenses/impeccable-NOTICE.md (covers content
+           derived from ehmo's platform-design-skills, MIT, and
+           Anthropic's frontend-design skill)

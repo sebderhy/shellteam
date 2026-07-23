@@ -1,0 +1,82 @@
+/* ShellTeam Design Tokens
+   Single source of truth for colors, typography, spacing, and motion.
+   All pages import this file. */
+
+:root {
+    /* Brand */
+    --brand:           oklch(0.79 0.15 75);
+    --brand-hover:     oklch(0.84 0.13 75);
+    --brand-subtle:    oklch(0.25 0.03 75);
+
+    /* Surfaces — warm-tinted, never pure black */
+    --surface-0:       oklch(0.14 0.006 75);
+    --surface-1:       oklch(0.17 0.006 75);
+    --surface-2:       oklch(0.20 0.006 75);
+    --surface-3:       oklch(0.24 0.006 75);
+
+    /* Text */
+    --text-primary:    oklch(0.93 0.005 75);
+    --text-secondary:  oklch(0.65 0.01 75);
+    /* Still visually subordinate, but WCAG AA for small text on every shared
+       surface. The former 0.47 value fell below 4.5:1 in several pages. */
+    --text-tertiary:   oklch(0.60 0.01 75);
+
+    /* Borders */
+    --border:          oklch(0.28 0.006 75 / 0.6);
+    --border-hover:    oklch(0.38 0.008 75 / 0.6);
+
+    /* Semantic */
+    --positive:        oklch(0.70 0.15 155);
+    --negative:        oklch(0.65 0.20 25);
+    --info:            oklch(0.70 0.12 240);
+
+    /* Platform colors (for channel icons) */
+    --telegram:        #29a9eb;
+    --discord:         #5865f2;
+    --whatsapp:        #25d366;
+
+    /* Typography */
+    --font-sans:       'Figtree', system-ui, -apple-system, sans-serif;
+    --font-mono:       'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+    /* Type scale — fixed rem for product UI */
+    --text-xs:         0.75rem;   /* 12px */
+    --text-sm:         0.8125rem; /* 13px */
+    --text-base:       0.875rem;  /* 14px */
+    --text-md:         0.9375rem; /* 15px */
+    --text-lg:         1.0625rem; /* 17px */
+    --text-xl:         1.25rem;   /* 20px */
+    --text-2xl:        1.5rem;    /* 24px */
+
+    /* Font weights */
+    --weight-normal:   400;
+    --weight-medium:   500;
+    --weight-semibold: 600;
+    --weight-bold:     700;
+
+    /* Spacing — 4px base */
+    --space-1:         0.25rem;   /*  4px */
+    --space-2:         0.5rem;    /*  8px */
+    --space-3:         0.75rem;   /* 12px */
+    --space-4:         1rem;      /* 16px */
+    --space-5:         1.5rem;    /* 24px */
+    --space-6:         2rem;      /* 32px */
+    --space-8:         3rem;      /* 48px */
+    --space-10:        4rem;      /* 64px */
+
+    /* Radii */
+    --radius-sm:       4px;
+    --radius-md:       8px;
+    --radius-lg:       12px;
+    --radius-xl:       16px;
+    --radius-full:     9999px;
+
+    /* Motion — smooth deceleration, no bounce */
+    --duration-fast:   100ms;
+    --duration-normal: 150ms;
+    --duration-slow:   250ms;
+    --ease-out:        cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* Focus ring */
+    --focus-ring:      0 0 0 2px var(--surface-0), 0 0 0 4px var(--brand);
+}

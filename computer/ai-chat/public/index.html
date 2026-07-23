@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
+    <title>ShellTeam</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <!-- xterm.js for terminal mode -->
+    <link rel="stylesheet" href="/vendor/xterm-5.5.0.min.css">
+</head>
+<body>
+    <div class="app">
+        <nav class="session-tabs" id="sessionTabs" aria-label="Conversations">
+            <div class="session-tab-list" id="sessionTabList" role="tablist" aria-label="Open conversations">
+                <div class="session-tab active" data-slot="0" role="presentation">
+                    <button class="session-tab-open" type="button" role="tab" aria-selected="true" aria-controls="messages" tabindex="0"><span class="session-tab-label">Chat 1</span></button>
+                </div>
+            </div>
+            <button class="session-tab-add" type="button" onclick="addSessionTab()" title="New session" aria-label="New conversation">+</button>
+        </nav>
+        <header class="status-bar">
+            <div class="status-left">
+                <div class="status-dot" id="statusDot"></div>
+                <span class="status-label" id="statusLabel">Connecting...</span>
+                <!-- Mobile: tap to open the conversation drawer (replaces the tab strip) -->
+                    <button class="conv-switcher mobile-only" id="convSwitcher" type="button" onclick="openSessionDrawer()" aria-label="Switch conversation" aria-controls="sessionDrawer" aria-expanded="false">
+                    <span class="conv-switcher-label" id="convSwitcherLabel">Chat 1</span>
+                    <svg class="conv-switcher-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+            </div>
+            <div class="status-right">
+                <!-- Guest cockpit: replaces the workspace combo when the server
+                     reports a workspace lock (status.workspaceLock) -->
+                <span class="auth-badge inc" id="workspaceLockBadge" hidden></span>
+                <div class="workspace-combo" id="workspaceCombo">
+                    <label class="sr-only" for="workspaceSelect">Working directory</label>
+                    <input class="workspace-input" id="workspaceSelect" value="/home/user" title="Working directory"
+                           autocomplete="off" data-form-type="other" data-lpignore="true" spellcheck="false"
+                           onfocus="showWorkspaceDropdown()" oninput="onWorkspaceInput(this.value)">
+                    <div class="workspace-dropdown" id="workspaceDropdown"></div>
+                </div>
+                <!-- Billing stays visible at every width. On a subscription the
+                     badge gets a compact usage bar underneath; every detail
+                     (per-window %, resets, credits) lives in the tap-to-open
+                     panel below — an anchored popover on desktop, a bottom sheet
+                     on mobile — so the top bar stays quiet while working. -->
+                <div class="subscription-monitor" id="subscriptionMonitor" hidden>
+                    <button class="quota-meter" id="quotaMeter" type="button"
+                            aria-haspopup="dialog" aria-controls="quotaPanel" aria-expanded="false"
+                            title="Subscription usage — tap for details"
+                            aria-label="Subscription usage — tap for details">
+                        <span class="auth-badge" id="authBadge" hidden></span>
+                        <span class="quota-meter-track" id="quotaMeterTrack" aria-hidden="true" hidden><span class="quota-meter-fill" id="quotaMeterFill"></span></span>
+                    </button>
+                    <!-- Rendered by renderQuotaPanel() on open + live refresh -->
+                    <div class="actions-menu quota-panel" id="quotaPanel" role="dialog" aria-label="Subscription usage"></div>
+                </div>
+                <span class="auth-badge" id="contextMeter" hidden></span>
+
+                <!-- Hierarchical header controls, identical at every width:
+                     AI (model/workspace + session actions) · Info · System.
+                     Anchored dropdowns on desktop, bottom sheets ≤480px. -->
+                <div class="hdr-group">
+                    <button class="btn-bar btn-ai" id="btnAI" type="button" onclick="Menus.toggle('aiMenu')" title="AI controls" aria-haspopup="menu" aria-controls="aiMenu" aria-expanded="false">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.7a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-2a2 2 0 0 0 1.3-1.2L12 3z"/></svg>
+                        <!-- Doubles as the model indicator: setModelDisplay() keeps it current -->
+                        <span class="btn-ai-model" id="btnAIModel">AI</span>
+                        <svg class="btn-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    <div class="actions-menu" id="aiMenu" role="menu" aria-hidden="true">
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="m" onclick="openModelPicker()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                            <span class="actions-label"><span class="actions-mn">M</span>odel</span>
+                            <span class="actions-value" id="aiMenuModel"></span>
+                            <svg class="actions-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" id="aiMenuWorkspaceItem" data-key="w" onclick="openWorkspacePicker()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            <span class="actions-label"><span class="actions-mn">W</span>orkspace</span>
+                            <span class="actions-value" id="aiMenuCwd"></span>
+                            <svg class="actions-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                        <div class="actions-sep" role="separator"></div>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="n" onclick="newSession()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            <span class="actions-label"><span class="actions-mn">N</span>ew Chat</span>
+                        </button>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="s" onclick="showSessionPicker()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span class="actions-label">Resume <span class="actions-mn">S</span>ession</span>
+                        </button>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="f" onclick="forkSession()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v2a4 4 0 0 0 4 4h.5"/><path d="M18 8v2a4 4 0 0 1-4 4h-.5"/><path d="M12 14v2"/></svg>
+                            <span class="actions-label"><span class="actions-mn">F</span>ork</span>
+                        </button>
+                        <div class="actions-sep" role="separator"></div>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="r" onclick="rewindSession()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                            <span class="actions-label"><span class="actions-mn">R</span>ewind</span>
+                        </button>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="c" onclick="compactSession()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="4"/><polyline points="9 8 12 11 15 8"/><polyline points="9 16 12 13 15 16"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
+                            <span class="actions-label"><span class="actions-mn">C</span>ompact</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="hdr-group">
+                    <button class="btn-icon btn-info" id="btnInfo" type="button" onclick="Menus.toggle('infoPanel')" title="Conversation info" aria-haspopup="dialog" aria-controls="infoPanel" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    </button>
+                    <!-- Rows rendered by renderInfoPanel() on open + live refresh -->
+                    <div class="actions-menu info-panel" id="infoPanel" role="dialog" aria-label="Conversation info" aria-hidden="true"></div>
+                </div>
+
+                <div class="hdr-group">
+                    <button class="btn-icon" id="btnSys" type="button" onclick="Menus.toggle('sysMenu')" title="Settings" aria-haspopup="menu" aria-controls="sysMenu" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    </button>
+                    <div class="actions-menu" id="sysMenu" role="menu" aria-hidden="true">
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" onclick="openAIConfig()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            AI Config
+                        </button>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" onclick="TerminalMode.toggle()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                            Console Mode
+                        </button>
+                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="k" onclick="showShortcutsHelp()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
+                            <span class="actions-label"><span class="actions-mn">K</span>eyboard Shortcuts</span>
+                            <span class="actions-value">?</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="hdr-group">
+                    <button class="btn-icon btn-help" id="btnHelp" onclick="showShortcutsHelp()" title="Keyboard shortcuts (press ?)" aria-label="Keyboard shortcuts">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    </button>
+                </div>
+
+                <!-- Back to Chat button (visible in terminal mode) -->
+                <button class="btn-bar btn-back-to-chat" id="btnBackToChat" onclick="TerminalMode.toggle()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+                    Chat
+                </button>
+                <!-- Shared click-away backdrop for all three header menus -->
+                <div class="actions-backdrop" id="actionsBackdrop" onclick="Menus.hide()"></div>
+            </div>
+        </header>
+
+        <main class="chat-main">
+        <h1 class="sr-only">Agent workspace</h1>
+        <!-- Setup screen -->
+        <div class="setup-screen hidden" id="setupScreen">
+            <div class="setup-card">
+                <button class="setup-close hidden" id="setupClose" onclick="closeAIConfig()">&times;</button>
+                <div class="setup-icon">&#10097;</div>
+                <h2>AI Coding Assistant</h2>
+                <p>Connect your AI provider to start coding.<span id="setupIntroOc"> OpenCode works with a Fireworks API key if you don't have a subscription.</span></p>
+                <div class="setup-error" id="setupError"></div>
+
+                <div class="setup-tabs">
+                    <button class="setup-tab active" onclick="switchSetupTab('cc')"><span class="tab-dot" id="dot-cc"></span> CC</button>
+                    <button class="setup-tab" onclick="switchSetupTab('cdx')"><span class="tab-dot" id="dot-cdx"></span> CDX</button>
+                    <button class="setup-tab" onclick="switchSetupTab('agy')"><span class="tab-dot" id="dot-agy"></span> Antigravity</button>
+                    <button class="setup-tab" onclick="switchSetupTab('oc')"><span class="tab-dot" id="dot-oc"></span> OpenCode</button>
+                </div>
+
+                <!-- Claude Code panel -->
+                <div class="setup-panel active" id="panel-cc">
+                    <div id="cc-oauth-start">
+                        <button class="setup-btn" style="width: 100%;" id="cc-oauth-btn" onclick="startProviderOAuth('cc')">
+                            Login with Claude
+                        </button>
+                        <div class="setup-hint" style="text-align: center; margin-top: 8px;">
+                            Uses your Claude Pro or Max subscription.
+                        </div>
+                    </div>
+                    <div id="cc-alt" class="setup-alt">
+                        <div class="setup-divider"><span>or use an API key</span></div>
+                        <div class="setup-input-group">
+                            <input type="password" class="setup-input" id="cc-key-input"
+                                   placeholder="sk-ant-..." autocomplete="off" autocorrect="off">
+                            <button class="setup-btn" id="cc-key-btn" onclick="submitProviderKey('cc')">Save</button>
+                        </div>
+                        <div class="setup-hint">
+                            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>
+                        </div>
+                    </div>
+                    <div id="cc-oauth-pending" class="hidden">
+                        <div class="setup-hint" style="text-align: center; margin-bottom: 16px;">
+                            Sign in on the page that opened. If you see an "Authorization failed" error, don't worry &mdash; just re-open the link below and it will work.
+                            <br>Then paste the code you receive:
+                        </div>
+                        <div class="setup-input-group">
+                            <input type="text" class="setup-input" id="cc-oauth-code-input"
+                                   placeholder="Paste code here..." autocomplete="off" autocorrect="off">
+                            <button class="setup-btn" id="cc-oauth-code-btn" onclick="submitProviderOAuthCode('cc')">Connect</button>
+                        </div>
+                        <div class="setup-hint" style="text-align: center; margin-top: 12px;">
+                            <a href="#" id="cc-oauth-link" onclick="reopenProviderOAuth('cc'); return false;" style="color: var(--accent); text-decoration: none;">Open login page</a>
+                        </div>
+                    </div>
+                    <div id="cc-oauth-success" class="hidden">
+                        <div style="text-align: center; color: var(--green); font-size: 14px;">
+                            Claude connected!
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Codex panel -->
+                <div class="setup-panel" id="panel-cdx">
+                    <div id="cdx-oauth-start">
+                        <button class="setup-btn setup-btn-openai" style="width: 100%;" id="cdx-oauth-btn" onclick="startProviderOAuth('cdx')">
+                            Login with OpenAI
+                        </button>
+                        <div class="setup-hint" style="text-align: center; margin-top: 8px;">
+                            Uses your ChatGPT Plus or Pro subscription.
+                        </div>
+                    </div>
+                    <div id="cdx-alt" class="setup-alt">
+                        <div class="setup-divider"><span>or use an API key</span></div>
+                        <div class="setup-input-group">
+                            <input type="password" class="setup-input" id="cdx-key-input"
+                                   placeholder="sk-..." autocomplete="off" autocorrect="off">
+                            <button class="setup-btn" id="cdx-key-btn" onclick="submitProviderKey('cdx')">Save</button>
+                        </div>
+                        <div class="setup-hint">
+                            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>
+                        </div>
+                    </div>
+                    <div id="cdx-oauth-pending" class="hidden">
+                        <div class="setup-hint" style="text-align: center; margin-bottom: 12px;">
+                            Open the link below and enter this code:
+                        </div>
+                        <div class="device-code-display" id="cdx-device-code"></div>
+                        <div class="setup-hint" style="text-align: center; margin-top: 12px;">
+                            <a href="#" id="cdx-oauth-link" target="_top" style="color: var(--accent); text-decoration: none;">Open OpenAI sign-in page</a>
+                        </div>
+                        <div class="setup-hint" style="text-align: center; margin-top: 12px; opacity: 0.6;">
+                            <span class="device-code-spinner"></span> Waiting for authentication...
+                        </div>
+                    </div>
+                    <div id="cdx-oauth-success" class="hidden">
+                        <div style="text-align: center; color: var(--green); font-size: 14px;">
+                            OpenAI connected!
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Antigravity panel (Google OAuth code-paste, drives the real `agy` CLI) -->
+                <div class="setup-panel" id="panel-agy">
+                    <div id="agy-oauth-start">
+                        <button class="setup-btn" style="width: 100%;" id="agy-oauth-btn" onclick="startAntigravityOAuth()">
+                            Login with Google
+                        </button>
+                        <div class="setup-hint" style="text-align: center; margin-top: 8px;">
+                            Google's Antigravity CLI (replaces Gemini CLI). Uses your Google account / Gemini subscription.
+                        </div>
+                    </div>
+                    <div id="agy-oauth-pending" class="hidden">
+                        <div class="setup-hint" style="text-align: center; margin-bottom: 16px;">
+                            Sign in on the page that opened, then copy the authorization code it shows and paste it below.
+                            <a href="#" id="agy-oauth-link" target="_blank" rel="noopener" style="display: block; margin-top: 4px;">Open sign-in page again</a>
+                        </div>
+                        <div class="setup-input-group">
+                            <input type="text" class="setup-input" id="agy-oauth-code-input"
+                                   placeholder="Paste authorization code" autocomplete="off" autocorrect="off">
+                            <button class="setup-btn" id="agy-oauth-code-btn" onclick="submitAntigravityOAuthCode()">Connect</button>
+                        </div>
+                        <div class="setup-hint" style="text-align: center; margin-top: 12px; opacity: 0.6;">
+                            <span class="device-code-spinner"></span> Signing in&hellip;
+                        </div>
+                    </div>
+                    <div id="agy-oauth-success" class="hidden">
+                        <div style="text-align: center; color: var(--green); font-size: 14px;">
+                            Antigravity connected!
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OpenCode panel -->
+                <div class="setup-panel" id="panel-oc">
+                    <div class="setup-oc-card">
+                        <div class="setup-oc-title">&#10003; Frontier open-source models</div>
+                        <div class="setup-oc-body">
+                            OpenCode is the open-source coding agent, running on state-of-the-art open-source models via <strong>your</strong> Fireworks key. Add it in Settings &rarr; Feature keys &mdash; it activates immediately.
+                        </div>
+                    </div>
+                    <button class="setup-btn" style="width: 100%; margin-top: 16px;" onclick="continueWithOpenCode()">
+                        Continue with OpenCode
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat area -->
+        <div class="messages hidden" id="messages"></div>
+        <div class="empty-state hidden" id="emptyState">
+            <div class="empty-icon">&#10097;</div>
+            <div class="empty-title" id="emptyTitle">What can I help you build?</div>
+            <!-- Core-safe fallback; initUseCaseSuggestions() upgrades the copy
+                 per enabled modules (BOX.modules) once /api/box loads. -->
+            <div class="empty-subtitle" id="emptySubtitle">
+                I have my own computer with a terminal and file system — every file I write gets a live URL.
+            </div>
+            <div class="empty-suggestions" id="emptySuggestions">
+                <button class="empty-chip" onclick="fillSuggestion(this)">"Build a landing page for my project"</button>
+                <button class="empty-chip" onclick="fillSuggestion(this)">"Analyze this codebase and suggest improvements"</button>
+                <button class="empty-chip" onclick="fillSuggestion(this)">"Write a Python script to process CSV data"</button>
+            </div>
+            <div class="empty-tip"><kbd>/</kbd> AI menu &nbsp;·&nbsp; <kbd>?</kbd> keyboard shortcuts</div>
+        </div>
+
+        <div class="streaming-indicator" id="streamingIndicator">
+            <div class="streaming-cursor"></div>
+            <span id="streamingLabel">Generating...</span>
+            <button class="stop-btn" onclick="handleStop()" title="Stop (Esc)">Stop</button>
+        </div>
+
+        <!-- Terminal mode container -->
+        <div class="terminal-container" id="terminalContainer">
+            <div class="terminal-wrapper" id="terminalWrapper"></div>
+        </div>
+
+        <!-- Quote-to-comment review tray: stacked quote+comment pairs pulled from
+             the agent reply above, assembled into one message on send. -->
+        <div class="quote-tray hidden" id="quoteTray"></div>
+        <div class="image-previews hidden" id="imagePreviews"></div>
+        <div class="composer hidden" id="composer">
+            <div class="file-autocomplete" id="fileAutocomplete"></div>
+            <button class="btn-attach" type="button" aria-label="Attach file" onclick="document.getElementById('imageInput').click()" title="Attach file">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                </svg>
+            </button>
+            <button class="btn-mic" id="btnMic" type="button" aria-label="Voice message" onclick="toggleRecording()" title="Voice message">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                    <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+            </button>
+            <textarea id="input" rows="1" placeholder="Message your AI agent…"
+                      autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+            <button class="btn-send" id="btnSend" type="button" aria-label="Send message" onclick="handleSend()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5"></line>
+                    <polyline points="5 12 12 5 19 12"></polyline>
+                </svg>
+            </button>
+        </div>
+
+        <input type="file" id="imageInput" multiple hidden>
+        </main>
+    </div>
+
+    <!-- Floating "Comment" pill shown at a text selection inside an agent reply -->
+    <button class="quote-sel-pill" id="quoteSelPill">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Comment<span class="quote-kbd">C</span>
+    </button>
+
+    <div class="error-toast" id="errorToast"></div>
+    <div class="drop-overlay" id="dropOverlay">Drop file here</div>
+    <div class="session-picker-backdrop" id="sessionBackdrop" onclick="hideSessionPicker()"></div>
+    <div class="session-picker" id="sessionPicker"></div>
+    <div class="session-picker-backdrop" id="rewindBackdrop" onclick="hideRewindPicker()"></div>
+    <div class="session-picker" id="rewindPicker"></div>
+    <!-- Second-level pickers behind the AI menu (model / workspace) — same
+         modal pattern as the session picker, rendered on open by app.js -->
+    <div class="session-picker-backdrop" id="modelBackdrop" onclick="hideModelPicker()"></div>
+    <div class="session-picker" id="modelPicker"></div>
+    <div class="session-picker-backdrop" id="workspaceBackdrop" onclick="hideWorkspacePicker()"></div>
+    <div class="session-picker" id="workspacePicker"></div>
+    <!-- Keyboard-shortcuts cheat sheet — opened with "?" or System menu → Keyboard
+         Shortcuts. Rendered from the SHORTCUTS table in app.js (single source). -->
+    <div class="session-picker-backdrop" id="shortcutsBackdrop" onclick="hideShortcutsHelp()"></div>
+    <div class="session-picker shortcuts-help" id="shortcutsHelp"></div>
+
+    <!-- Mobile conversation drawer (bottom sheet) — switch/close/create chats.
+         Driven by renderSessionTabs() from the same sessionSlots data. -->
+    <div class="session-drawer-backdrop" id="sessionDrawerBackdrop" onclick="closeSessionDrawer()" aria-hidden="true"></div>
+    <div class="session-drawer" id="sessionDrawer" role="dialog" aria-modal="true" aria-labelledby="sessionDrawerTitle" aria-hidden="true" inert>
+        <div class="session-drawer-grip"></div>
+        <div class="session-drawer-head">
+            <h2 id="sessionDrawerTitle">Conversations</h2>
+            <button class="session-drawer-close" type="button" onclick="closeSessionDrawer()" aria-label="Close conversations">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="session-drawer-cwd" id="sessionDrawerCwd"></div>
+        <div class="session-drawer-list" id="sessionDrawerList" role="list"></div>
+        <button class="session-drawer-new" type="button" onclick="addSessionTab(); closeSessionDrawer();">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New conversation
+        </button>
+    </div>
+
+    <!-- Libraries (self-hosted from computer/ai-chat/public/vendor/ for CSP hardening) -->
+    <script src="/vendor/marked-15.0.6.min.js"></script>
+    <script src="/vendor/xterm-5.5.0.min.js"></script>
+    <script src="/vendor/xterm-addon-fit-0.10.0.min.js"></script>
+    <script src="/vendor/xterm-addon-web-links-0.11.0.min.js"></script>
+
+    <!-- App modules (order matters) -->
+    <script src="/dropdown.js"></script>
+    <script src="/quote-review.js"></script>
+    <script src="/chat.js"></script>
+    <script src="/plan.js"></script>
+    <script src="/terminal.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

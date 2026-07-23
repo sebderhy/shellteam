@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=3">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=3">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=3">
+    <link rel="shortcut icon" href="/static/favicon.ico?v=3">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=3">
+    <title>ShellTeam — Browser</title>
+    <link rel="stylesheet" href="/static/tokens.css">
+    <link rel="stylesheet" href="/static/base.css">
+    <style>
+        html,body{height:100%;margin:0;overflow:hidden;background:var(--surface-0);}
+        #panel-browser{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+        #browser-toolbar{display:flex;align-items:center;gap:4px;padding:4px 8px;
+            background:#111;border-bottom:1px solid rgba(255,255,255,0.08);}
+        #browser-url{flex:1 1 12rem;min-width:7rem;padding:4px 10px;background:#1e1e1e;
+            border:1px solid #555;border-radius:5px;color:#e0e0e0;font-family:var(--font-mono);
+            font-size:0.8rem;outline:none;}
+        .browser-zoom-controls{display:flex;align-items:center;gap:2px;margin-left:4px;
+            border-left:1px solid #555;padding-left:6px;flex-shrink:0;}
+        #browser-url:focus{border-color:var(--brand);}
+        .tkey{padding:6px 12px;font-size:var(--text-xs,0.75rem);font-family:var(--font-mono);font-weight:600;
+            background:var(--surface-2);color:var(--text-secondary);border:1px solid var(--border);
+            border-radius:var(--radius-sm,6px);cursor:pointer;min-height:36px;white-space:nowrap;user-select:none;}
+        .tkey:active{background:var(--surface-3);color:var(--text-primary);}
+        .browser-tab{display:flex;align-items:center;min-width:0;max-width:180px;
+            background:transparent;border:0;border-bottom:2px solid transparent;color:#a3a3a3;}
+        .browser-tab.active{background:#1e1e1e;border-bottom-color:#f59e0b;color:#e0e0e0;}
+        .browser-tab-select{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            padding:4px 6px 4px 10px;border:0;background:transparent;color:inherit;font:inherit;
+            cursor:pointer;}
+        .browser-tab-close{padding:4px 7px;border:0;background:transparent;color:#a3a3a3;
+            font-size:0.9rem;line-height:1;cursor:pointer;}
+        .browser-tab-close:hover{color:var(--text-primary);}
+        .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+            clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+        @media(max-width:520px){
+            #browser-toolbar{flex-wrap:wrap;padding:4px;}
+            #browser-url{min-height:36px;}
+            .browser-zoom-controls{width:100%;margin-left:0;padding-left:0;border-left:0;
+                justify-content:center;min-height:36px;}
+        }
+    </style>
+</head>
+<body>
+    <main class="panel active" id="panel-browser">
+                <h1 class="sr-only">Browser</h1>
+                <div id="browser-toolbar" role="toolbar" aria-label="Browser controls">
+                    <button class="tkey" type="button" id="browser-back" style="min-height:28px;padding:4px 10px;font-size:1rem;" aria-label="Go back">&#8592;</button>
+                    <button class="tkey" type="button" id="browser-forward" style="min-height:28px;padding:4px 10px;font-size:1rem;" aria-label="Go forward">&#8594;</button>
+                    <button class="tkey" type="button" id="browser-refresh" style="min-height:28px;padding:4px 10px;font-size:1rem;" aria-label="Refresh page">&#8635;</button>
+                    <input id="browser-url" type="url" placeholder="URL…" aria-label="Browser address">
+                    <div class="browser-zoom-controls" role="group" aria-label="Zoom controls">
+                        <button class="tkey" type="button" id="browser-zoom-out" style="min-height:28px;padding:4px 8px;font-size:0.85rem;" title="Zoom out (Ctrl+-)" aria-label="Zoom out">&#8722;</button>
+                        <span id="browser-zoom-level" style="color:#888;font-size:0.7rem;min-width:36px;text-align:center;user-select:none;">Fit</span>
+                        <button class="tkey" type="button" id="browser-zoom-in" style="min-height:28px;padding:4px 8px;font-size:0.85rem;" title="Zoom in (Ctrl++)" aria-label="Zoom in">+</button>
+                        <button class="tkey" type="button" id="browser-zoom-reset" style="min-height:28px;padding:4px 8px;font-size:0.75rem;" title="Reset zoom" aria-label="Fit page to window">Fit</button>
+                    </div>
+                </div>
+                <div id="browser-tab-bar" role="tablist" aria-label="Browser tabs" style="display:flex;align-items:center;gap:0;background:var(--surface-0);border-bottom:1px solid rgba(255,255,255,0.08);overflow-x:auto;min-height:32px;padding:0 4px;"></div>
+                <div id="browser-canvas-container" role="tabpanel" aria-label="Active browser page" tabindex="0" style="flex:1;position:relative;background:#1e1e1e;display:flex;align-items:center;justify-content:center;overflow:auto;">
+                    <canvas id="browser-canvas" style="height:100%;width:auto;cursor:default;"></canvas>
+                    <div id="browser-status" style="position:absolute;color:#888;font-size:0.9rem;pointer-events:none;">Connecting to browser...</div>
+                </div>
+    </main>
+    <script>
+        const browserViewer = (() => {
+            const canvas = document.getElementById('browser-canvas');
+            const ctx = canvas.getContext('2d');
+            const container = document.getElementById('browser-canvas-container');
+            const statusEl = document.getElementById('browser-status');
+            const urlInput = document.getElementById('browser-url');
+            const tabBar = document.getElementById('browser-tab-bar');
+            let frameW = 1920, frameH = 1080; // updated from actual screencast frames
+
+            let castWs = null;
+            let activePageId = null;
+            let tabs = [];
+            let tabPollInterval = null;
+            let retries = 0;
+            const MAX_RETRIES = 3;
+            const RETRY_DELAY = 2000;
+            const MAX_RECONNECT_CYCLES = 5;  // cap total WS disconnect → reconnect loops
+            let reconnectCycles = 0;
+            let connected = false;
+            let username = null;
+            let zoomLevel = 0;  // 0 = fit-to-container, >0 = percentage (e.g. 100 = 100%)
+            const ZOOM_STEPS = [0, 50, 75, 100, 125, 150, 200, 300];
+
+            function setStatus(msg) {
+                statusEl.textContent = msg;
+                statusEl.style.display = msg ? 'block' : 'none';
+            }
+
+            function getBaseDomain() { return window.location.hostname; }
+
+            // --- Tab bar ---
+            function renderTabBar() {
+                tabBar.innerHTML = '';
+                tabs.forEach(tab => {
+                    const el = document.createElement('div');
+                    const isActive = tab.id === activePageId;
+                    const label = tab.title || tab.url?.split('/')[2] || 'Tab';
+                    el.className = `browser-tab${isActive ? ' active' : ''}`;
+                    const selectBtn = document.createElement('button');
+                    selectBtn.type = 'button';
+                    selectBtn.className = 'browser-tab-select';
+                    selectBtn.setAttribute('role', 'tab');
+                    selectBtn.setAttribute('aria-selected', String(isActive));
+                    selectBtn.setAttribute('aria-controls', 'browser-canvas-container');
+                    selectBtn.tabIndex = isActive ? 0 : -1;
+                    selectBtn.dataset.pageId = tab.id;
+                    selectBtn.textContent = label;
+                    selectBtn.title = tab.url || label;
+                    selectBtn.onclick = () => switchToTab(tab.id);
+                    el.appendChild(selectBtn);
+                    const closeBtn = document.createElement('button');
+                    closeBtn.type = 'button';
+                    closeBtn.className = 'browser-tab-close';
+                    closeBtn.textContent = '\u00d7';
+                    closeBtn.setAttribute('aria-label', `Close ${label}`);
+                    closeBtn.onclick = () => closeTab(tab.id);
+                    el.appendChild(closeBtn);
+                    tabBar.appendChild(el);
+                });
+            }
+
+            tabBar.addEventListener('keydown', event => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                const tabButtons = [...tabBar.querySelectorAll('[role="tab"]')];
+                const current = tabButtons.indexOf(document.activeElement);
+                if (current < 0 || !tabButtons.length) return;
+                event.preventDefault();
+                let next = current;
+                if (event.key === 'Home') next = 0;
+                else if (event.key === 'End') next = tabButtons.length - 1;
+                else next = (current + (event.key === 'ArrowRight' ? 1 : -1) + tabButtons.length) % tabButtons.length;
+                const pageId = tabButtons[next].dataset.pageId;
+                switchToTab(pageId);
+                requestAnimationFrame(() =>
+                    [...tabBar.querySelectorAll('[role="tab"]')]
+                        .find(button => button.dataset.pageId === pageId)?.focus());
+            });
+
+            function switchToTab(pageId) {
+                if (pageId === activePageId) return;
+                activePageId = pageId;
+                renderTabBar();
+                connectCast(pageId);
+            }
+
+            function closeTab(pageId) {
+                if (castWs && castWs.readyState === WebSocket.OPEN) {
+                    castWs.send(JSON.stringify({ type: 'closeTab', pageId }));
+                }
+                // If we closed the active tab, switch to another
+                if (pageId === activePageId) {
+                    const remaining = tabs.filter(t => t.id !== pageId);
+                    if (remaining.length > 0) {
+                        switchToTab(remaining[remaining.length - 1].id);
+                    }
+                }
+                refreshTabs();
+            }
+
+            async function refreshTabs() {
+                if (!username) return;
+                try {
+                    const resp = await fetch(`/api/browser-tabs?username=${encodeURIComponent(username)}`);
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    if (data.type === 'tabList' && data.tabs) {
+                        tabs = data.tabs;
+                        renderTabBar();
+                    }
+                } catch {}
+            }
+
+            function startTabPolling() {
+                stopTabPolling();
+                tabPollInterval = setInterval(refreshTabs, 5000);
+            }
+
+            function stopTabPolling() {
+                if (tabPollInterval) { clearInterval(tabPollInterval); tabPollInterval = null; }
+            }
+
+            // --- Connection ---
+            async function connect() {
+                if ("__HAS_BROWSER__" !== "true") {
+                    setStatus('The browser module isn\'t installed on this box. Enable it with:  ./install.sh --full  (needs Docker) — or add "browser" to MODULES= in .env and re-run ./install.sh — then restart the services.');
+                    return;
+                }
+                if (!username) { setStatus('Error: no username set'); return; }
+                if (castWs && (castWs.readyState === WebSocket.OPEN || castWs.readyState === WebSocket.CONNECTING)) return;
+                retries = 0;
+                reconnectCycles = 0;
+                await discoverAndConnect();
+            }
+
+            async function discoverAndConnect() {
+                setStatus('Discovering browser tabs...');
+                try {
+                    const resp = await fetch(`/api/browser-tabs?username=${encodeURIComponent(username)}`);
+                    if (resp.status === 503) { setStatus('Browser offline'); return; }
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    const data = await resp.json();
+                    if (data.type === 'tabList' && data.tabs && data.tabs.length > 0) {
+                        tabs = data.tabs;
+                        renderTabBar();
+                        // Pick last tab (most recently active)
+                        const tab = tabs[tabs.length - 1];
+                        activePageId = tab.id;
+                        renderTabBar();
+                        connectCast(tab.id);
+                        startTabPolling();
+                        return;
+                    }
+                    throw new Error('No tabs found');
+                } catch (e) {
+                    const panel = document.getElementById('panel-browser');
+                    if (panel && panel.classList.contains('active') && retries < MAX_RETRIES) {
+                        retries++;
+                        console.warn(`[browser] connection failed: ${e.message}`);
+                        setStatus(`Browser not responding yet — retrying (${retries}/${MAX_RETRIES})...`);
+                        setTimeout(discoverAndConnect, RETRY_DELAY);
+                    } else if (retries >= MAX_RETRIES) {
+                        console.warn(`[browser] giving up: ${e.message}`);
+                        setStatus('Browser isn\'t responding. It may still be starting — click the Browser tab to retry.');
+                    }
+                }
+            }
+
+            function connectCast(pageId) {
+                if (castWs) { castWs.onclose = null; castWs.close(); }
+                const url = `wss://${username}-3000.${getBaseDomain()}/v1/sessions/cast?pageId=${encodeURIComponent(pageId)}`;
+                castWs = new WebSocket(url);
+                castWs.onopen = () => {
+                    connected = true;
+                    reconnectCycles = 0;  // successful connection resets the counter
+                    setStatus('');
+                    setupInputRelay(castWs, pageId);
+                };
+                castWs.onmessage = (e) => {
+                    const payload = JSON.parse(e.data);
+                    if (payload.data) renderFrame(payload);
+                    if (payload.type === 'selectedTextResponse' && payload.text) {
+                        navigator.clipboard.writeText(payload.text).catch(() => {});
+                    }
+                };
+                castWs.onclose = () => {
+                    connected = false;
+                    activePageId = null;
+                    stopTabPolling();
+                    reconnectCycles++;
+                    if (reconnectCycles > MAX_RECONNECT_CYCLES) {
+                        setStatus('Browser appears offline. Click the Browser tab to retry.');
+                        return;
+                    }
+                    const panel = document.getElementById('panel-browser');
+                    if (panel && panel.classList.contains('active')) {
+                        setStatus(`Browser disconnected. Reconnecting (${reconnectCycles}/${MAX_RECONNECT_CYCLES})...`);
+                        retries = 0;
+                        setTimeout(discoverAndConnect, RETRY_DELAY);
+                    }
+                };
+                castWs.onerror = () => {};
+            }
+
+            // --- Rendering ---
+            function renderFrame(payload) {
+                const img = new Image();
+                img.onload = () => {
+                    frameW = img.naturalWidth;
+                    frameH = img.naturalHeight;
+                    const cw = container.clientWidth;
+                    const ch = container.clientHeight;
+                    const dpr = window.devicePixelRatio || 1;
+                    let scale;
+                    if (zoomLevel === 0) {
+                        // Fit to container
+                        scale = Math.min(cw / frameW, ch / frameH);
+                    } else {
+                        scale = zoomLevel / 100;
+                    }
+                    const dw = Math.floor(img.naturalWidth * scale);
+                    const dh = Math.floor(img.naturalHeight * scale);
+                    canvas.width = dw * dpr;
+                    canvas.height = dh * dpr;
+                    canvas.style.width = dw + 'px';
+                    canvas.style.height = dh + 'px';
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                    ctx.drawImage(img, 0, 0, dw, dh);
+                    // When zoomed beyond container, allow scrolling; when fit, center
+                    if (dw > cw || dh > ch) {
+                        container.style.justifyContent = 'flex-start';
+                        container.style.alignItems = 'flex-start';
+                    } else {
+                        container.style.justifyContent = 'center';
+                        container.style.alignItems = 'center';
+                    }
+                };
+                img.src = 'data:image/jpeg;base64,' + payload.data;
+                if (payload.url && document.activeElement !== urlInput) {
+                    urlInput.value = payload.url;
+                }
+            }
+
+            function updateZoomLabel() {
+                const label = document.getElementById('browser-zoom-level');
+                if (label) label.textContent = zoomLevel === 0 ? 'Fit' : zoomLevel + '%';
+            }
+
+            function zoomIn() {
+                const idx = ZOOM_STEPS.indexOf(zoomLevel);
+                if (idx < ZOOM_STEPS.length - 1) zoomLevel = ZOOM_STEPS[idx + 1];
+                else if (idx === -1) {
+                    // Current zoom not in steps — find next higher step
+                    const next = ZOOM_STEPS.find(s => s > zoomLevel);
+                    if (next) zoomLevel = next;
+                }
+                updateZoomLabel();
+            }
+
+            function zoomOut() {
+                const idx = ZOOM_STEPS.indexOf(zoomLevel);
+                if (idx > 0) zoomLevel = ZOOM_STEPS[idx - 1];
+                else if (idx === -1) {
+                    // Find next lower step
+                    for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
+                        if (ZOOM_STEPS[i] < zoomLevel) { zoomLevel = ZOOM_STEPS[i]; break; }
+                    }
+                }
+                updateZoomLabel();
+            }
+
+            function zoomReset() {
+                zoomLevel = 0;
+                updateZoomLabel();
+            }
+
+            // --- Input helpers ---
+            function getScaledCoords(e) {
+                const rect = canvas.getBoundingClientRect();
+                const cx = e.clientX !== undefined ? e.clientX : e._touchX;
+                const cy = e.clientY !== undefined ? e.clientY : e._touchY;
+                const x = Math.round((cx - rect.left) * (frameW / rect.width));
+                const y = Math.round((cy - rect.top) * (frameH / rect.height));
+                return { x: Math.max(0, Math.min(x, frameW)), y: Math.max(0, Math.min(y, frameH)) };
+            }
+
+            function getMods(e) {
+                return (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0);
+            }
+
+            function sendKey(ws, pageId, type, char, code, keyCode, mods) {
+                ws.send(JSON.stringify({ type: 'keyEvent', pageId, event: {
+                    type, text: char, code: code || '', key: char, keyCode: keyCode || 0, modifiers: mods || 0
+                }}));
+            }
+
+            // Map special keys to their text representation for CDP
+            const SPECIAL_KEY_TEXT = {
+                'Enter': '\r', 'Tab': '\t', 'Backspace': '', 'Delete': '',
+                'Escape': '', 'ArrowLeft': '', 'ArrowRight': '', 'ArrowUp': '', 'ArrowDown': '',
+                'Home': '', 'End': '', 'PageUp': '', 'PageDown': '',
+            };
+
+            function getKeyText(e) {
+                if (e.key.length === 1) return e.key;
+                return SPECIAL_KEY_TEXT[e.key]; // undefined for unmapped special keys
+            }
+
+            async function handlePaste(ws, pageId) {
+                try {
+                    const text = await navigator.clipboard.readText();
+                    for (const char of text) {
+                        sendKey(ws, pageId, 'keyDown', char, '', char.charCodeAt(0));
+                        sendKey(ws, pageId, 'keyUp', char, '', char.charCodeAt(0));
+                    }
+                } catch {}
+            }
+
+            async function handleCopy(ws, pageId) {
+                if (ws.readyState !== WebSocket.OPEN) return;
+                ws.send(JSON.stringify({ type: 'getSelectedText', pageId }));
+            }
+
+            // --- Input relay ---
+            function setupInputRelay(ws, pageId) {
+                canvas.onmousedown = (e) => {
+                    if (ws.readyState !== WebSocket.OPEN) return;
+                    canvas.focus();
+                    const c = getScaledCoords(e);
+                    ws.send(JSON.stringify({ type: 'mouseEvent', pageId, event: {
+                        type: 'mousePressed', x: c.x, y: c.y,
+                        button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
+                        modifiers: getMods(e), clickCount: e.detail
+                    }}));
+                };
+
+                canvas.onmouseup = (e) => {
+                    if (ws.readyState !== WebSocket.OPEN) return;
+                    const c = getScaledCoords(e);
+                    ws.send(JSON.stringify({ type: 'mouseEvent', pageId, event: {
+                        type: 'mouseReleased', x: c.x, y: c.y,
+                        button: e.button === 0 ? 'left' : e.button === 1 ? 'middle' : 'right',
+                        modifiers: getMods(e), clickCount: e.detail
+                    }}));
+                };
+
+                let moveTimeout = null;
+                canvas.onmousemove = (e) => {
+                    if (ws.readyState !== WebSocket.OPEN || moveTimeout) return;
+                    moveTimeout = setTimeout(() => { moveTimeout = null; }, 20);
+                    const c = getScaledCoords(e);
+                    ws.send(JSON.stringify({ type: 'mouseEvent', pageId, event: {
+                        type: 'mouseMoved', x: c.x, y: c.y, button: 'none', modifiers: getMods(e)
+                    }}));
+                };
+
+                canvas.onwheel = (e) => {
+                    e.preventDefault();
+                    // Ctrl+scroll = zoom
+                    if (e.ctrlKey || e.metaKey) {
+                        if (e.deltaY < 0) zoomIn(); else zoomOut();
+                        return;
+                    }
+                    if (ws.readyState !== WebSocket.OPEN) return;
+                    const c = getScaledCoords(e);
+                    ws.send(JSON.stringify({ type: 'mouseEvent', pageId, event: {
+                        type: 'mouseWheel', x: c.x, y: c.y, button: 'none',
+                        modifiers: getMods(e), deltaX: e.deltaX, deltaY: e.deltaY
+                    }}));
+                };
+
+                canvas.oncontextmenu = (e) => e.preventDefault();
+
+                // Keyboard
+                canvas.tabIndex = 0;
+                canvas.style.outline = 'none';
+                canvas.focus();
+
+                function isCanvasFocused() {
+                    const panel = document.getElementById('panel-browser');
+                    return panel && panel.classList.contains('active') && document.activeElement !== urlInput;
+                }
+
+                canvas._keyDown = (e) => {
+                    if (!isCanvasFocused()) return;
+                    const mod = e.ctrlKey || e.metaKey;
+                    // Intercept Ctrl+V / Cmd+V for clipboard paste
+                    if (mod && e.key === 'v') {
+                        e.preventDefault();
+                        handlePaste(ws, pageId);
+                        return;
+                    }
+                    // Intercept Ctrl+C / Cmd+C for copy from remote
+                    if (mod && e.key === 'c') {
+                        e.preventDefault();
+                        handleCopy(ws, pageId);
+                        return;
+                    }
+                    // Ctrl+=/+ zoom in, Ctrl+- zoom out, Ctrl+0 reset
+                    if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomIn(); return; }
+                    if (mod && e.key === '-') { e.preventDefault(); zoomOut(); return; }
+                    if (mod && e.key === '0') { e.preventDefault(); zoomReset(); return; }
+                    if (ws.readyState !== WebSocket.OPEN) return;
+                    e.preventDefault();
+                    const text = getKeyText(e);
+                    ws.send(JSON.stringify({ type: 'keyEvent', pageId, event: {
+                        type: 'keyDown', text, code: e.code, key: e.key,
+                        keyCode: e.keyCode, modifiers: getMods(e)
+                    }}));
+                };
+
+                canvas._keyUp = (e) => {
+                    if (!isCanvasFocused() || ws.readyState !== WebSocket.OPEN) return;
+                    const mod = e.ctrlKey || e.metaKey;
+                    if (mod && (e.key === 'v' || e.key === 'c' || e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) return;
+                    e.preventDefault();
+                    const text = getKeyText(e);
+                    ws.send(JSON.stringify({ type: 'keyEvent', pageId, event: {
+                        type: 'keyUp', text, code: e.code, key: e.key,
+                        keyCode: e.keyCode, modifiers: getMods(e)
+                    }}));
+                };
+
+                document.removeEventListener('keydown', canvas._keyDown);
+                document.removeEventListener('keyup', canvas._keyUp);
+                document.addEventListener('keydown', canvas._keyDown);
+                document.addEventListener('keyup', canvas._keyUp);
+
+                // Touch events
+                canvas.ontouchstart = (e) => {
+                    e.preventDefault();
+                    if (ws.readyState !== WebSocket.OPEN || !e.touches.length) return;
+                    const t = e.touches[0];
+                    const c = getScaledCoords({ clientX: t.clientX, clientY: t.clientY });
+                    ws.send(JSON.stringify({ type: 'mouseEvent', pageId, event: {
+                        type: 'mousePressed', x: c.x, y: c.y, button: 'left', modifiers: 0, clickCount: 1
+                    }}));
+                };
+
+                canvas.ontouchend = (e) => {
+                    e.preventDefault();
+                    if (ws.readyState !== WebSocket.OPEN || !e.changedTouches.length) return;
+                    const t = e.changedTouches[0];
+                    const c = getScaledCoords({ clientX: t.clientX, clientY: t.clientY });
+                    ws.send(JSON.stringify({ type: 'mouseEvent', pageId, event: {
+                        type: 'mouseReleased', x: c.x, y: c.y, button: 'left', modifiers: 0, clickCount: 1
+                    }}));
+                };
+
+                let touchMoveTimeout = null;
+                canvas.ontouchmove = (e) => {
+                    e.preventDefault();
+                    if (ws.readyState !== WebSocket.OPEN || !e.touches.length || touchMoveTimeout) return;
+                    touchMoveTimeout = setTimeout(() => { touchMoveTimeout = null; }, 30);
+                    const t = e.touches[0];
+                    const c = getScaledCoords({ clientX: t.clientX, clientY: t.clientY });
+                    ws.send(JSON.stringify({ type: 'mouseEvent', pageId, event: {
+                        type: 'mouseMoved', x: c.x, y: c.y, button: 'none', modifiers: 0
+                    }}));
+                };
+
+                // Navigation bar
+                urlInput.onkeydown = (e) => {
+                    if (e.key === 'Enter' && ws.readyState === WebSocket.OPEN) {
+                        e.preventDefault();
+                        ws.send(JSON.stringify({ type: 'navigation', pageId, event: { url: urlInput.value } }));
+                        canvas.focus();
+                    }
+                };
+                document.getElementById('browser-back').onclick = () => {
+                    if (ws.readyState === WebSocket.OPEN)
+                        ws.send(JSON.stringify({ type: 'navigation', pageId, event: { action: 'back' } }));
+                };
+                document.getElementById('browser-forward').onclick = () => {
+                    if (ws.readyState === WebSocket.OPEN)
+                        ws.send(JSON.stringify({ type: 'navigation', pageId, event: { action: 'forward' } }));
+                };
+                document.getElementById('browser-refresh').onclick = () => {
+                    if (ws.readyState === WebSocket.OPEN)
+                        ws.send(JSON.stringify({ type: 'navigation', pageId, event: { action: 'refresh' } }));
+                };
+                document.getElementById('browser-zoom-in').onclick = () => zoomIn();
+                document.getElementById('browser-zoom-out').onclick = () => zoomOut();
+                document.getElementById('browser-zoom-reset').onclick = () => zoomReset();
+            }
+
+            function disconnect() {
+                if (castWs) { castWs.onclose = null; castWs.close(); castWs = null; }
+                activePageId = null;
+                connected = false;
+                stopTabPolling();
+                tabs = [];
+                tabBar.innerHTML = '';
+            }
+
+            function setUsername(u) { username = u; }
+
+            new ResizeObserver(() => {}).observe(container);
+
+            return { connect, disconnect, setUsername };
+        })();
+        browserViewer.setUsername("__OWNER_USERNAME__");
+        browserViewer.connect();
+        window.addEventListener('beforeunload', () => browserViewer.disconnect());
+    </script>
+</body>
+</html>

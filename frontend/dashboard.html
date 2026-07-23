@@ -1,0 +1,1622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=3">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=3">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=3">
+    <link rel="shortcut icon" href="/static/favicon.ico?v=3">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=3">
+    <title>ShellTeam</title>
+    <link rel="stylesheet" href="/static/tokens.css">
+    <link rel="stylesheet" href="/static/base.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; height: 100%; overflow: hidden;
+            background: var(--surface-0); color: var(--text-primary);
+            font-family: var(--font-sans);
+        }
+        body { display: flex; flex-direction: column; }
+
+        /* Top bar */
+        .topbar {
+            display: flex; align-items: center; gap: 16px;
+            padding: 8px 16px; flex-shrink: 0;
+            background: var(--surface-1); border-bottom: 1px solid var(--border);
+        }
+        .brand {
+            display: flex; align-items: center; gap: 8px;
+            font-weight: var(--weight-bold); font-size: var(--text-md);
+            letter-spacing: -0.01em;
+        }
+        .brand img { width: 22px; height: 22px; }
+        .topbar .status {
+            display: flex; align-items: center; gap: 6px;
+            font-size: var(--text-xs); color: var(--text-tertiary);
+        }
+        /* Feedback is a low-frequency, get-out-of-the-way action: push it (and
+           the connection status that follows) to the far right of the topbar so
+           the brand keeps the top-left corner. Scoped to the owner dashboard —
+           the shared .fb-trigger base rule (feedback.js) is untouched, so the
+           employee shell keeps its own layout. */
+        .topbar .fb-trigger { margin-left: auto; }
+
+        /* Feedback widget CSS lives in the shared module /static/feedback.js */
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--text-tertiary);
+        }
+        .status-dot--running { background: var(--positive); }
+        .status-dot--stopped { background: var(--negative); }
+
+        /* Tab bar */
+        .tab-bar {
+            display: flex; align-items: center; gap: 2px;
+            padding: 0 12px; flex-shrink: 0;
+            background: var(--surface-1); border-bottom: 1px solid var(--border);
+        }
+        .tab {
+            display: flex; align-items: center; gap: 7px;
+            padding: 9px 14px; cursor: pointer; user-select: none;
+            font-size: var(--text-sm); font-weight: var(--weight-medium);
+            color: var(--text-secondary); background: transparent;
+            border: 0; font-family: inherit;
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+            transition: color var(--duration-fast) var(--ease-out);
+        }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active { color: var(--text-primary); border-bottom-color: var(--brand); }
+        .tab svg { width: 16px; height: 16px; }
+
+        /* Mobile: every enabled tab fits on one row — equal columns, icon over label,
+           no horizontal scrolling. */
+        @media (max-width: 640px) {
+            .topbar { gap: 8px; padding: 8px 12px; }
+            .fb-trigger span { display: none; }   /* icon-only Feedback button */
+            /* 44px phone tap area via invisible overlay — visual size stays
+               (release-audit P2-03: it measured 38x26). */
+            .fb-trigger { padding: 6px 8px; position: relative; }
+            .fb-trigger::after {
+                content: ''; position: absolute;
+                left: calc(50% - 22px); top: calc(50% - 22px);
+                width: 44px; height: 44px;
+            }
+            .tab-bar { padding: 0; gap: 0; }
+            .tab {
+                flex: 1 1 0; min-width: 0;
+                flex-direction: column; gap: 4px;
+                padding: 8px 2px;
+                font-size: 11px; line-height: 1.1; text-align: center;
+            }
+            .tab svg { width: 19px; height: 19px; }
+        }
+
+        /* Workspace split: tabs+panels (left) | report panel (right, full height) */
+        .workspace-split { flex: 1; min-height: 0; display: flex; }
+        .workspace-content { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .workspace-tabs { flex-shrink: 0; }
+
+        /* Panels */
+        .main { flex: 1; min-height: 0; position: relative; }
+        .panel { position: absolute; inset: 0; display: none; }
+        .panel.active { display: flex; flex-direction: column; }
+        .panel iframe { width: 100%; height: 100%; border: none; background: var(--surface-0); }
+
+        /* Report panel (right half of the split) */
+        .report-panel {
+            width: 50%; flex-shrink: 0; min-width: 0;
+            display: flex; flex-direction: column;
+            background: var(--surface-0); border-left: 1px solid var(--border);
+        }
+        .report-panel.hidden { display: none; }
+        .report-panel-header {
+            display: flex; align-items: center; gap: 8px;
+            height: 44px; min-height: 44px; padding: 0 8px 0 14px;
+            background: var(--surface-1); border-bottom: 1px solid var(--border);
+        }
+        .report-panel-title {
+            flex: 1; min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold);
+            color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .report-panel-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+        .report-btn {
+            display: inline-flex; align-items: center; gap: 5px;
+            height: 30px; padding: 0 11px; border-radius: var(--radius-md);
+            border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+            font-family: inherit; font-size: var(--text-xs); cursor: pointer; white-space: nowrap;
+            transition: border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+        }
+        .report-btn:hover:not(:disabled) { border-color: var(--brand); }
+        .report-btn:disabled { opacity: .45; cursor: not-allowed; }
+        .report-btn.is-public { color: var(--positive); border-color: var(--positive); }
+        .report-btn-icon { padding: 0; width: 30px; justify-content: center; font-size: 15px; }
+        .report-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+
+        /* Report open → the workspace is half-width, so compact the tab bar
+           (icon over label, equal columns) — never scroll horizontally. */
+        .tab-bar { overflow: hidden; }
+        .workspace-split.report-open .tab-bar { padding: 0; gap: 0; }
+        .workspace-split.report-open .tab {
+            flex: 1 1 0; min-width: 0; flex-direction: column; gap: 4px;
+            padding: 8px 2px; font-size: 11px; line-height: 1.1; text-align: center;
+        }
+        .workspace-split.report-open .tab svg { width: 19px; height: 19px; }
+
+        /* Toast (e.g. "Link copied") — green by default, red when .err */
+        .dash-toast {
+            display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            padding: 10px 18px; border-radius: var(--radius-md); font-size: var(--text-sm);
+            background: var(--positive); color: #0a0a0a; z-index: 200;
+        }
+        .dash-toast.visible { display: block; }
+        .dash-toast.err { background: var(--negative); color: #fff; }
+
+        /* Mobile: the report panel takes over instead of splitting. */
+        @media (max-width: 768px) {
+            .report-panel { width: 100%; border-left: none; }
+            .workspace-split.report-open .workspace-content { display: none; }
+        }
+
+        /* Settings panel */
+        #panel-settings { overflow-y: auto; padding: 28px 32px; display: none; }
+        #panel-settings.active { display: block; }
+        .settings-wrap { max-width: 720px; margin: 0 auto; }
+        .settings-wrap h1 { font-size: var(--text-xl); margin: 0 0 4px; }
+        .settings-wrap p.sub { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 24px; }
+        .card {
+            background: var(--surface-1); border: 1px solid var(--border);
+            border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 16px;
+        }
+        .card h2 { font-size: var(--text-base); margin: 0 0 12px; font-weight: var(--weight-semibold); }
+        .kv { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: var(--text-sm); }
+        .kv:not(:last-child) { border-bottom: 1px solid var(--border); }
+        .kv .k { color: var(--text-secondary); }
+        .kv .v { color: var(--text-primary); font-family: var(--font-mono); font-size: var(--text-xs); }
+        .card a { color: var(--brand); text-decoration: none; }
+        .card a:hover { text-decoration: underline; }
+        .muted { color: var(--text-tertiary); font-size: var(--text-xs); margin-top: 10px; line-height: 1.5; }
+
+        /* ── AI providers panel ───────────────────────────────────────────── */
+        .ai-err { display: none; color: var(--negative); font-size: var(--text-xs); margin-bottom: 10px; }
+        .ai-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px; margin-bottom: 16px; }
+        .ai-tab {
+            flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 7px 8px; border: 0; background: transparent; cursor: pointer;
+            color: var(--text-tertiary); font-size: var(--text-sm); font-weight: var(--weight-medium);
+            border-radius: var(--radius-sm); font-family: inherit;
+        }
+        .ai-tab.active { background: var(--surface-2); color: var(--text-primary); }
+        .ai-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); opacity: .45; }
+        .ai-tab .dot.on { background: var(--positive); opacity: 1; }
+        .ai-panel { display: none; }
+        .ai-panel.active { display: block; }
+        .ai-oauth-btn {
+            display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+            padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-md);
+            background: var(--surface-2); color: var(--text-primary);
+            font-weight: var(--weight-medium); font-size: var(--text-sm); cursor: pointer; font-family: inherit;
+        }
+        .ai-oauth-btn:hover { border-color: var(--border-hover); }
+        .ai-oauth-hint { color: var(--text-tertiary); font-size: var(--text-xs); margin-top: 6px; text-align: center; }
+        .ai-divider { text-align: center; color: var(--text-tertiary); font-size: var(--text-xs); margin: 16px 0; }
+        .ai-key-row { display: flex; gap: 8px; }
+        .ai-key-row input {
+            flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--border);
+            border-radius: var(--radius-md); background: var(--surface-0); color: var(--text-primary);
+            font-size: var(--text-sm); font-family: var(--font-mono);
+        }
+        .ai-btn {
+            padding: 9px 16px; border: 0; border-radius: var(--radius-md); background: var(--brand);
+            color: #0a0a0a; font-weight: var(--weight-semibold); font-size: var(--text-sm);
+            cursor: pointer; font-family: inherit; white-space: nowrap;
+        }
+        .ai-btn:disabled { opacity: .45; cursor: not-allowed; }
+        .ai-hint { color: var(--text-tertiary); font-size: var(--text-xs); margin-top: 8px; }
+        .ai-hint a { color: var(--brand); text-decoration: none; }
+        .ai-pending {
+            margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border);
+            border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.55;
+        }
+        .ai-pending input {
+            width: 100%; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border);
+            border-radius: var(--radius-md); background: var(--surface-0); color: var(--text-primary); font-family: var(--font-mono);
+        }
+        .ai-pending .ai-btn { margin-top: 10px; }
+        .ai-device-code { font-family: var(--font-mono); font-size: var(--text-lg); letter-spacing: 3px; margin: 8px 0; color: var(--text-primary); }
+        .ai-success { display: none; align-items: center; gap: 12px; color: var(--positive); font-size: var(--text-sm); font-weight: var(--weight-medium); }
+        .ai-change { display: none; font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 8px; cursor: pointer; }
+        .ai-test-result { margin-top: 10px; font-size: var(--text-xs); min-height: 1em; }
+        .ai-test-result .ok { color: var(--positive); }
+        .ai-test-result .err { color: var(--negative); }
+        .ai-test-result .latency { color: var(--text-tertiary); margin-left: 6px; }
+        .ai-oc-card { padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+        .ai-oc-title { font-weight: var(--weight-semibold); margin-bottom: 6px; }
+        .ai-oc-body { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.55; }
+        .ai-oc-body code { font-family: var(--font-mono); font-size: .82em; color: var(--text-primary); }
+        @media (max-width: 520px) {
+            #panel-settings { padding: 20px 14px; }
+            .card { padding: 16px 14px; }
+            .ai-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        /* ── Feature keys panel (reuses ai-key-row/ai-btn/ai-hint patterns) ── */
+        .fk-row { padding: 13px 0; }
+        .fk-row:not(:last-child) { border-bottom: 1px solid var(--border); }
+        .fk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .fk-label { flex: 1; min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-medium); }
+        .fk-badge { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-tertiary); white-space: nowrap; }
+        .fk-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); opacity: .45; }
+        .fk-badge.on { color: var(--positive); }
+        .fk-badge.on .dot { background: var(--positive); opacity: 1; }
+        .fk-clear {
+            padding: 4px 9px; border: 1px solid var(--border); border-radius: var(--radius-md);
+            background: transparent; color: var(--text-tertiary); font-family: inherit;
+            font-size: var(--text-xs); cursor: pointer; white-space: nowrap;
+        }
+        .fk-clear:hover { color: var(--negative); border-color: var(--negative); }
+        .fk-err { display: none; color: var(--negative); font-size: var(--text-xs); margin-top: 8px; line-height: 1.5; }
+        /* Auto-update frequency: a segmented control — only the active mode is brand-filled. */
+        .au-mode { background: var(--surface-2); color: var(--text-primary); }
+        .au-mode.active { background: var(--brand); color: #0a0a0a; }
+        .fk-restart { display: none; margin-top: 10px; font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.6; }
+        .fk-restart code {
+            display: block; margin-top: 5px; padding: 7px 10px; border: 1px solid var(--border);
+            border-radius: var(--radius-md); background: var(--surface-0); color: var(--text-primary);
+            font-family: var(--font-mono); font-size: var(--text-xs); cursor: pointer; user-select: all;
+        }
+
+        /* ── Usage panel ──────────────────────────────────────────────────── */
+        .usage-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+        .usage-head h2 { margin-bottom:4px; }
+        .usage-head .muted { margin:0; }
+        .usage-refresh { padding:7px 11px; border:1px solid var(--border); border-radius:var(--radius-md);
+            background:var(--surface-2); color:var(--text-secondary); font:inherit; font-size:var(--text-xs);
+            cursor:pointer; white-space:nowrap; }
+        .usage-refresh:hover { color:var(--text-primary); border-color:var(--border-hover); }
+        .usage-refresh:disabled { opacity:.5; cursor:wait; }
+        .usage-meta { display:flex; justify-content:space-between; gap:12px; margin:14px 0 10px;
+            color:var(--text-tertiary); font-size:var(--text-xs); }
+        .usage-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
+        .usage-provider { min-width:0; padding:13px 14px; border:1px solid var(--border);
+            border-radius:var(--radius-md); background:var(--surface-2); }
+        .usage-provider-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .usage-provider-name { font-weight:var(--weight-semibold); font-size:var(--text-sm); }
+        .usage-state { color:var(--text-tertiary); font-size:var(--text-xs); }
+        .usage-state.live { color:var(--positive); }
+        .usage-state.unavailable { color:var(--negative); }
+        .usage-billing { color:var(--text-tertiary); font-size:var(--text-xs); margin-top:3px; }
+        .usage-window { margin-top:13px; }
+        .usage-window-row { display:flex; justify-content:space-between; gap:8px; font-size:var(--text-xs); }
+        .usage-window-row span:first-child { color:var(--text-secondary); }
+        .usage-window-row span:last-child { color:var(--text-primary); font-family:var(--font-mono); }
+        .usage-track { height:5px; margin-top:7px; border-radius:99px; background:var(--surface-0); overflow:hidden; }
+        .usage-fill { height:100%; border-radius:inherit; background:var(--brand); transition:width .35s var(--ease-out); }
+        .usage-fill.high { background:var(--negative); }
+        .usage-fill.mid { background:var(--warning); }
+        .usage-detail { margin-top:12px; color:var(--text-tertiary); font-size:var(--text-xs); line-height:1.45; }
+        .usage-detail a { color:var(--brand); }
+        .usage-state.setup_required { color:var(--warning); }
+        @media (max-width:520px) { .usage-head { display:block; } .usage-refresh { margin-top:10px; } }
+
+        /* ── First-run wizard ─────────────────────────────────────────────── */
+        .wizard {
+            position: fixed; inset: 0; z-index: 300; display: none;
+            justify-content: center; overflow-y: auto;
+            background: var(--surface-0); padding: 40px 20px;
+        }
+        .wizard.show { display: flex; }
+        .wizard-card { width: 100%; max-width: 560px; margin: auto; text-align: center; }
+        .wizard-step { display: none; }
+        .wizard-step.active { display: block; }
+        .wizard h1 { font-size: var(--text-xl); margin: 0 0 6px; }
+        .wizard .wizard-sub { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.6; margin: 0 0 20px; }
+        .wizard-risks {
+            text-align: left; border: 1px solid var(--border); border-radius: var(--radius-lg);
+            background: var(--surface-1); padding: 16px 18px;
+            font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6;
+        }
+        .wizard-risks strong { color: var(--text-primary); }
+        .wizard-risks ul { margin: 10px 0; padding-left: 20px; }
+        .wizard-risks li { margin: 4px 0; }
+        .wizard-accept {
+            display: flex; align-items: center; gap: 9px; margin-top: 14px;
+            color: var(--text-primary); font-weight: var(--weight-medium); cursor: pointer;
+        }
+        .wizard-accept input { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
+        .wizard-ai-slot { text-align: left; }
+        .wizard-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+        .wizard-actions .ai-btn { width: 100%; padding: 11px; }
+        .wizard-skip {
+            background: none; border: 0; color: var(--text-tertiary);
+            font-family: inherit; font-size: var(--text-xs); cursor: pointer;
+        }
+        .wizard-skip:hover { color: var(--text-secondary); text-decoration: underline; }
+        /* Step headings take programmatic focus (tabindex="-1") so each step
+           opens announced and scrolled to the top; they are not tab stops, so
+           no visible ring. */
+        .wizard h1:focus { outline: none; }
+        /* Touch target enforcement — mobile (same bar as base.css / SHE-79).
+           min-height grows the tap box; visual weight stays the same because
+           the type and paddings don't change. */
+        @media (pointer: coarse) {
+            .ai-tab, .ai-btn, .wizard-skip { min-height: 44px; }
+            .wizard-accept { min-height: 44px; align-items: center; }
+            .wizard-accept input { width: 20px; height: 20px; }
+        }
+
+        /* ── Agents tab "no provider configured" gate ─────────────────────── */
+        .gate {
+            position: absolute; inset: 0; z-index: 20; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            gap: 16px; text-align: center; background: var(--surface-0); padding: 24px;
+        }
+        .gate.show { display: flex; }
+        .gate h2 { margin: 0; font-size: var(--text-lg); }
+        .gate p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); max-width: 440px; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <img src="/static/favicon.svg?v=3" alt="">
+            <span>Shell<span style="color:var(--brand)">Team</span></span>
+        </div>
+        <button type="button" id="feedback-open" class="fb-trigger" title="Report a bug or request a feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 2 1.88 1.88M14.12 3.88 16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4M20.97 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>
+            <span>Feedback</span>
+        </button>
+        <span class="status">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">checking…</span>
+        </span>
+    </header>
+
+    <!-- Workspace split: the tabs + panels are the left half; when a report is
+         open it takes the right half at full height, reaching the tab row. -->
+    <div class="workspace-split" id="workspaceSplit">
+    <div class="workspace-content">
+    <nav class="workspace-tabs" aria-label="Workspace views">
+    <div class="tab-bar" role="tablist" aria-label="Workspace">
+        <button class="tab active" id="tab-agents" data-tab="agents" type="button" role="tab" aria-controls="panel-agents" aria-selected="true" tabindex="0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+            Agents
+        </button>
+        <button class="tab" id="tab-terminal" data-tab="terminal" type="button" role="tab" aria-controls="panel-terminal" aria-selected="false" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+            Terminal
+        </button>
+        <button class="tab" id="tab-files" data-tab="files" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+            Files
+        </button>
+        <button class="tab" data-tab="browser" type="button" role="tab" id="browser-tab" style="display:none" aria-controls="panel-browser" aria-selected="false" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>
+            Browser
+        </button>
+        <button class="tab" data-tab="knowledge" type="button" role="tab" id="knowledge-tab" style="display:none" aria-controls="panel-knowledge" aria-selected="false" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+            Knowledge
+        </button>
+        <button class="tab" id="tab-settings" data-tab="settings" type="button" role="tab" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            Settings
+        </button>
+    </div>
+    </nav>
+
+    <main class="main" id="workspace-main">
+        <div class="panel active" id="panel-agents" role="tabpanel" aria-labelledby="tab-agents">
+            <iframe id="agents-iframe" title="Agents" allow="microphone"></iframe>
+            <div class="gate" id="agents-gate">
+                <h2>No AI provider connected yet</h2>
+                <p>Connect Claude, OpenAI, Antigravity, or OpenCode to start driving agents — it takes about a minute.</p>
+                <button class="ai-btn" id="agents-gate-btn">Set up in Settings</button>
+            </div>
+        </div>
+        <div class="panel" id="panel-terminal" role="tabpanel" aria-labelledby="tab-terminal">
+            <iframe id="terminal-iframe" title="Terminal"></iframe>
+        </div>
+        <div class="panel" id="panel-files" role="tabpanel" aria-labelledby="tab-files">
+            <iframe id="files-iframe" title="Files"></iframe>
+        </div>
+        <div class="panel" id="panel-browser" role="tabpanel" aria-labelledby="browser-tab">
+            <iframe id="browser-iframe" title="Browser"></iframe>
+        </div>
+        <div class="panel" id="panel-knowledge" role="tabpanel" aria-labelledby="knowledge-tab">
+            <iframe id="knowledge-iframe" title="Knowledge"></iframe>
+        </div>
+        <div class="panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings">
+            <div class="settings-wrap">
+                <h1>Settings</h1>
+                <p class="sub">Single-user, self-hosted ShellTeam.</p>
+
+                <div class="card">
+                    <h2>Workspace</h2>
+                    <div class="kv"><span class="k">Owner</span><span class="v" id="set-owner">—</span></div>
+                    <div class="kv"><span class="k">Domain</span><span class="v" id="set-domain">—</span></div>
+                    <div class="kv"><span class="k">Public folder</span><span class="v" id="set-public">—</span></div>
+                </div>
+
+                <div class="card">
+                    <h2>Devices</h2>
+                    <p class="muted">
+                        Add a phone or another computer without typing your token. This
+                        generates a one-time link (valid 5 minutes) — open it or scan the
+                        QR on the new device and it signs in. Nothing to copy-paste or leak.
+                    </p>
+                    <button id="add-device" type="button"
+                        style="margin-top:6px;padding:9px 18px;border:0;border-radius:8px;
+                        background:#f59e0b;color:#0a0a0a;font-weight:600;font-size:.88rem;cursor:pointer">
+                        Add a device
+                    </button>
+                    <div id="enroll-out" style="display:none;margin-top:18px;text-align:center">
+                        <div id="enroll-qr" style="width:180px;height:180px;margin:0 auto;background:#fff;
+                            border-radius:10px;padding:10px;box-sizing:border-box"></div>
+                        <p class="muted" style="margin:12px 0 6px">Scan to sign in, or open this link on the device:</p>
+                        <div style="display:flex;gap:8px;max-width:420px;margin:0 auto">
+                            <input id="enroll-url" readonly
+                                style="flex:1;min-width:0;padding:8px;border-radius:8px;border:1px solid #333;
+                                background:#141414;color:#e5e5e5;font-size:.8rem"/>
+                            <button id="enroll-copy" type="button"
+                                style="padding:8px 14px;border:0;border-radius:8px;background:#262626;
+                                color:#e5e5e5;font-weight:600;font-size:.82rem;cursor:pointer">Copy</button>
+                        </div>
+                        <p id="enroll-expiry" class="muted" style="margin:10px 0 0;font-size:.78rem"></p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="usage-head">
+                        <div>
+                            <h2>Usage &amp; limits</h2>
+                            <p class="muted">Provider-reported quota, reset windows, and credits in one glance.</p>
+                        </div>
+                        <button id="usage-refresh" class="usage-refresh" type="button">Refresh</button>
+                    </div>
+                    <div id="usage-meta" class="usage-meta"><span>Not checked yet</span><span>Values come from each provider</span></div>
+                    <div id="usage-grid" class="usage-grid" aria-live="polite">
+                        <div class="usage-detail">Click Refresh to check Claude, Codex, and Antigravity.</div>
+                    </div>
+                    <p class="muted" style="margin-bottom:0">Usage checks stay on this machine. ShellTeam never sends provider credentials to the browser.</p>
+                </div>
+
+                <div class="card">
+                    <h2>AI providers</h2>
+                    <p class="muted" style="margin-top:0;margin-bottom:14px">
+                        Connect a coding-agent provider. Keys are saved on the server (in your
+                        home config) and never shown in the browser. OpenCode activates when
+                        you add your Fireworks key.
+                    </p>
+                    <div id="ai-panel-root"></div>
+                </div>
+
+                <div class="card">
+                    <h2>GitHub</h2>
+                    <p class="muted" style="margin-top:0;margin-bottom:14px">
+                        Sign in once (30-second device flow) and every coding agent can
+                        push, pull, and open PRs as you — no tokens to create or paste.
+                    </p>
+                    <!-- The connect card is the cockpit's github.html — one
+                         implementation shared with the wizard and guest shells. -->
+                    <div id="github-connect-root">
+                        <iframe id="github-connect-frame" title="Connect GitHub"
+                            style="width:100%;height:300px;border:0;border-radius:10px;background:transparent"></iframe>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Feature keys</h2>
+                    <p class="muted" style="margin-top:0;margin-bottom:4px">
+                        Optional superpowers — each key unlocks one feature. Keys are
+                        validated live, saved on the server, and never shown in the
+                        browser. You can add or change these anytime.
+                    </p>
+                    <div id="feature-keys-root"></div>
+                </div>
+
+                <div class="card">
+                    <h2>Automatic updates</h2>
+                    <p class="muted" style="margin-top:0;margin-bottom:4px">
+                        Keep this box on the latest ShellTeam release. When on, a
+                        nightly check fast-forwards to the newest release tag and
+                        restarts the services, rolling back automatically if the
+                        update comes up unhealthy. Local code changes are never
+                        touched — a dirty or diverged checkout skips the update
+                        and reports it below.
+                    </p>
+                    <div id="auto-update-root"></div>
+                </div>
+
+                <div class="card">
+                    <h2>About</h2>
+                    <p class="muted">
+                        ShellTeam — an open-source command center for coding agents.
+                        See <code>README.md</code> for self-hosting and deployment docs.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </main><!-- /main -->
+    </div><!-- /workspace-content -->
+
+    <!-- Report panel: right half of the workspace split, full height (reaches the
+         tab row). Sandboxed (no allow-same-origin). Driven by the cockpit iframe
+         via postMessage; visibility toggled through /api/computers/reports. -->
+    <aside class="report-panel hidden" id="reportPanel" aria-label="Report">
+        <div class="report-panel-header">
+            <span class="report-panel-title" id="reportTitle">Report</span>
+            <div class="report-panel-actions">
+                <button class="report-btn" id="reportVisBtn" title="Make public / private">🔒 Private</button>
+                <button class="report-btn" id="reportShareBtn" title="Make public to share" disabled>Share</button>
+                <button class="report-btn report-btn-icon" id="reportOpenBtn" title="Open in new tab">↗</button>
+                <button class="report-btn report-btn-icon" id="reportCloseBtn" title="Close">✕</button>
+            </div>
+        </div>
+        <iframe class="report-frame" id="reportFrame"
+                sandbox="allow-scripts allow-popups allow-forms allow-downloads"
+                title="Report"></iframe>
+    </aside>
+    </div><!-- /workspace-split -->
+
+    <!-- First-run wizard: shown once on a fresh box (no provider configured and
+         never completed). Step 2 borrows the Settings #ai-panel-root node — one
+         provider renderer, one set of handlers, no duplicated UI. -->
+    <div class="wizard" id="wizard" role="dialog" aria-modal="true" aria-labelledby="wizard-title" aria-hidden="true" inert>
+        <div class="wizard-card">
+            <div class="wizard-step active" id="wizard-step-1">
+                <div class="brand" style="justify-content:center;margin-bottom:16px">
+                    <img src="/static/favicon.svg?v=3" alt="">
+                    <span>Shell<span style="color:var(--brand)">Team</span></span>
+                </div>
+                <h1 id="wizard-title" tabindex="-1">Welcome to your ShellTeam box</h1>
+                <p class="wizard-sub">This machine is now a cloud computer you drive through
+                    coding agents — they build, run, and ship software right here, live at a URL.</p>
+                <div class="wizard-risks">
+                    <strong>Important — please read carefully</strong>
+                    <p style="margin:8px 0 0">ShellTeam's AI agents take <strong>real actions</strong>
+                        on this machine: they run commands, install packages, manage services, and
+                        edit files — with no container between them and the box.</p>
+                    <ul>
+                        <li>Agents may produce unexpected results or take unintended actions.</li>
+                        <li>You are responsible for what agents do on your box.</li>
+                        <li>Connecting third-party apps grants agents access to those services.</li>
+                        <li>Treat the box as dedicated and recoverable — keep anything
+                            irreplaceable backed up elsewhere (see <code>SECURITY.md</code>).</li>
+                    </ul>
+                    <p style="margin:0">ShellTeam is provided <strong>"as is"</strong>, without
+                        warranty of any kind — you use it at your own risk.</p>
+                    <label class="wizard-accept">
+                        <input type="checkbox" id="wizard-accept">
+                        I understand and accept these risks
+                    </label>
+                </div>
+                <div class="wizard-actions">
+                    <button class="ai-btn" id="wizard-next" disabled>Get started</button>
+                </div>
+            </div>
+            <div class="wizard-step" id="wizard-step-2">
+                <h1 id="wizard-title-ai" tabindex="-1">Connect your AI</h1>
+                <p class="wizard-sub">Sign in with a coding-agent subscription, or paste an API
+                    key. One provider is enough to start — add the others anytime in Settings.</p>
+                <div class="wizard-ai-slot" id="wizard-ai-slot"></div>
+                <div class="wizard-actions">
+                    <button class="ai-btn" id="wizard-finish" disabled>Connect a provider above to continue</button>
+                    <button class="wizard-skip" id="wizard-skip">Skip — I'll set this up later in Settings</button>
+                </div>
+            </div>
+            <div class="wizard-step" id="wizard-step-3">
+                <h1 id="wizard-title-github" tabindex="-1">Connect GitHub</h1>
+                <p class="wizard-sub">Recommended — agents push, pull, and open PRs as you.
+                    A 30-second sign-in, no tokens to create or paste.</p>
+                <div class="wizard-ai-slot" id="wizard-github-slot"></div>
+                <div class="wizard-actions">
+                    <button class="ai-btn" id="wizard-github-done">Start driving agents →</button>
+                    <button class="wizard-skip" id="wizard-github-skip">Skip — I'll connect later in Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="dash-toast" id="dashToast"></div>
+
+    <!-- Feedback modal + logic: shared module (loaded below) -->
+    <script src="/static/feedback.js?v=__ASSET_VERSION__"></script>
+
+    <script>
+        // ─── Auth gate ──────────────────────────────────────────────────────
+        // Credential-blind by design (split-credential model): the session lives
+        // in HttpOnly cookies the server sets — page JS never sees, stores, or
+        // writes a token. The gate just asks the server whether this browser is
+        // signed in; if not, the login overlay POSTs the OWNER_TOKEN once to
+        // /api/auth/login, which sets the cookies. Legacy sessions (pre-split
+        // JS cookie) are migrated server-side on this page's own load.
+        // Localhost-trust (no token set) skips all of this.
+        const APP_DOMAIN = "__APP_DOMAIN__";
+        const TOKEN_REQUIRED = "__OWNER_TOKEN_SET__" === "1";
+
+        // Migration scrub: pre-split builds mirrored the master token into
+        // localStorage. It is never read anymore, but it must not linger
+        // readable either. (The legacy JS cookie is deleted server-side.)
+        localStorage.removeItem('shellteam_token');
+
+        function showLogin() {
+            const o = document.createElement('div');
+            o.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;' +
+                'justify-content:center;background:#0a0a0a;color:#e5e5e5;font-family:system-ui,-apple-system,sans-serif';
+            o.innerHTML =
+                '<form style="max-width:340px;padding:28px;text-align:center">' +
+                '<h2 style="margin:0 0 4px;font-weight:700">Shell<span style="color:#f59e0b">Team</span></h2>' +
+                '<p style="color:#888;font-size:.9rem;line-height:1.5;margin:0 0 18px">Enter your <code>OWNER_TOKEN</code> to continue. ' +
+                'It was printed by <code>install.sh</code> and saved in <code>.env</code>.</p>' +
+                '<input id="st-tok" type="password" placeholder="OWNER_TOKEN" autocomplete="current-password" ' +
+                'style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #333;' +
+                'background:#141414;color:#e5e5e5;font-size:.95rem;outline:none"/>' +
+                '<div id="st-err" style="display:none;color:#ef4444;font-size:.85rem;margin-top:10px"></div>' +
+                '<button type="submit" style="margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;' +
+                'background:#f59e0b;color:#0a0a0a;font-weight:600;font-size:.9rem;cursor:pointer">Unlock</button>' +
+                '</form>';
+            document.body.appendChild(o);
+            const input = o.querySelector('#st-tok');
+            const err = o.querySelector('#st-err');
+            input.focus();
+            o.querySelector('form').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const v = input.value.trim();
+                if (!v) return;
+                try {
+                    const r = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token: v }),
+                    });
+                    if (r.ok) { location.reload(); return; }
+                    const j = await r.json().catch(() => ({}));
+                    err.textContent = r.status === 401 ? 'Invalid token — check .env on the box.'
+                        : (j.detail || 'Login failed (HTTP ' + r.status + ')');
+                } catch {
+                    err.textContent = 'Network error — is the box reachable?';
+                }
+                err.style.display = 'block';
+            });
+        }
+
+        (async function authGate() {
+            if (!TOKEN_REQUIRED) return;            // localhost-trust: nothing to do
+            try {
+                const r = await fetch('/api/auth/session');
+                if (r.ok) return;                   // HttpOnly session cookie is live
+            } catch (e) { console.error('[auth] session probe failed', e); }
+            showLogin();                            // overlay covers the shell until unlocked
+        })();
+        // ────────────────────────────────────────────────────────────────────
+
+        const OWNER_USERNAME = "__OWNER_USERNAME__";
+        const COCKPIT_URL = "__COCKPIT_URL__";
+        // Bumps whenever a served HTML shell changes, so iframe URLs can't be
+        // served stale from a browser/PWA cache after a deploy.
+        const ASSET_VERSION = "__ASSET_VERSION__";
+
+        function getBaseDomain() { return window.location.hostname; }
+
+        // Per-tab iframe source resolvers. Computed lazily so panels only
+        // connect (terminal WS, browser screencast, file manager) once opened.
+        function srcFor(tab) {
+            const base = getBaseDomain();
+            switch (tab) {
+                // Version the cockpit URL like the sibling iframes — without it
+                // the browser kept a cached cockpit (old app.js) across deploys
+                // until a hard refresh, so new handlers like the report side
+                // panel silently didn't exist (SHE-39).
+                case 'agents':   return COCKPIT_URL + (COCKPIT_URL.includes('?') ? '&' : '?') + 'v=' + ASSET_VERSION;
+                case 'terminal': return `/terminal?v=${ASSET_VERSION}`;
+                // Main-origin on purpose: the editor's writes (/_api/) require the
+                // master session cookie, which is host-only on this origin. The
+                // file SUBDOMAIN carries only the read-only credential now.
+                case 'files':    return `/_editor/?v=${ASSET_VERSION}`;
+                case 'browser':  return `/browser?v=${ASSET_VERSION}`;
+                case 'knowledge': return `/knowledge?v=${ASSET_VERSION}`;
+                default:         return null;
+            }
+        }
+
+        const IFRAME_IDS = {
+            agents: 'agents-iframe',
+            terminal: 'terminal-iframe',
+            files: 'files-iframe',
+            browser: 'browser-iframe',
+            knowledge: 'knowledge-iframe',
+        };
+
+        // The Knowledge tab only exists with the dreaming module (the server
+        // 404s /knowledge without it) — probe once and reveal the tab. The
+        // initial-tab logic awaits this so a #knowledge deep link validates
+        // against the revealed tab, not a race.
+        const knowledgeProbe = fetch('/api/knowledge/dream/status').then(r => {
+            if (r.ok) document.getElementById('knowledge-tab').style.display = '';
+        }).catch(() => {});
+
+        // The Browser tab only works with the browser module (Steel container) —
+        // the server injects whether it's installed, same flag guest.html uses.
+        if ("__HAS_BROWSER__" === "true") document.getElementById('browser-tab').style.display = '';
+        const loaded = new Set();
+
+        function ensureLoaded(tab) {
+            const id = IFRAME_IDS[tab];
+            if (!id || loaded.has(tab)) return;
+            const src = srcFor(tab);
+            if (src) {
+                document.getElementById(id).src = src;
+                loaded.add(tab);
+            }
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(el => {
+                const selected = el.dataset.tab === tab;
+                el.classList.toggle('active', selected);
+                el.setAttribute('aria-selected', String(selected));
+                el.tabIndex = selected ? 0 : -1;
+            });
+            document.querySelectorAll('.panel').forEach(el => {
+                const selected = el.id === `panel-${tab}`;
+                el.classList.toggle('active', selected);
+                el.setAttribute('aria-hidden', String(!selected));
+            });
+            ensureLoaded(tab);
+            if (tab === 'settings') ensureGitHubFrame();
+            history.replaceState(null, '', `#${tab}`);
+        }
+
+        // The GitHub card is the cockpit's github.html (one shared connect flow),
+        // framed SAME-ORIGIN through the control plane (/api/computers/cockpit/…)
+        // rather than the owner-<port> subdomain. This removes the widget's
+        // dependency on wildcard DNS + wildcard cert + cross-origin cookies, which
+        // can all be absent on a fresh --domain install and left the frame blank.
+        // Lazy like every other iframe: loads on first sight. If the cockpit is
+        // unreachable the frame shows a plain-text fallback instead of a grey void.
+        function ensureGitHubFrame() {
+            const f = document.getElementById('github-connect-frame');
+            if (!f || f.getAttribute('src')) return;
+            f.src = '/api/computers/cockpit/github.html?v=' + ASSET_VERSION;
+            const guard = setTimeout(() => showGitHubFallback(), 6000);
+            f.addEventListener('load', () => {
+                clearTimeout(guard);
+                // A cockpit-down proxy returns a 503 JSON body that renders as text
+                // in the frame; detect the empty/JSON case and swap in guidance.
+                try {
+                    const doc = f.contentDocument;
+                    if (doc && !doc.querySelector('.card')) showGitHubFallback();
+                } catch (_) { /* cross-origin (shouldn't happen same-origin) — leave it */ }
+            }, { once: true });
+        }
+
+        function showGitHubFallback() {
+            const root = document.getElementById('github-connect-root');
+            if (!root || root.dataset.fallback) return;
+            root.dataset.fallback = '1';
+            root.innerHTML = '<p class="muted" style="margin:0;padding:14px;border:1px solid var(--line);'
+                + 'border-radius:10px;background:var(--surface,#141414)">GitHub connect isn\'t reachable yet — '
+                + 'the Agents service may still be starting. Open the <b>Agents</b> tab once, then reload this page. '
+                + 'You can always connect later from Settings.</p>';
+        }
+
+        const workspaceTabs = [...document.querySelectorAll('.tab')];
+        workspaceTabs.forEach(el => el.addEventListener('click', () => switchTab(el.dataset.tab)));
+        document.querySelector('.tab-bar').addEventListener('keydown', (event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            const visible = workspaceTabs.filter(tab => tab.getClientRects().length > 0);
+            const current = visible.indexOf(document.activeElement);
+            if (current < 0 || !visible.length) return;
+            event.preventDefault();
+            let next = current;
+            if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = visible.length - 1;
+            else next = (current + (event.key === 'ArrowRight' ? 1 : -1) + visible.length) % visible.length;
+            switchTab(visible[next].dataset.tab);
+            visible[next].focus();
+        });
+
+        document.querySelectorAll('[data-goto]').forEach(el =>
+            el.addEventListener('click', (e) => { e.preventDefault(); switchTab(el.dataset.goto); }));
+
+        // Settings values
+        document.getElementById('set-owner').textContent = OWNER_USERNAME;
+        document.getElementById('set-domain').textContent = getBaseDomain();
+        document.getElementById('set-public').textContent = `${getBaseDomain()}/public/`;
+
+        // ─── Add a device (one-time enrollment link + QR) ───────────────────
+        (function deviceEnroll() {
+            const btn = document.getElementById('add-device');
+            if (!btn) return;
+            const out = document.getElementById('enroll-out');
+            const qr = document.getElementById('enroll-qr');
+            const urlInput = document.getElementById('enroll-url');
+            const expiry = document.getElementById('enroll-expiry');
+            const copyBtn = document.getElementById('enroll-copy');
+            let countdown = null;
+
+            btn.addEventListener('click', async () => {
+                btn.disabled = true; btn.textContent = 'Generating…';
+                try {
+                    // Same-origin: the HttpOnly session cookie authenticates this.
+                    const r = await fetch('/api/auth/enroll', { method: 'POST' });
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    const data = await r.json();
+                    qr.innerHTML = data.qr_svg;
+                    const svg = qr.querySelector('svg');
+                    if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; }
+                    urlInput.value = data.url;
+                    out.style.display = 'block';
+                    let left = data.expires_in;
+                    if (countdown) clearInterval(countdown);
+                    const tick = () => {
+                        if (left <= 0) {
+                            clearInterval(countdown);
+                            expiry.textContent = 'Link expired — generate a new one.';
+                            return;
+                        }
+                        const m = Math.floor(left / 60), s = String(left % 60).padStart(2, '0');
+                        expiry.textContent = `Expires in ${m}:${s} · single use`;
+                        left--;
+                    };
+                    tick(); countdown = setInterval(tick, 1000);
+                } catch (e) {
+                    expiry.textContent = 'Could not generate a link — try again.';
+                    out.style.display = 'block';
+                } finally {
+                    btn.disabled = false; btn.textContent = 'Add a device';
+                }
+            });
+
+            copyBtn.addEventListener('click', async () => {
+                try { await navigator.clipboard.writeText(urlInput.value); copyBtn.textContent = 'Copied'; }
+                catch { urlInput.select(); document.execCommand('copy'); copyBtn.textContent = 'Copied'; }
+                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+            });
+        })();
+
+        // ─── AI providers (setup + test + OAuth), wired to the cockpit ───────
+        // The dashboard Settings tab is the hub for provider credentials. It talks
+        // same-origin to /api/computers/ai/* (FastAPI enforces the OWNER_TOKEN and
+        // forwards to the loopback cockpit). Saving a key broadcasts status over the
+        // cockpit's WebSocket, so the Agents iframe updates live.
+        async function apiFetch(url, opts = {}) {
+            // Same-origin calls ride the HttpOnly session cookie — no headers to add.
+            try {
+                const r = await fetch(url, opts);
+                const data = await r.json().catch(() => ({}));
+                if (!r.ok) return { error: data.detail || data.error || ('HTTP ' + r.status) };
+                return data;
+            } catch (e) { return { error: 'Network error' }; }
+        }
+
+        let aiStatus = null;  // last good /ai/status, or null if unknown/unreachable
+
+        function providerConfigured(s) {
+            return !!(s && !s.error && (s.hasApiKey || s.hasOAuth || s.hasOpenAIKey
+                || s.hasCodexOAuth || s.hasAntigravityOAuth || s.openCodeAvailable));
+        }
+
+        function applyGate() {
+            const gate = document.getElementById('agents-gate');
+            if (!gate) return;
+            // Only gate when we positively know there is no working provider. If the
+            // status call failed (cockpit down), don't slap a misleading gate over it.
+            gate.classList.toggle('show', aiStatus && !aiStatus.error && !providerConfigured(aiStatus));
+        }
+
+        async function refreshAIStatus() {
+            const s = await apiFetch('/api/computers/ai/status');
+            aiStatus = s && s.error ? { error: s.error } : s;
+            applyGate();
+            updateProviderDots();
+            wizardSyncFinish();
+            return aiStatus;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
+
+        function usageBilling(mode) {
+            return ({ subscription: 'Subscription', apikey: 'API key billing', included: 'API key (Fireworks)', none: 'Not connected' })[mode] || 'Unknown billing';
+        }
+
+        function usageProviderHtml(provider) {
+            const stateLabel = provider.status === 'live' ? 'Live'
+                : provider.status === 'not_connected' ? 'Not connected'
+                : provider.status === 'setup_required' ? 'Finish sign-in'
+                : 'Unavailable';
+            const windows = (provider.windows || []).map(w => {
+                const used = Math.max(0, Math.min(100, Number(w.used_percent) || 0));
+                const level = used >= 85 ? 'high' : used >= 65 ? 'mid' : '';
+                return `<div class="usage-window">
+                    <div class="usage-window-row"><span>${escapeHtml(w.name)}</span><span>${used}% used</span></div>
+                    <div class="usage-track"><div class="usage-fill ${level}" style="width:${used}%"></div></div>
+                    <div class="usage-detail" style="margin-top:5px">Resets ${escapeHtml(w.resets_at || 'provider-defined')}</div>
+                </div>`;
+            }).join('');
+            const extras = [
+                provider.plan_tier && `Plan: ${escapeHtml(provider.plan_tier)}`,
+                provider.credits_remaining !== null && provider.credits_remaining !== undefined && `AI credits remaining: ${escapeHtml(provider.credits_remaining)}`,
+                provider.resets_available !== null && provider.resets_available !== undefined && `${escapeHtml(provider.resets_available)} usage resets available`,
+            ].filter(Boolean).join('<br>');
+            const detail = provider.error ? `<div class="usage-detail">${escapeHtml(provider.error)}</div>` : (extras ? `<div class="usage-detail">${extras}</div>` : '');
+            return `<article class="usage-provider">
+                <div class="usage-provider-head"><span class="usage-provider-name">${escapeHtml(provider.label)}</span><span class="usage-state ${escapeHtml(provider.status)}">${stateLabel}</span></div>
+                <div class="usage-billing">${usageBilling(provider.billing)}</div>
+                ${windows || detail || '<div class="usage-detail">No live quota data available yet.</div>'}
+            </article>`;
+        }
+
+        async function refreshUsage() {
+            const button = document.getElementById('usage-refresh');
+            const meta = document.getElementById('usage-meta');
+            const grid = document.getElementById('usage-grid');
+            if (!button || !meta || !grid) return;
+            button.disabled = true; button.textContent = 'Checking…';
+            meta.innerHTML = '<span>Checking provider limits…</span><span>May take a few seconds</span>';
+            const usage = await apiFetch('/api/computers/ai/usage?refresh=1');
+            button.disabled = false; button.textContent = 'Refresh';
+            if (usage.error) {
+                meta.innerHTML = `<span>Unable to check usage</span><span>${escapeHtml(usage.error)}</span>`;
+                grid.innerHTML = '<div class="usage-detail">The cockpit is unavailable. Try again when the Agents service is running.</div>';
+                return;
+            }
+            const checked = usage.generated_at ? new Date(usage.generated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'now';
+            meta.innerHTML = `<span>Checked ${escapeHtml(checked)}</span><span>Provider-reported values</span>`;
+            grid.innerHTML = Object.values(usage.providers || {}).map(usageProviderHtml).join('');
+        }
+
+        document.getElementById('usage-refresh')?.addEventListener('click', refreshUsage);
+
+        const AI_PROVIDERS = {
+            claude: { label: 'Claude', placeholder: 'sk-ant-...', getUrl: 'console.anthropic.com',
+                href: 'https://console.anthropic.com/settings/keys', oauth: 'Login with Claude',
+                oauthHint: 'Uses your Claude Pro or Max subscription',
+                done: s => s.hasApiKey || s.hasOAuth },
+            openai: { label: 'OpenAI', placeholder: 'sk-...', getUrl: 'platform.openai.com',
+                href: 'https://platform.openai.com/api-keys', oauth: 'Login with OpenAI',
+                oauthHint: 'Uses your ChatGPT Plus or Pro subscription',
+                done: s => s.hasOpenAIKey || s.hasCodexOAuth },
+            antigravity: { label: 'Antigravity', oauth: 'Login with Google', noKey: true,
+                oauthHint: "Google's Antigravity CLI (replaces Gemini CLI) — uses your Google / Gemini subscription",
+                startEp: 'antigravity-oauth/start', completeEp: 'antigravity-oauth/complete',
+                done: s => s.hasAntigravityOAuth },
+        };
+        // Providers rendered as code-paste/key panels, in tab order.
+        const AI_PROVIDER_KEYS = ['claude', 'openai', 'antigravity'];
+
+        function updateProviderDots() {
+            const root = document.getElementById('ai-panel-root');
+            if (!root || !aiStatus || aiStatus.error) return;
+            for (const [key, cfg] of Object.entries(AI_PROVIDERS)) {
+                const dot = root.querySelector(`.ai-tab[data-provider="${key}"] .dot`);
+                if (dot) dot.classList.toggle('on', cfg.done(aiStatus));
+            }
+            const ocDot = root.querySelector('.ai-tab[data-provider="opencode"] .dot');
+            if (ocDot) ocDot.classList.toggle('on', !!aiStatus.openCodeAvailable);
+        }
+
+        function renderAIPanel() {
+            const root = document.getElementById('ai-panel-root');
+            if (!root) return;
+            const ocOn = !!(aiStatus && aiStatus.openCodeAvailable);
+            root.innerHTML = `
+                <div class="ai-err"></div>
+                <div class="ai-tabs" role="tablist" aria-label="AI providers">
+                    <button class="ai-tab active" id="ai-tab-claude" type="button" role="tab" data-provider="claude" aria-controls="ai-panel-claude" aria-selected="true" tabindex="0"><span class="dot"></span>Claude</button>
+                    <button class="ai-tab" id="ai-tab-openai" type="button" role="tab" data-provider="openai" aria-controls="ai-panel-openai" aria-selected="false" tabindex="-1"><span class="dot"></span>OpenAI</button>
+                    <button class="ai-tab" id="ai-tab-antigravity" type="button" role="tab" data-provider="antigravity" aria-controls="ai-panel-antigravity" aria-selected="false" tabindex="-1"><span class="dot"></span>Antigravity</button>
+                    <button class="ai-tab" id="ai-tab-opencode" type="button" role="tab" data-provider="opencode" aria-controls="ai-panel-opencode" aria-selected="false" tabindex="-1"><span class="dot"></span>OpenCode</button>
+                </div>
+                ${AI_PROVIDER_KEYS.map((key, i) => {
+                    const c = AI_PROVIDERS[key];
+                    const pending = key === 'openai' ? `
+                        <div class="ai-pending" style="display:none">
+                            Open the link below and enter this code:
+                            <div class="ai-device-code"></div>
+                            <a class="ai-device-link" href="#" target="_blank" rel="noopener">Open OpenAI sign-in page</a>
+                            <div style="margin-top:8px;color:var(--text-tertiary)">Waiting for authentication…</div>
+                        </div>` : `
+                        <div class="ai-pending" style="display:none">
+                            Sign in on the page that opened, then paste the code you receive:
+                            <a class="ai-reopen" href="#" target="_blank" rel="noopener" style="display:block;margin:6px 0;color:var(--brand)">Re-open authorization page</a>
+                            <input type="text" class="ai-code" placeholder="Paste code here…">
+                            <button class="ai-btn ai-complete">Connect</button>
+                        </div>`;
+                    return `
+                    <div class="ai-panel${i === 0 ? ' active' : ''}" id="ai-panel-${key}" data-panel="${key}" role="tabpanel" aria-labelledby="ai-tab-${key}"${i === 0 ? '' : ' hidden'}>
+                        <div class="ai-oauth-start">
+                            <button class="ai-oauth-btn ai-oauth-go">${c.oauth}</button>
+                            <div class="ai-oauth-hint">${c.oauthHint}</div>
+                        </div>
+                        ${c.noKey ? '' : `
+                        <div class="ai-divider">or use an API key</div>
+                        <div class="ai-key-row">
+                            <input type="password" class="ai-key" placeholder="${c.placeholder}"
+                                oninput="this.parentNode.querySelector('.ai-save').disabled = this.value.trim().length < 8">
+                            <button class="ai-btn ai-save" disabled>Save</button>
+                        </div>
+                        <div class="ai-hint">Get one at <a href="${c.href}" target="_blank" rel="noopener">${c.getUrl}</a></div>`}
+                        ${pending}
+                        <div class="ai-success"><span>✓ ${c.label} connected</span>
+                            <button class="ai-btn ai-test" style="margin-left:auto">Test</button></div>
+                        <div class="ai-change">Change credentials</div>
+                        <div class="ai-test-result"></div>
+                    </div>`;
+                }).join('')}
+                <div class="ai-panel" id="ai-panel-opencode" data-panel="opencode" role="tabpanel" aria-labelledby="ai-tab-opencode" hidden>
+                    <div class="ai-oc-card">
+                        <div class="ai-oc-title">${ocOn ? '✓ OpenCode active (your Fireworks key)' : 'OpenCode needs a Fireworks key'}</div>
+                        <div class="ai-oc-body">${ocOn
+                            ? 'OpenCode is the open-source coding agent on state-of-the-art open models, running on your Fireworks key. Pick an OpenCode model in the Agents tab.'
+                            : 'OpenCode runs on Fireworks. Add your Fireworks key in Settings → Feature keys below — it activates immediately. Or connect Claude / OpenAI / Antigravity above.'}</div>
+                    </div>
+                </div>`;
+
+            const errEl = root.querySelector('.ai-err');
+            const showErr = (m) => { errEl.textContent = m; errEl.style.display = 'block';
+                setTimeout(() => errEl.style.display = 'none', 6000); };
+            const showDone = (panel) => {
+                panel.querySelectorAll('.ai-oauth-start, .ai-divider, .ai-key-row, .ai-hint, .ai-pending')
+                    .forEach(el => el.style.display = 'none');
+                panel.querySelector('.ai-success').style.display = 'flex';
+                panel.querySelector('.ai-change').style.display = 'inline';
+            };
+            const showSetup = (panel) => {
+                panel.querySelectorAll('.ai-oauth-start, .ai-divider, .ai-key-row, .ai-hint')
+                    .forEach(el => el.style.display = '');
+                panel.querySelector('.ai-pending').style.display = 'none';
+                panel.querySelector('.ai-success').style.display = 'none';
+                panel.querySelector('.ai-change').style.display = 'none';
+                panel.querySelector('.ai-test-result').innerHTML = '';
+            };
+
+            // Provider tabs follow the WAI-ARIA roving-tabindex pattern and
+            // collapse to a 2x2 grid on narrow screens.
+            const providerTabs = [...root.querySelectorAll('.ai-tab')];
+            function selectProviderTab(tab, focus = false) {
+                const p = tab.dataset.provider;
+                providerTabs.forEach(t => {
+                    const selected = t === tab;
+                    t.classList.toggle('active', selected);
+                    t.setAttribute('aria-selected', String(selected));
+                    t.tabIndex = selected ? 0 : -1;
+                });
+                root.querySelectorAll('.ai-panel').forEach(pl => {
+                    const selected = pl.dataset.panel === p;
+                    pl.classList.toggle('active', selected);
+                    pl.hidden = !selected;
+                });
+                if (focus) tab.focus();
+            }
+            providerTabs.forEach(tab => tab.addEventListener('click', () => selectProviderTab(tab)));
+            root.querySelector('.ai-tabs').addEventListener('keydown', (event) => {
+                if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+                const current = providerTabs.indexOf(document.activeElement);
+                if (current < 0) return;
+                event.preventDefault();
+                let next = current;
+                if (event.key === 'Home') next = 0;
+                else if (event.key === 'End') next = providerTabs.length - 1;
+                else {
+                    const columns = matchMedia('(max-width: 520px)').matches ? 2 : 4;
+                    const delta = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1
+                        : event.key === 'ArrowUp' ? -columns : columns;
+                    next = (current + delta + providerTabs.length) % providerTabs.length;
+                }
+                selectProviderTab(providerTabs[next], true);
+            });
+
+            // Per-provider wiring
+            AI_PROVIDER_KEYS.forEach(key => {
+                const panel = root.querySelector(`.ai-panel[data-panel="${key}"]`);
+                const cfg = AI_PROVIDERS[key];
+
+                // No-key providers (Antigravity) render no Save button — skip its wiring.
+                panel.querySelector('.ai-save')?.addEventListener('click', async () => {
+                    const key2 = panel.querySelector('.ai-key').value.trim();
+                    if (!key2) return;
+                    const resp = await apiFetch('/api/computers/ai/key', { method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key2 }) });
+                    if (resp.error) return showErr(resp.error);
+                    showDone(panel); refreshAIStatus();
+                });
+
+                panel.querySelector('.ai-oauth-go').addEventListener('click', async () => {
+                    const ep = cfg.startEp || (key === 'openai' ? 'codex-oauth/start' : 'oauth/start');
+                    const resp = await apiFetch('/api/computers/ai/' + ep, { method: 'POST' });
+                    if (resp.error) return showErr(resp.error);
+                    panel.querySelector('.ai-oauth-start').style.display = 'none';
+                    panel.querySelector('.ai-pending').style.display = 'block';
+                    if (key === 'openai') {
+                        window.open(resp.verificationUri, '_blank', 'noopener');
+                        panel.querySelector('.ai-device-code').textContent = resp.userCode || '';
+                        panel.querySelector('.ai-device-link').href = resp.verificationUri || '#';
+                        const poll = setInterval(async () => {
+                            const s = await apiFetch('/api/computers/ai/status');
+                            if (s && s.hasCodexOAuth) { clearInterval(poll); showDone(panel); refreshAIStatus(); }
+                        }, 3000);
+                    } else {
+                        window.open(resp.url, '_blank', 'noopener');
+                        panel.querySelector('.ai-reopen').href = resp.url || '#';
+                    }
+                });
+
+                const completeBtn = panel.querySelector('.ai-complete');
+                if (completeBtn) completeBtn.addEventListener('click', async () => {
+                    const code = panel.querySelector('.ai-code').value.trim();
+                    if (!code) return;
+                    completeBtn.disabled = true; completeBtn.textContent = 'Connecting…';
+                    const ep = cfg.completeEp || 'oauth/complete';
+                    const resp = await apiFetch('/api/computers/ai/' + ep, { method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+                    completeBtn.disabled = false; completeBtn.textContent = 'Connect';
+                    if (resp.error) return showErr(resp.error);
+                    showDone(panel); refreshAIStatus();
+                });
+
+                panel.querySelector('.ai-test').addEventListener('click', async (e) => {
+                    const btn = e.currentTarget, out = panel.querySelector('.ai-test-result');
+                    btn.disabled = true; btn.textContent = 'Testing…'; out.innerHTML = '';
+                    const resp = await apiFetch('/api/computers/ai/test-key', { method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: key }) });
+                    btn.disabled = false; btn.textContent = 'Test';
+                    out.innerHTML = resp.success
+                        ? `<span class="ok">✓ Working</span><span class="latency">${resp.latency_ms}ms</span>`
+                        : `<span class="err">✗ ${resp.error || 'Test failed'}</span>`;
+                });
+
+                panel.querySelector('.ai-change').addEventListener('click', () => showSetup(panel));
+            });
+
+            // Reflect already-configured providers
+            if (aiStatus && !aiStatus.error) {
+                for (const key of AI_PROVIDER_KEYS) {
+                    if (AI_PROVIDERS[key].done(aiStatus)) showDone(root.querySelector(`.ai-panel[data-panel="${key}"]`));
+                }
+            }
+            updateProviderDots();
+        }
+
+        document.getElementById('agents-gate-btn').addEventListener('click', () => switchTab('settings'));
+
+        // ─── First-run wizard ────────────────────────────────────────────────
+        // Shown exactly once, and only on positive knowledge that no provider is
+        // configured (same principle as the Agents gate — never guess while the
+        // cockpit is unreachable). Step 2 moves the Settings #ai-panel-root node
+        // into the wizard and returns it on finish, so the provider UI has one
+        // renderer and one set of handlers everywhere.
+        const WIZARD_DONE_KEY = 'shellteam_wizard_done';
+        const wizard = document.getElementById('wizard');
+        let wizardRestoreFocus = null;
+        const wizardBackgroundState = new Map();
+        const WIZARD_FOCUSABLE = [
+            'a[href]', 'button:not([disabled])', 'input:not([disabled])',
+            'select:not([disabled])', 'textarea:not([disabled])', 'iframe',
+            '[tabindex]:not([tabindex="-1"])',
+        ].join(',');
+
+        function wizardFocusables() {
+            return [...wizard.querySelectorAll(WIZARD_FOCUSABLE)]
+                .filter(el => !el.closest('[hidden]') && el.getClientRects().length > 0);
+        }
+
+        function setWizardOpen(open) {
+            if (open) {
+                wizardRestoreFocus = document.activeElement;
+                for (const child of document.body.children) {
+                    if (child === wizard || child.tagName === 'SCRIPT') continue;
+                    wizardBackgroundState.set(child, child.inert);
+                    child.inert = true;
+                }
+                wizard.inert = false;
+                wizard.setAttribute('aria-hidden', 'false');
+                wizard.classList.add('show');
+            } else {
+                wizard.classList.remove('show');
+                wizard.setAttribute('aria-hidden', 'true');
+                wizard.inert = true;
+                for (const [child, wasInert] of wizardBackgroundState) child.inert = wasInert;
+                wizardBackgroundState.clear();
+                if (wizardRestoreFocus && document.contains(wizardRestoreFocus)) wizardRestoreFocus.focus();
+                wizardRestoreFocus = null;
+            }
+        }
+
+        function showWizardStep(number) {
+            wizard.querySelectorAll('.wizard-step').forEach(step =>
+                step.classList.toggle('active', step.id === `wizard-step-${number}`));
+            const title = number === 1 ? 'wizard-title'
+                : number === 2 ? 'wizard-title-ai' : 'wizard-title-github';
+            wizard.setAttribute('aria-labelledby', title);
+            // Focus the step's HEADING, never its first control: focusing a
+            // control at the bottom of a long step makes the browser scroll it
+            // into view, so short phones opened halfway through the risk
+            // explanation — title already gone (round-6 audit P1-01). The
+            // heading announces the step and keeps the view at the top.
+            requestAnimationFrame(() => {
+                document.getElementById(title)?.focus({ preventScroll: true });
+                wizard.scrollTop = 0;
+            });
+        }
+
+        wizard.addEventListener('keydown', event => {
+            if (event.key !== 'Tab' || !wizard.classList.contains('show')) return;
+            const focusable = wizardFocusables();
+            if (!focusable.length) {
+                event.preventDefault();
+                return;
+            }
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            // The heading (tabindex="-1") holds focus after a step opens but is
+            // not in the Tab ring — treat "focus not on a ring member" like
+            // being at the first stop so Shift+Tab wraps instead of escaping.
+            if (event.shiftKey && (document.activeElement === first || !focusable.includes(document.activeElement))) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+
+        function wizardSyncFinish() {
+            if (!document.getElementById('wizard').classList.contains('show')) return;
+            const finish = document.getElementById('wizard-finish');
+            const ok = providerConfigured(aiStatus);
+            finish.disabled = !ok;
+            finish.textContent = ok ? 'Continue →' : 'Connect a provider above to continue';
+        }
+
+        function wizardMaybeShow() {
+            if (localStorage.getItem(WIZARD_DONE_KEY)) return;
+            if (!aiStatus || aiStatus.error) return;
+            if (providerConfigured(aiStatus)) {
+                // Already-configured box (upgrade, .env keys, second browser):
+                // never show the wizard, and stop checking on future loads.
+                localStorage.setItem(WIZARD_DONE_KEY, '1');
+                return;
+            }
+            const accept = document.getElementById('wizard-accept');
+            const next = document.getElementById('wizard-next');
+            const aiPanel = document.getElementById('ai-panel-root');
+            const aiPanelHome = aiPanel.parentElement;  // the Settings card
+            const ghCard = document.getElementById('github-connect-root');
+            const ghCardHome = ghCard.parentElement;    // the Settings GitHub card
+
+            function finish(tab) {
+                localStorage.setItem(WIZARD_DONE_KEY, '1');
+                aiPanelHome.appendChild(aiPanel);       // return the panels to Settings
+                ghCardHome.appendChild(ghCard);
+                setWizardOpen(false);
+                switchTab(tab);
+                requestAnimationFrame(() =>
+                    document.querySelector(`.tab[data-tab="${tab}"]`)?.focus());
+            }
+
+            accept.addEventListener('change', () => {
+                next.disabled = !accept.checked;
+                if (accept.checked) next.focus();   // Space to accept, Enter to continue
+            });
+            next.addEventListener('click', () => {
+                document.getElementById('wizard-ai-slot').appendChild(aiPanel);
+                showWizardStep(2);
+                wizardSyncFinish();
+            });
+            // Step 2 → step 3: GitHub connect (same shared card as Settings).
+            document.getElementById('wizard-finish').addEventListener('click', () => {
+                document.getElementById('wizard-github-slot').appendChild(ghCard);
+                showWizardStep(3);
+                ensureGitHubFrame();
+            });
+            document.getElementById('wizard-skip').addEventListener('click', () => finish('settings'));
+            document.getElementById('wizard-github-done').addEventListener('click', () => finish('agents'));
+            document.getElementById('wizard-github-skip').addEventListener('click', () => finish('agents'));
+
+            setWizardOpen(true);
+            showWizardStep(1);
+        }
+
+        // ─── Feature keys (Settings → Feature keys) ──────────────────────────
+        // Optional per-feature API keys, validated live by the control plane
+        // (POST /api/settings/feature-keys) and applied without a restart for
+        // fireworks/elevenlabs. One renderer, any container — reuse it wherever
+        // key entry is needed instead of building bespoke widgets. All display
+        // copy (label/hint/hint_url) comes from the server's FEATURE_KEYS
+        // registry, so adding a key server-side needs no dashboard change.
+        const RESTART_CMD = 'systemctl --user restart shellteam-api shellteam-ai-chat';
+
+        function renderFeatureKeys(root, keys) {
+            if (!root) return;
+            root.innerHTML = Object.entries(keys).map(([name, k]) => {
+                const site = (k.hint_url || '').replace(/^https?:\/\//, '');
+                const getKey = k.hint_url
+                    ? ` Get a key at <a href="${escapeHtml(k.hint_url)}" target="_blank" rel="noopener">${escapeHtml(site)} →</a>`
+                    : '';
+                return `
+                <div class="fk-row" data-key="${escapeHtml(name)}">
+                    <div class="fk-head">
+                        <span class="fk-label">${escapeHtml(k.label)}</span>
+                        <span class="fk-badge${k.set ? ' on' : ''}"><span class="dot"></span>${k.set ? 'Set' : 'Not set'}</span>
+                        ${k.set ? '<button type="button" class="fk-clear">Clear</button>' : ''}
+                    </div>
+                    <div class="ai-key-row">
+                        <input type="password" class="fk-input" placeholder="${k.set ? 'Replace key…' : 'Paste key…'}"
+                            autocomplete="off" oninput="this.parentNode.querySelector('.fk-save').disabled = this.value.trim().length < 8">
+                        <button class="ai-btn fk-save" disabled>Save</button>
+                    </div>
+                    <div class="ai-hint">${escapeHtml(k.hint || '')}${getKey}</div>
+                    <div class="fk-err"></div>
+                    <div class="fk-restart">This change needs a service restart to finish applying — run on the box:
+                        <code title="Click to select">${RESTART_CMD}</code></div>
+                </div>`;
+            }).join('');
+
+            root.querySelectorAll('.fk-row').forEach(row => {
+                const name = row.dataset.key;
+                const err = row.querySelector('.fk-err');
+                const showErr = (m) => { err.textContent = m; err.style.display = 'block'; };
+
+                async function submit(key) {
+                    const saveBtn = row.querySelector('.fk-save');
+                    err.style.display = 'none';
+                    saveBtn.disabled = true; saveBtn.textContent = key ? 'Validating…' : 'Clearing…';
+                    const resp = await apiFetch('/api/settings/feature-keys', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, key }),
+                    });
+                    saveBtn.textContent = 'Save';
+                    if (resp.error) { saveBtn.disabled = false; return showErr(resp.error); }
+                    renderFeatureKeys(root, resp.keys);
+                    // Setting AND clearing a module-gated key both change
+                    // process-start state (MODULES, the agent layer) — a clear
+                    // without the restart leaves agents holding the withdrawn
+                    // key, so the instruction must show either way.
+                    if (resp.needs_restart) {
+                        const restart = root.querySelector(`.fk-row[data-key="${name}"] .fk-restart`);
+                        if (restart) restart.style.display = 'block';
+                    }
+                    // Any key change can flip agent availability — sync the
+                    // provider tab, dots, and the Agents gate (cheap GET).
+                    refreshAIStatus().then(renderAIPanel);
+                }
+
+                row.querySelector('.fk-save').addEventListener('click', () => {
+                    const key = row.querySelector('.fk-input').value.trim();
+                    if (key) submit(key);
+                });
+                row.querySelector('.fk-input').addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !row.querySelector('.fk-save').disabled) submit(e.target.value.trim());
+                });
+                row.querySelector('.fk-clear')?.addEventListener('click', () => submit(''));
+            });
+        }
+
+        async function refreshFeatureKeys() {
+            const root = document.getElementById('feature-keys-root');
+            if (!root) return;
+            const resp = await apiFetch('/api/settings/feature-keys');
+            if (resp.error) {
+                root.innerHTML = `<div class="fk-err" style="display:block">Could not load feature keys: ${escapeHtml(resp.error)}</div>`;
+                return;
+            }
+            renderFeatureKeys(root, resp.keys || {});
+        }
+
+        // ─── Automatic updates (Settings → Automatic updates) ────────────────
+        // Mode lives in .env (AUTO_UPDATE); the self-update timer re-reads it
+        // every tick, so a change here applies with no restart. "last" is the
+        // outcome scripts/self-update.sh recorded on its previous run.
+        const AUTO_UPDATE_LABELS = { off: 'Off', weekly: 'Weekly', daily: 'Daily' };
+
+        function renderAutoUpdate(root, data) {
+            if (!root) return;
+            const mode = data.mode || 'off';
+            const last = data.last;
+            const buttons = Object.entries(AUTO_UPDATE_LABELS).map(([value, label]) =>
+                `<button type="button" class="ai-btn au-mode${value === mode ? ' active' : ''}"
+                    aria-pressed="${value === mode}" data-mode="${value}">${label}</button>`
+            ).join('');
+            let status = '';
+            if (last && mode !== 'off') {
+                const bad = last.status === 'error' || last.status === 'rolled-back';
+                status = `<div class="ai-hint" style="${bad ? 'color:var(--negative)' : ''}">
+                    Last check: ${escapeHtml(last.detail || last.status)}
+                    ${last.checked_at ? ` (${escapeHtml(last.checked_at)})` : ''}</div>`;
+            }
+            root.innerHTML = `<div class="ai-key-row" role="group" aria-label="Auto-update frequency"
+                style="gap:8px">${buttons}</div>${status}<div class="fk-err"></div>`;
+            root.querySelectorAll('.au-mode').forEach(btn => btn.addEventListener('click', async () => {
+                const err = root.querySelector('.fk-err');
+                err.style.display = 'none';
+                const resp = await apiFetch('/api/settings/auto-update', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: btn.dataset.mode }),
+                });
+                if (resp.error) {
+                    err.textContent = resp.error; err.style.display = 'block';
+                    return;
+                }
+                renderAutoUpdate(root, resp);
+            }));
+        }
+
+        async function refreshAutoUpdate() {
+            const root = document.getElementById('auto-update-root');
+            if (!root) return;
+            const resp = await apiFetch('/api/settings/auto-update');
+            if (resp.error) {
+                root.innerHTML = `<div class="fk-err" style="display:block">Could not load auto-update state: ${escapeHtml(resp.error)}</div>`;
+                return;
+            }
+            renderAutoUpdate(root, resp);
+        }
+
+        // Health status indicator
+        (async () => {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            try {
+                const r = await fetch('/health');
+                if (r.ok) { dot.className = 'status-dot status-dot--running'; text.textContent = 'online'; }
+                else throw new Error();
+            } catch { dot.className = 'status-dot status-dot--stopped'; text.textContent = 'offline'; }
+        })();
+
+        // Open initial tab + provider setup. If nothing is configured yet, land on
+        // Settings (the provider hub) instead of an Agents tab that can't run.
+        (async () => {
+            await refreshAIStatus();
+            renderAIPanel();
+            refreshFeatureKeys();
+            refreshAutoUpdate();
+            await knowledgeProbe;
+            const hash = (location.hash || '').slice(1);
+            // Module-aware deep links: a hash is honored only if its tab is
+            // actually visible, so #knowledge works with the dreaming module
+            // and a disabled Browser/Knowledge hash can't activate hidden UI.
+            const tabEl = document.querySelector(`.tab[data-tab="${CSS.escape(hash)}"]`);
+            if (tabEl && tabEl.style.display !== 'none') switchTab(hash);
+            else if (!providerConfigured(aiStatus)) switchTab('settings');
+            else switchTab('agents');
+            wizardMaybeShow();
+        })();
+
+        // ─── Feedback modal (bug reports + feature requests) ────────────────
+        // Feedback widget → shared module frontend/static/feedback.js
+
+        // ─── Report panel (dashboard-level) ─────────────────────────────────
+        // The cockpit iframe detects agent-produced reports and postMessages us to
+        // open them here, spanning the full workspace height (reaching the tab
+        // row). Visibility is toggled via the owner-authed /api/computers/reports.
+        (() => {
+            const panel = document.getElementById('reportPanel');
+            const frame = document.getElementById('reportFrame');
+            const split = document.getElementById('workspaceSplit');
+            const titleEl = document.getElementById('reportTitle');
+            const visBtn = document.getElementById('reportVisBtn');
+            const shareBtn = document.getElementById('reportShareBtn');
+            const openBtn = document.getElementById('reportOpenBtn');
+            const closeBtn = document.getElementById('reportCloseBtn');
+            const toastEl = document.getElementById('dashToast');
+            let url = null, relpath = null, isPublic = false, toastTimer;
+
+            function toast(msg, isErr) {
+                toastEl.textContent = msg;
+                toastEl.classList.toggle('err', !!isErr);
+                toastEl.classList.add('visible');
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => toastEl.classList.remove('visible'), 2500);
+            }
+            function relpathFromUrl(u) {
+                try {
+                    // /_editor/<path> is our editor SPA opening <path>; the real
+                    // file (for publish/share) is <path>, not the SPA route.
+                    return new URL(u, location.href).pathname.replace(/^\/+/, '').replace(/^_editor\//, '');
+                } catch { return null; }
+            }
+            // Our own first-party apps served on this origin (the /_editor/ SPA)
+            // need same-origin to run their authenticated fetches (file tree +
+            // content). Agent-produced HTML reports are UNTRUSTED and must stay
+            // strictly sandboxed (no same-origin → no cookie/DOM access).
+            const STRICT_SANDBOX = 'allow-scripts allow-popups allow-forms allow-downloads';
+            const TRUSTED_SANDBOX = STRICT_SANDBOX + ' allow-same-origin';
+            function isFirstPartyApp(u) {
+                try { return new URL(u, location.href).pathname.startsWith('/_editor/'); }
+                catch { return false; }
+            }
+            function setPublic(pub, toggleDisabled = false) {
+                isPublic = pub;
+                visBtn.innerHTML = pub ? '🌐 Public' : '🔒 Private';
+                visBtn.classList.toggle('is-public', pub);
+                visBtn.disabled = toggleDisabled;
+                visBtn.title = toggleDisabled
+                    ? (pub ? 'Served from ~/public — always public' : 'Cannot change visibility')
+                    : (pub ? 'Public — click to make private' : 'Private — click to make public');
+                // Private reports are shareable too, via a signed 24h link — no
+                // need to make the file public just to show someone once.
+                shareBtn.disabled = !pub && !relpath;
+                shareBtn.textContent = pub ? 'Share' : 'Share 24h link';
+                shareBtn.title = pub ? 'Share link' : 'Copy a signed link — anyone with it can view this file for 24h';
+            }
+            async function refreshStatus() {
+                if (relpath && relpath.startsWith('public/')) return setPublic(true, true);
+                if (!relpath) return setPublic(false, true);
+                try {
+                    const r = await fetch(`/api/computers/reports?path=${encodeURIComponent(relpath)}`);
+                    setPublic(!!(await r.json()).public);
+                } catch (e) { console.error('[report] status', e); setPublic(false); }
+            }
+            function openReport(u, title) {
+                url = u; relpath = relpathFromUrl(u);
+                // Set sandbox BEFORE src so the new document inherits it. Never
+                // leave allow-same-origin on for a subsequent untrusted report.
+                frame.setAttribute('sandbox', isFirstPartyApp(u) ? TRUSTED_SANDBOX : STRICT_SANDBOX);
+                frame.src = u;
+                titleEl.textContent = title || (relpath ? relpath.split('/').pop() : 'Report');
+                panel.classList.remove('hidden');
+                split.classList.add('report-open');
+                refreshStatus();
+            }
+            function closeReport() {
+                panel.classList.add('hidden');
+                split.classList.remove('report-open');
+                frame.src = 'about:blank';
+            }
+            visBtn.addEventListener('click', async () => {
+                if (!relpath || visBtn.disabled) return;
+                const next = !isPublic;
+                try {
+                    const r = await fetch('/api/computers/reports', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: relpath, public: next }),
+                    });
+                    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || `HTTP ${r.status}`); }
+                    setPublic(next);
+                } catch (e) { console.error('[report] publish', e); toast('Could not change visibility: ' + e.message, true); }
+            });
+            shareBtn.addEventListener('click', async () => {
+                if (!url) return;
+                let shareUrl = url;
+                if (!isPublic) {
+                    if (!relpath) return;
+                    // Mint a signed, expiring link (24h) for this one file.
+                    try {
+                        const r = await fetch(`/api/auth/share?path=${encodeURIComponent(relpath)}&ttl=86400`);
+                        const j = await r.json().catch(() => ({}));
+                        if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+                        shareUrl = j.url;
+                    } catch (e) {
+                        console.error('[report] share link', e);
+                        toast('Could not mint a share link: ' + e.message, true);
+                        return;
+                    }
+                }
+                if (navigator.share) {
+                    try { await navigator.share({ title: titleEl.textContent, url: shareUrl }); return; }
+                    catch (e) { if (e && e.name === 'AbortError') return; }
+                }
+                try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    toast(isPublic ? 'Link copied to clipboard' : 'Signed link copied — valid for 24h');
+                } catch (e) { console.error(e); toast('Could not copy link', true); }
+            });
+            openBtn.addEventListener('click', () => { if (url) window.open(url, '_blank', 'noopener'); });
+            closeBtn.addEventListener('click', closeReport);
+
+            window.addEventListener('message', (e) => {
+                const d = e.data;
+                if (!d || d.source !== 'shellteam-cockpit') return;
+                if (d.kind === 'report-open' && d.url) openReport(d.url, d.title);
+                else if (d.kind === 'report-close') closeReport();
+            });
+        })();
+    </script>
+</body>
+</html>

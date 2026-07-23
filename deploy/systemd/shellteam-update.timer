@@ -1,0 +1,15 @@
+# Daily tick for the self-updater. Always installed; the service exits
+# immediately unless AUTO_UPDATE in .env says daily/weekly — that keeps the
+# Settings toggle a plain .env edit with no systemctl choreography.
+# Persistent=true: a box that was off at 03:10 catches up on next boot.
+# Fires before the dreaming sweep (03:30) so the two rarely overlap.
+[Unit]
+Description=ShellTeam self-update — daily at 03:10 (local time)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target
