@@ -5,6 +5,23 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-09-10
+
+### Fixed
+- **Codex on an API key set in `.env` never authenticated.** The cockpit
+  reported "codex=apikey" and passed `OPENAI_API_KEY` to the process, but only
+  told Codex to use the OpenAI API provider when the key came from the Settings
+  key file. A `.env`-keyed box (every provisioned box, the live demo) got 401
+  "Missing bearer" on every Codex turn. The provider is now switched on
+  whenever the spawn environment carries a key, which is exactly when the
+  cockpit is in API-key mode.
+
+### Added
+- `scripts/qa/codex-steer.mjs`: drives a live cockpit with a real Codex process
+  through the mid-turn cases (steer, Stop then send, burst, immediate
+  follow-up, model switch, restart) and fails on any surfaced
+  "already has an active writer" (docs/release-qa.md).
+
 ## [0.1.24] - 2026-09-10
 
 ### Fixed

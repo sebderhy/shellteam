@@ -88,14 +88,18 @@ test("built layer: codex overrides splice as additive -c pairs", () => {
   assert.equal(JSON.parse(prompt.split("=", 2)[1]), "# persona");
 });
 
-test("codex overrides add the OpenAI provider only when the user's key file exists", () => {
-  const args = codexLayerArgs();
-  assert.ok(!args.some((a) => a.includes("openai-api")), "no provider without a key file");
+test("codex overrides add the OpenAI provider exactly when the spawn env carries a key", () => {
+  // The spawn env is the auth decision (getCliEnv): key present = apikey mode.
+  assert.ok(!codexLayerArgs(FAKE_HOME, {}).some((a) => a.includes("openai-api")), "no provider without a key");
+  assert.ok(codexLayerArgs(FAKE_HOME, { OPENAI_API_KEY: "sk-test" }).includes('model_provider="openai-api"'));
 
+  // A key that lives only in the box's .env (every provisioned box) must route
+  // Codex through the API provider too — the key FILE is not the criterion.
+  // And a key file with the var stripped (subscription mode) must NOT force the
+  // provider, or Codex would start with an env_key that is not set.
   mkdirSync(join(FAKE_HOME, ".config", "shellteam"), { recursive: true });
   writeFileSync(join(FAKE_HOME, ".config", "shellteam", "openai-api-key"), "sk-test");
-  const withKey = codexLayerArgs();
-  assert.ok(withKey.includes('model_provider="openai-api"'));
+  assert.ok(!codexLayerArgs(FAKE_HOME, {}).some((a) => a.includes("openai-api")), "key file alone is not the criterion");
   rmSync(join(FAKE_HOME, ".config", "shellteam", "openai-api-key"));
 });
 

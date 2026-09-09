@@ -285,7 +285,7 @@ export class CodexAgent extends CodingAgent {
       "--json",
       "--dangerously-bypass-approvals-and-sandbox",
       "--skip-git-repo-check",
-      ...codexLayerArgs(this._cwd), // ShellTeam's additive -c overrides (MCP, doc-fallback, provider)
+      ...codexLayerArgs(this._cwd, this._env), // ShellTeam's additive -c overrides (MCP, doc-fallback, provider)
       ...configArgsForId(this._model),
       "-m", cliModelForId(this._model),
       // The prompt goes over STDIN (`-` sentinel), never argv: a prompt starting

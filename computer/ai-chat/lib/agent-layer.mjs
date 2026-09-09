@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { HOME, OPENAI_API_KEY_FILE } from "./constants.mjs";
+import { HOME } from "./constants.mjs";
 
 // ShellTeam's additive launch-layer, built by the control plane under the owner's
 // home (see api/services/agent_layer.py). The cockpit and the ShellTeam-managed
@@ -422,7 +422,7 @@ export function claudeLayerArgs(cwd = HOME) {
  * layer gate: it only routes Codex through the user's own key (credential
  * plumbing, not behavior injection) and is required for Codex to run on API auth.
  */
-export function codexLayerArgs(cwd = HOME) {
+export function codexLayerArgs(cwd = HOME, env = process.env) {
   const manifest = readManifest();
   const overrides = [];
   const dynamicLinearOverrides = dynamicCodexLinearOverrides(manifest, cwd);
@@ -442,8 +442,13 @@ export function codexLayerArgs(cwd = HOME) {
   }
   // OpenAI-API provider — only when the user routes Codex through their own OpenAI
   // key (else Codex uses its ChatGPT/OAuth login, which needs no provider block).
-  // Decided here, not in the built layer, since it depends on runtime key state.
-  if (existsSync(OPENAI_API_KEY_FILE)) {
+  // Decided from the SPAWN env, the one place that already encodes the auth
+  // decision: getCliEnv() puts OPENAI_API_KEY there in apikey mode (from the
+  // Settings key file OR the box's .env) and strips it in subscription mode.
+  // Gating on the key file alone left a `.env`-keyed box (every provisioned
+  // box, the live demo) in "apikey" mode with Codex still on its default
+  // provider — every turn died with 401 "Missing bearer" (2026-09-09).
+  if (env && env.OPENAI_API_KEY) {
     overrides.push(
       'model_provider="openai-api"',
       'model_providers.openai-api.name="OpenAI API"',

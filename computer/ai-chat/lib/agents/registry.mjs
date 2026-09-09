@@ -47,9 +47,9 @@ export const AGENTS = [
     adapter: { import: () => import("../codex-agent.mjs"), klass: "CodexAgent" },
     terminal: {
       cmd: "codex",
-      args: (model, { cwd } = {}) => [
+      args: (model, { cwd, env } = {}) => [
         "--dangerously-bypass-approvals-and-sandbox",
-        ...codexLayerArgs(cwd),
+        ...codexLayerArgs(cwd, env),
         ...configArgsForId(model),
         "-m", cliModelForId(model),
       ],

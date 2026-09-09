@@ -54,6 +54,20 @@ in CI — and it must be pointed at the *deployed* box, not a dev tree: the File
 SPA once shipped a stale staged copy whose toolbar was unusable at 320 px while
 every source-level suite stayed green.
 
+### Codex mid-turn steering
+
+```bash
+node scripts/qa/codex-steer.mjs --url ws://127.0.0.1:3456/ws --model gpt-5.6-sol-max
+```
+
+Drives the **running** cockpit with a real Codex process: a message sent while
+a tool call runs, Stop then send, two messages back-to-back, a follow-up the
+instant a turn ends, and a same-family model switch mid-turn. Every case must
+answer without "already has an active writer" in the chat (SHE-107/SHE-109).
+It needs a Codex login or API key on the box and spends a few short turns,
+which is why it is manual. `--scenario hold` then a cockpit restart then
+`--scenario resume --slot N` covers the restart case.
+
 
 ## Why these are separate from the suites
 
