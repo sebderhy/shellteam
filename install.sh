@@ -510,15 +510,36 @@ else
     sudo systemctl mask nginx.service >/dev/null 2>&1 || true
 fi
 
-log "Installing system packages (apt)…"
-apt_get update -qq
 # build-essential: node-pty (the cockpit's terminal) ships no linux prebuilds and
 # compiles from source at npm-install time — a fresh box without make/g++ dies there.
 # sqlite3 is here because the agent persona describes it as available — a
 # claim must be provisioned true, not aspirational (and it's the zero-config
 # database an agent reaches for when a user's app needs one).
 PKGS=(curl ca-certificates git nginx libcap2-bin python3 python3-venv build-essential sqlite3)
-apt_get install -y -qq "${PKGS[@]}"
+# Re-runs must not need root: --create-owner removes the owner's sudo after the
+# first install (docs/decisions/20260907-*), and the daily self-updater re-runs
+# this script as that owner. When every package is already present there is
+# nothing for apt to do, so don't ask sudo for it. When something IS missing
+# and sudo would prompt with no terminal, say so instead of hanging or dying
+# mid-install with "a password is required".
+ensure_system_packages() {
+    local pkg missing=()
+    for pkg in "${PKGS[@]}"; do
+        dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" || missing+=("$pkg")
+    done
+    if [ "${#missing[@]}" -eq 0 ]; then
+        log "System packages already installed — skipping apt."
+        return 0
+    fi
+    if ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
+        die "Missing system packages (${missing[*]}) and sudo needs a password with no terminal to ask on.
+   Re-run as root:  sudo ./install.sh --create-owner $(id -un) <your flags>"
+    fi
+    log "Installing system packages (apt): ${missing[*]}…"
+    apt_get update -qq
+    apt_get install -y -qq "${missing[@]}"
+}
+ensure_system_packages
 
 fetch_pinned_installer() {  # <url> <pinned-sha256> — prints the downloaded path
     local url="$1" pinned="$2" f actual
@@ -795,12 +816,16 @@ if ! grep -q '^DATA_DIR=' "$ENV_FILE" \
 fi
 mkdir -p "$NEW_STATE_DATA"
 
-# Auto-generate SHELLTEAM_AI_TOKEN if blank.
-if ! grep -q '^SHELLTEAM_AI_TOKEN=.\+' "$ENV_FILE"; then
-    TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    sed -i "s|^SHELLTEAM_AI_TOKEN=.*|SHELLTEAM_AI_TOKEN=${TOKEN}|" "$ENV_FILE"
+# Auto-generate SHELLTEAM_AI_TOKEN if blank OR absent. A .env written by hand or
+# by a provisioner (OWNER_TOKEN/OWNER_EMAIL only) has no such line; a sed-only
+# replace matched nothing and left the box with an empty secret, so no in-box
+# agent could share a port, publish a report or name an app.
+ensure_ai_token() {
+    if grep -q '^SHELLTEAM_AI_TOKEN=.\+' "$ENV_FILE"; then return 0; fi
+    set_env SHELLTEAM_AI_TOKEN "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     log "Generated SHELLTEAM_AI_TOKEN."
-fi
+}
+ensure_ai_token
 
 # ── 7b. Public bind: domain + IP + strong token (optional) ────────────────────
 # --public  → free wildcard DNS at <dashed-ip>.sslip.io (no domain needed).

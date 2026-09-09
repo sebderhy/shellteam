@@ -14,13 +14,16 @@
     <style>
         * { box-sizing: border-box; }
         html, body {
-            margin: 0; height: 100%;
+            margin: 0; height: 100%; overflow: hidden;
             background: var(--surface-0); color: var(--text-primary);
             font-family: var(--font-sans);
         }
         body { display: flex; flex-direction: column; }
+        /* overflow:hidden — xterm's fitted viewport can land 1px taller than the
+           frame; without this the iframe grows scrollbars (double bars on
+           non-overlay platforms) and every refit re-measures against them. */
         #terminal-container {
-            flex: 1; min-height: 0; padding: 8px;
+            flex: 1; min-height: 0; padding: 8px; overflow: hidden;
             background: #110f0d;
         }
         .xterm { height: 100%; }
@@ -43,6 +46,16 @@
         let terminal = null;
         let fitAddon = null;
         let pendingResize = null;
+        // Reconnect backoff: 2s, 4s, 8s … capped at 30s. A fixed 2s retry on a
+        // flapping network path repainted "Connection closed. Reconnecting…"
+        // every two seconds; now the line is written once per outage and the
+        // retries space out.
+        const RECONNECT_BASE_MS = 2000;
+        const RECONNECT_MAX_MS = 30000;
+        let reconnectAttempt = 0;
+        function reconnectDelay(attempt) {
+            return Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, attempt));
+        }
 
         function initTerminal() {
             const container = document.getElementById('terminal-container');
@@ -118,6 +131,8 @@
 
             ws.onopen = function () {
                 console.log('[terminal] WebSocket connected');
+                if (reconnectAttempt > 0) terminal.write('\r\n\x1b[32mReconnected.\x1b[0m\r\n');
+                reconnectAttempt = 0;
                 terminal.focus();
                 if (fitAddon) fitAddon.fit();
                 const size = pendingResize || { cols: terminal.cols, rows: terminal.rows };
@@ -149,8 +164,12 @@
                     setTimeout(connectTerminalWS, 3000);
                     return;
                 }
-                terminal.write('\r\n\x1b[33mConnection closed. Reconnecting…\x1b[0m\r\n');
-                setTimeout(connectTerminalWS, 2000);
+                const delay = reconnectDelay(reconnectAttempt);
+                if (reconnectAttempt === 0) {
+                    terminal.write('\r\n\x1b[33mConnection closed. Reconnecting…\x1b[0m\r\n');
+                }
+                reconnectAttempt += 1;
+                setTimeout(connectTerminalWS, delay);
             };
 
             ws.onerror = () => { /* onclose handles reconnect */ };

@@ -5,6 +5,23 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-09-10
+
+### Fixed
+- **Provisioned boxes had no in-box API secret.** `install.sh` only replaced an
+  existing `SHELLTEAM_AI_TOKEN=` line; a `.env` written by hand or by a
+  provisioner (owner keys only) never got one, so agents on the box could not
+  share ports, publish reports or name apps. The installer now appends it.
+- **The daily self-updater died on `sudo apt-get`.** Since v0.1.20 the owner
+  loses sudo after the first install, and every re-run of `install.sh` still
+  called apt unconditionally. It now skips apt when every package is present,
+  and when something is missing without a usable sudo it stops with the exact
+  root command instead of hanging.
+- **Terminal reconnect flicker.** A dropped socket was retried every 2 s with
+  the status line repainted each time. Retries now back off (2 s doubling to
+  30 s), the line is written once per outage, and the frame no longer grows
+  scrollbars from a 1 px viewport overflow.
+
 ## [0.1.23] - 2026-09-09
 
 ### Added

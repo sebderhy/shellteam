@@ -240,3 +240,42 @@ class TestShe105She106BrowserTab:
             "pages (no tabList / no first frame). Without a first-message "
             "watchdog the frontend waits on a wedged socket forever."
         )
+
+
+# ---------------------------------------------------------------------------
+
+
+class TestTerminalReconnectBackoff:
+    """The terminal retried a dropped socket every 2 s forever and repainted
+    "Connection closed. Reconnecting…" on every attempt — on a flapping path
+    that is the flicker Seb saw on 2026-09-09. Retries must back off and the
+    status line must be written once per outage."""
+
+    def setup_method(self):
+        self.html = (FRONTEND / "terminal.html").read_text()
+
+    def test_reconnect_delay_doubles_and_caps(self):
+        import json
+        import subprocess
+
+        match = re.search(
+            r"const RECONNECT_BASE_MS = .*?function reconnectDelay\(attempt\)\s*\{.*?\n        \}",
+            self.html,
+            re.DOTALL,
+        )
+        assert match, "reconnectDelay() not found in terminal.html"
+        script = match.group(0) + "\nconsole.log(JSON.stringify([0,1,2,3,4,5,10].map(reconnectDelay)));"
+        out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
+        assert out.returncode == 0, out.stderr
+        assert json.loads(out.stdout) == [2000, 4000, 8000, 16000, 30000, 30000, 30000]
+
+    def test_status_line_written_once_per_outage(self):
+        body = re.search(r"ws\.onclose = \(event\) => \{(.*?)\n            \};", self.html, re.DOTALL).group(1)
+        assert "if (reconnectAttempt === 0)" in body
+        assert "setTimeout(connectTerminalWS, delay)" in body
+        assert "setTimeout(connectTerminalWS, 2000)" not in body
+        assert "reconnectAttempt = 0" in re.search(r"ws\.onopen = function \(\) \{(.*?)\n            \};", self.html, re.DOTALL).group(1)
+
+    def test_frame_never_grows_scrollbars(self):
+        css = re.search(r"#terminal-container \{(.*?)\}", self.html, re.DOTALL).group(1)
+        assert "overflow: hidden" in css
