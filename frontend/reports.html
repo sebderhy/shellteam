@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports — ShellTeam</title>
+    <link rel="stylesheet" href="/static/tokens.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; background: var(--surface-0);
+            color: var(--text-primary); font-family: var(--font-sans); }
+        body { display: flex; flex-direction: column; }
+
+        .bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+            background: var(--surface-1); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .bar h1 { font-size: var(--text-md); margin: 0; font-weight: var(--weight-bold); }
+        .bar .sub { color: var(--text-tertiary); font-size: var(--text-xs); }
+        .bar .spacer { margin-left: auto; }
+        #search { background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: var(--radius-md); color: var(--text-primary);
+            font: var(--text-sm) var(--font-sans); padding: 7px 12px; }
+        #search:focus { outline: none; box-shadow: var(--focus-ring); }
+        button { font-family: inherit; font-size: var(--text-sm); border-radius: var(--radius-md);
+            border: 1px solid var(--border); background: var(--surface-2);
+            color: var(--text-primary); padding: 6px 14px; cursor: pointer; }
+        button:hover { background: var(--surface-3); }
+        button:disabled { opacity: .5; cursor: default; }
+
+        .wrap { display: flex; flex: 1; min-height: 0; }
+        .side { width: 320px; flex-shrink: 0; display: flex; flex-direction: column;
+            border-right: 1px solid var(--border); background: var(--surface-1); }
+        /* Search lives at the top of the list it filters — the first place the
+           eye lands — not tucked in the header. */
+        .search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        #search { display: block; width: 100%; }
+        #side { flex: 1; overflow-y: auto; min-height: 0; }
+
+        .group-h { position: sticky; top: 0; z-index: 1; display: flex; align-items: center;
+            gap: 8px; width: 100%; text-align: left; border: none; border-radius: 0;
+            background: var(--surface-1); padding: 10px 12px 6px;
+            font-size: var(--text-xs); font-weight: var(--weight-semibold);
+            text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); }
+        .group-h:hover { background: var(--surface-2); color: var(--text-secondary); }
+        .group-h .chev { transition: transform var(--duration-fast); font-size: 9px; }
+        .group-h.closed .chev { transform: rotate(-90deg); }
+        .group-h .count { margin-left: auto; font-weight: var(--weight-normal); }
+
+        .item { display: block; width: 100%; text-align: left; padding: 7px 12px 7px 26px;
+            border: none; border-radius: 0; background: none; color: var(--text-secondary);
+            font-size: var(--text-sm); cursor: pointer; }
+        .item:hover { background: var(--surface-2); }
+        .item.active { background: var(--surface-2); color: var(--text-primary);
+            box-shadow: inset 2px 0 0 var(--brand); }
+        .item .t { display: block; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; }
+        .item .m { display: flex; gap: 8px; color: var(--text-tertiary);
+            font-size: var(--text-xs); margin-top: 2px; }
+        .item .pub { color: var(--positive); }
+        .empty { padding: 40px 20px; text-align: center; color: var(--text-tertiary);
+            font-size: var(--text-sm); line-height: 1.6; }
+
+        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .toolbar { display: none; align-items: center; gap: 8px; padding: 8px 14px;
+            border-bottom: 1px solid var(--border); }
+        .toolbar.on { display: flex; }
+        .toolbar .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+        .toolbar button { padding: 5px 12px; font-size: var(--text-xs); white-space: nowrap; }
+        #visBtn.is-public { border-color: var(--positive); color: var(--positive); }
+        #back { display: none; }
+        iframe { flex: 1; width: 100%; border: none; background: #fff; display: none; }
+        iframe.on { display: block; }
+        .placeholder { flex: 1; display: flex; align-items: center; justify-content: center;
+            color: var(--text-tertiary); font-size: var(--text-sm); text-align: center;
+            padding: 40px; line-height: 1.7; }
+        .toast { position: fixed; bottom: 18px; right: 18px; background: var(--surface-2);
+            border: 1px solid var(--border); border-radius: var(--radius-md);
+            padding: 10px 16px; font-size: var(--text-sm); display: none; z-index: 5; }
+        .toast.err { border-color: var(--negative); }
+
+        @media (max-width: 720px) {
+            /* Phone: list first; opening a report swaps to a full-height preview
+               with a Back button (a 38%-height preview is unreadable). */
+            .wrap { flex-direction: column; }
+            .side { width: 100%; flex: 1; border-right: none; }
+            /* One surface at a time on a phone: the full list, or the full
+               report — never a half-height placeholder. */
+            body:not(.previewing) .main { display: none; }
+            body.previewing .side { display: none; }
+            body.previewing #back { display: inline-block; }
+            /* The report renders its own heading right below — a title crushed
+               to one letter between four buttons is noise, not information. */
+            .toolbar { flex-wrap: wrap; }
+            .toolbar .title { display: none; }
+        }
+        @media (pointer: coarse) {
+            .item { min-height: 44px; }
+            .group-h, .toolbar button, .bar button { min-height: 44px; }
+        }
+    </style>
+</head>
+<body>
+    <header class="bar">
+        <h1>📊 Reports</h1>
+        <span class="sub" id="count">…</span>
+    </header>
+    <div class="wrap">
+        <nav class="side" aria-label="Report list">
+            <div class="search-wrap">
+                <input id="search" type="search" placeholder="Search reports…  ( / )" aria-label="Search reports">
+            </div>
+            <div id="side"></div>
+        </nav>
+        <main class="main">
+            <div class="toolbar" id="toolbar">
+                <button id="back" aria-label="Back to list">← Back</button>
+                <span class="title" id="title"></span>
+                <button id="visBtn"></button>
+                <button id="shareBtn"></button>
+                <button id="openBtn" title="Open in a new tab">Open ↗</button>
+            </div>
+            <div class="placeholder" id="placeholder"><span>
+                Everything your agents wrote up, in one place.<br>
+                Pick a report on the left — grouped by the project folder it came from.
+            </span></div>
+            <iframe id="frame" title="Report preview"></iframe>
+            <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        </main>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        let all = [], selected = null, isPublic = false, toastTimer;
+
+        function toast(msg, isErr) {
+            const t = $('toast'); t.textContent = msg;
+            t.classList.toggle('err', !!isErr); t.style.display = 'block';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.style.display = 'none', 2500);
+        }
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('reports action failed:', e.reason);
+            toast('Failed: ' + (e.reason && e.reason.message || e.reason), true);
+        });
+        async function api(path, opts) {
+            const r = await fetch(path, opts);
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+            return r.json();
+        }
+
+        const fmtDate = (ts) => {
+            const d = new Date(ts * 1000), now = new Date();
+            const sameDay = d.toDateString() === now.toDateString();
+            if (sameDay) return 'today ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const opts = { month: 'short', day: 'numeric' };
+            if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+            return d.toLocaleDateString([], opts);
+        };
+        const KIND_BADGE = { mp3: '🎧', wav: '🎧', mp4: '🎬', pdf: '📄', md: '📝' };
+        const label = (r) => r.title || r.name.replace(/\.[a-z0-9]+$/i, '').replace(/[-_]/g, ' ');
+        const groupName = (r) => r.workspace || 'Other';
+
+        // Collapse state survives reloads — with 200+ reports, re-collapsing
+        // the Dreaming pile on every visit would get old fast.
+        const collapsed = new Set(JSON.parse(localStorage.getItem('reportsCollapsed') || '[]'));
+        function saveCollapsed() { localStorage.setItem('reportsCollapsed', JSON.stringify([...collapsed])); }
+
+        function render() {
+            const q = $('search').value.trim().toLowerCase();
+            const match = (r) => !q || (label(r) + ' ' + r.name + ' ' + groupName(r)).toLowerCase().includes(q);
+            const side = $('side'); side.innerHTML = '';
+
+            const groups = new Map();
+            for (const r of all.filter(match)) {
+                const g = groupName(r);
+                if (!groups.has(g)) groups.set(g, []);
+                groups.get(g).push(r);
+            }
+            // Newest activity first; the catch-all bucket always sinks to the bottom.
+            const ordered = [...groups.entries()].sort((a, b) =>
+                (a[0] === 'Other') - (b[0] === 'Other') || b[1][0].mtime - a[1][0].mtime);
+
+            if (!ordered.length) {
+                const d = document.createElement('div'); d.className = 'empty';
+                d.textContent = q ? 'No reports match “' + q + '”.'
+                    : 'No reports yet. Ask an agent for a briefing, an analysis or a dashboard — it lands here.';
+                side.appendChild(d);
+                return;
+            }
+            for (const [g, items] of ordered) {
+                const isClosed = collapsed.has(g) && !q;   // searching reveals everything
+                const h = document.createElement('button');
+                h.className = 'group-h' + (isClosed ? ' closed' : '');
+                h.setAttribute('aria-expanded', String(!isClosed));
+                const chev = document.createElement('span'); chev.className = 'chev'; chev.textContent = '▼';
+                const name = document.createElement('span'); name.textContent = g === 'Home' ? '🏠 Home' : g === 'Dreaming' ? '🌙 Dreaming' : g === 'Other' ? 'Other' : '📁 ' + g;
+                const count = document.createElement('span'); count.className = 'count'; count.textContent = items.length;
+                h.append(chev, name, count);
+                h.onclick = () => { collapsed.has(g) ? collapsed.delete(g) : collapsed.add(g); saveCollapsed(); render(); };
+                side.appendChild(h);
+                if (isClosed) continue;
+                for (const r of items) {
+                    const b = document.createElement('button');
+                    b.className = 'item' + (selected && selected.path === r.path ? ' active' : '');
+                    b.dataset.path = r.path;
+                    const t = document.createElement('span'); t.className = 't';
+                    t.textContent = (KIND_BADGE[r.kind] ? KIND_BADGE[r.kind] + ' ' : '') + label(r);
+                    const m = document.createElement('span'); m.className = 'm';
+                    const date = document.createElement('span'); date.textContent = fmtDate(r.mtime);
+                    m.appendChild(date);
+                    if (r.public) { const p = document.createElement('span'); p.className = 'pub'; p.textContent = '🌐 public'; m.appendChild(p); }
+                    b.append(t, m);
+                    b.onclick = () => select(r);
+                    side.appendChild(b);
+                }
+            }
+        }
+
+        function setPublic(pub) {
+            isPublic = pub;
+            $('visBtn').textContent = pub ? '🌐 Public' : '🔒 Private';
+            $('visBtn').classList.toggle('is-public', pub);
+            $('visBtn').title = pub ? 'Public — click to make private' : 'Private — click to make public';
+            $('shareBtn').textContent = pub ? 'Share' : 'Share 24h link';
+            $('shareBtn').title = pub ? 'Copy the public link'
+                : 'Copy a signed link — anyone with it can view this report for 24h';
+        }
+
+        // Agent-produced HTML is untrusted: preview it strictly sandboxed (no
+        // same-origin ⇒ no cookies/DOM). Markdown opens through our own
+        // /_editor/ SPA, which needs same-origin for its authenticated fetches
+        // — the exact split the dashboard's report side-panel uses.
+        const STRICT = 'allow-scripts allow-popups allow-forms allow-downloads';
+        function select(r) {
+            selected = r;
+            const frame = $('frame');
+            const viaEditor = r.kind === 'md';
+            frame.setAttribute('sandbox', viaEditor ? STRICT + ' allow-same-origin' : STRICT);
+            frame.src = viaEditor ? '/_editor/' + r.path : '/' + r.path;
+            frame.classList.add('on');
+            $('placeholder').style.display = 'none';
+            $('toolbar').classList.add('on');
+            $('title').textContent = label(r);
+            document.body.classList.add('previewing');
+            setPublic(r.public);
+            render();
+            api('/api/computers/reports?path=' + encodeURIComponent(r.path))
+                .then(j => { r.public = !!j.public; if (selected === r) setPublic(r.public); })
+                .catch(e => console.error('[reports] visibility check', e));
+        }
+
+        $('back').onclick = () => {
+            document.body.classList.remove('previewing');
+            $('frame').classList.remove('on'); $('frame').src = 'about:blank';
+            $('toolbar').classList.remove('on');
+            $('placeholder').style.display = '';
+            selected = null; render();
+        };
+        $('openBtn').onclick = () => { if (selected) window.open('/' + selected.path, '_blank', 'noopener'); };
+        $('visBtn').onclick = async () => {
+            if (!selected) return;
+            const next = !isPublic;
+            await api('/api/computers/reports', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: selected.path, public: next }),
+            });
+            selected.public = next; setPublic(next); render();
+            toast(next ? 'Published — anyone with the link can view it' : 'Private again');
+        };
+        $('shareBtn').onclick = async () => {
+            if (!selected) return;
+            let url = location.origin + '/' + selected.path;
+            if (!isPublic) {
+                const j = await api('/api/auth/share?path=' + encodeURIComponent(selected.path) + '&ttl=86400');
+                url = j.url;
+            }
+            if (navigator.share) {
+                try { await navigator.share({ title: label(selected), url }); return; }
+                catch (e) { if (e && e.name === 'AbortError') return; }
+            }
+            await navigator.clipboard.writeText(url);
+            toast(isPublic ? 'Link copied to clipboard' : 'Signed link copied — valid for 24h');
+        };
+
+        $('search').addEventListener('input', render);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '/' && document.activeElement !== $('search')) { e.preventDefault(); $('search').focus(); return; }
+            if (e.target === $('search') && e.key === 'Escape') { $('search').value = ''; render(); return; }
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            if (e.target === $('search') && e.key === 'ArrowUp') return;
+            const items = [...document.querySelectorAll('.item')];
+            if (!items.length) return;
+            e.preventDefault();
+            const cur = items.findIndex(el => selected && el.dataset.path === selected.path);
+            const next = items[Math.min(items.length - 1, Math.max(0, cur + (e.key === 'ArrowDown' ? 1 : -1)))];
+            if (next && (!selected || next.dataset.path !== selected.path)) {
+                next.click();
+                next.scrollIntoView({ block: 'nearest' });
+            }
+        });
+
+        async function load() {
+            // First-ever load scans the agent transcripts to learn which folder
+            // produced each report — that can take a few seconds once.
+            $('count').textContent = 'loading…';
+            const j = await api('/api/computers/reports/list', { cache: 'no-store' });
+            all = j.reports;
+            $('count').textContent = j.count + ' report' + (j.count === 1 ? '' : 's');
+            render();
+        }
+        const loadFailed = (e) => {
+            $('count').textContent = '';
+            toast('Failed to load reports: ' + e.message, true);
+        };
+        load().catch(loadFailed);
+        // A bfcache restore revives the DOM as it was — with a list that may be
+        // hours old. Reports change daily; refetch instead of showing a ghost.
+        window.addEventListener('pageshow', (e) => { if (e.persisted) load().catch(loadFailed); });
+    </script>
+</body>
+</html>

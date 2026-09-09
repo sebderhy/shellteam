@@ -1,0 +1,258 @@
+{
+  "$comment": [
+    "Single source of truth for the model catalog the cockpit offers, per coding-agent family.",
+    "Add a model as soon as it ships \u2014 no code change, no version bump: append it here and restart",
+    "the stack (systemctl --user restart shellteam-api shellteam-ai-chat). Both the Python control",
+    "plane (api/services/model_catalog.py \u2014 Fireworks proxy allowlist + OpenCode provider config)",
+    "and the Node cockpit (computer/ai-chat/lib/model-catalog.mjs \u2014 routing + dropdown) read this file.",
+    "",
+    "match.prefixes drive model->agent routing (a model is also routed by exact membership in an",
+    "agent's models[] list). OpenCode models are Fireworks-hosted and proxied through the control",
+    "plane; each carries its upstream Fireworks id, so adding one only needs a line here.",
+    "'default' (OpenCode) is the model picked when the user selects the OpenCode family.",
+    "",
+    "limit.context = the model's context window in tokens; the cockpit's context-budget meter",
+    "(renderContextMeter in public/app.js) shows usage against it. Claude values are the 1M window",
+    "Claude Code runs on a subscription (Haiku 4.5 stays 200K); Codex is the GPT-5.x 400K window",
+    "and GPT-6 Astra 1.05M (developers.openai.com/api/docs/models/gpt-6-astra, 2026-09-04);",
+    "Gemini 3.1 Pro is 2M, 3.6 Flash ~1M. Verified against vendor docs + `agy models` 2026-07-23."
+  ],
+  "agents": [
+    {
+      "id": "claude",
+      "label": "Claude Code",
+      "match": {
+        "prefixes": [
+          "claude-",
+          "sonnet",
+          "opus",
+          "haiku"
+        ]
+      },
+      "models": [
+        {
+          "id": "claude-fable-5-1",
+          "name": "Fable 5.1",
+          "limit": { "context": 1000000 }
+        },
+        {
+          "id": "claude-opus-5",
+          "name": "Opus 5",
+          "limit": { "context": 1000000 }
+        },
+        {
+          "id": "claude-sonnet-5",
+          "name": "Sonnet 5",
+          "limit": { "context": 1000000 }
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "name": "Haiku 4.5",
+          "limit": { "context": 200000 }
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "match": {
+        "prefixes": [
+          "gpt-",
+          "o1",
+          "o3",
+          "o4",
+          "codex-"
+        ]
+      },
+      "$modelsComment": [
+        "GPT-6 Astra (released 2026-09-03, id gpt-6-astra, 1.05M context, $10/$50 per 1M",
+        "tokens, efforts low..max per the model page) heads the list. OpenAI rolls it out",
+        "to ChatGPT plans over days after launch; until an account is enabled the",
+        "server refuses it with a clear 400 ('not supported when using Codex with a",
+        "ChatGPT account'), so the family DEFAULT stays GPT-5.6 Sol until it lands.",
+        "Needs Codex CLI >= 0.153.0 (older CLIs have no metadata for it). Verified",
+        "2026-09-04 on codex-cli 0.153.2 against this box's ChatGPT model list.",
+        "",
+        "GPT-5.6 family (released 2026-07-09): three model sizes — Sol (flagship),",
+        "Terra (balanced), Luna (cost-efficient). Every cockpit entry pins an explicit",
+        "reasoning effort via a model_reasoning_effort `-c` override (`ultra` runs 4",
+        "parallel agents; `max` is the top single-agent effort). The four entries below",
+        "are the Pareto frontier of the Artificial Analysis Coding Agent Index (cost vs",
+        "score) from https://openai.com/index/gpt-5-6/ , ordered strongest→cheapest —",
+        "which is also the order the dropdown renders (both control planes read this",
+        "array top-to-bottom). Context window unchanged from the GPT-5.x 400K.",
+        "Verified against Codex CLI 0.144.0: `ultra` and `max` both accepted on these",
+        "models. Add lower-effort variants (xhigh/medium) here if a cheaper tier is",
+        "wanted — no code change, just restart the stack."
+      ],
+      "models": [
+        {
+          "id": "gpt-6-astra-max",
+          "name": "GPT-6 Astra (max)",
+          "cli": "gpt-6-astra",
+          "config": [
+            "model_reasoning_effort=\"max\""
+          ],
+          "limit": { "context": 1050000 },
+          "cost": { "input": 10.0, "output": 50.0 }
+        },
+        {
+          "id": "gpt-5.6-sol-ultra",
+          "name": "GPT-5.6 Sol (ultra)",
+          "cli": "gpt-5.6-sol",
+          "config": [
+            "model_reasoning_effort=\"ultra\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 5.0, "output": 30.0 }
+        },
+        {
+          "id": "gpt-5.6-sol-max",
+          "name": "GPT-5.6 Sol (max)",
+          "cli": "gpt-5.6-sol",
+          "config": [
+            "model_reasoning_effort=\"max\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 5.0, "output": 30.0 }
+        },
+        {
+          "id": "gpt-5.6-terra-max",
+          "name": "GPT-5.6 Terra (max)",
+          "cli": "gpt-5.6-terra",
+          "config": [
+            "model_reasoning_effort=\"max\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 2.5, "output": 15.0 }
+        },
+        {
+          "id": "gpt-5.6-luna-max",
+          "name": "GPT-5.6 Luna (max)",
+          "cli": "gpt-5.6-luna",
+          "config": [
+            "model_reasoning_effort=\"max\""
+          ],
+          "limit": { "context": 400000 },
+          "cost": { "input": 1.0, "output": 6.0 }
+        }
+      ]
+    },
+    {
+      "id": "antigravity",
+      "label": "Antigravity",
+      "$comment": "Google Antigravity CLI (`agy`). `cli` = the exact --model display name agy expects (from `agy models`); the cockpit id stays a clean slug. Non-streaming: one JSON envelope per turn, resume via --conversation.",
+      "match": {
+        "prefixes": [
+          "gemini-"
+        ]
+      },
+      "models": [
+        {
+          "id": "gemini-3.1-pro",
+          "name": "Gemini 3.1 Pro",
+          "cli": "Gemini 3.1 Pro (High)",
+          "limit": { "context": 2000000 }
+        },
+        {
+          "id": "gemini-3.6-flash",
+          "name": "Gemini 3.6 Flash",
+          "cli": "Gemini 3.6 Flash (Medium)",
+          "limit": { "context": 1048576 }
+        }
+      ]
+    },
+    {
+      "id": "opencode",
+      "label": "OpenCode (included)",
+      "provider": "fireworks",
+      "default": "glm-5p3",
+      "match": {
+        "prefixes": [
+          "glm-",
+          "kimi-",
+          "deepseek-",
+          "qwen"
+        ]
+      },
+      "$modelsComment": [
+        "Ordered default-first, then strongest→cheapest; the dropdown renders this",
+        "array top-to-bottom. Every id/contextLength here was read from the Fireworks",
+        "control plane (GET https://api.fireworks.ai/v1/accounts/fireworks/models/<name>,",
+        "which also reports supportsTools) and each price from that model's",
+        "fireworks.ai page, verified 2026-08-31. cost is $/1M tokens and drives the",
+        "cockpit's spend readout — omitting it makes a paid model report $0.00, so",
+        "keep it filled in.",
+        "",
+        "'default' is glm-5p3 (owner call, 2026-08-31): near-frontier coding at 3.4x",
+        "less than Kimi K3's output price, on the box owner's own Fireworks key — the",
+        "right landing spot for someone with no Claude/Codex subscription. K3 stays",
+        "one click away as the premium pick. glm-5p3-flash is the budget tier at a",
+        "tenth of GLM 5.3's input price.",
+        "K3 reasons on every request and its completion budget must cover the",
+        "reasoning trace as well as the answer, hence a larger limit.output than the",
+        "others — half Moonshot's 131072 default, which caps a runaway turn near $1.",
+        "",
+        "The list is a short menu of models worth picking, not an archive: GLM 5.2",
+        "was dropped the day 5.3 shipped here (as 5.1 was for 5.2, and K2.6 for K3),",
+        "since a superseded model is strictly worse on every axis the dropdown shows.",
+        "Tabs pinned to a dropped id migrate to this family's default (resolveModelId",
+        "in computer/ai-chat/lib/model-catalog.mjs), so dropping one is safe."
+      ],
+      "models": [
+        {
+          "id": "glm-5p3",
+          "name": "GLM 5.3",
+          "upstream": "accounts/fireworks/models/glm-5p3",
+          "limit": {
+            "context": 1048576,
+            "output": 32768
+          },
+          "cost": {
+            "input": 1.4,
+            "output": 4.4
+          }
+        },
+        {
+          "id": "kimi-k3",
+          "name": "Kimi K3",
+          "upstream": "accounts/fireworks/models/kimi-k3",
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          },
+          "cost": {
+            "input": 3.0,
+            "output": 15.0
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "upstream": "accounts/fireworks/models/deepseek-v4-pro",
+          "limit": {
+            "context": 1048576,
+            "output": 32768
+          },
+          "cost": {
+            "input": 1.74,
+            "output": 3.48
+          }
+        },
+        {
+          "id": "glm-5p3-flash",
+          "name": "GLM 5.3 Flash",
+          "upstream": "accounts/fireworks/models/glm-5p3-flash",
+          "limit": {
+            "context": 1048576,
+            "output": 32768
+          },
+          "cost": {
+            "input": 0.15,
+            "output": 0.5
+          }
+        }
+      ]
+    }
+  ]
+}

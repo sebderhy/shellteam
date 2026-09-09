@@ -1,0 +1,27 @@
+# ShellTeam cockpit (ai-chat). Installed as a systemd --user unit by install.sh,
+# which substitutes the @TOKENS@ below. The port comes from AI_CHAT_PORT in .env
+# (read via EnvironmentFile and honored by constants.mjs) — change it there and
+# restart; no re-render needed.
+[Unit]
+Description=ShellTeam cockpit (ai-chat)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+EnvironmentFile=@REPO@/.env
+Environment=HOME=%h
+# systemd --user services inherit a bare PATH (/usr/bin:/bin) that excludes
+# ~/.local/bin, where coding-agent CLIs (claude, codex, …) are installed — without
+# this the cockpit's `spawn claude` fails with ENOENT. install.sh renders
+# @AGENT_PATH@ from the installing user's PATH (plus ~/.local/bin and the node dir).
+Environment=PATH=@AGENT_PATH@
+Environment=SHELLTEAM_USERNAME=@OWNER_USERNAME@
+Environment=SHELLTEAM_USER_ID=@OWNER_ID@
+ExecStart=@NODE@ @REPO@/computer/ai-chat/server.mjs
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

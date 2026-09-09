@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<!-- GitHub connect card — gh CLI device-flow OAuth against THIS cockpit's
+     HOME (the owner's on the host, the guest's inside an employee container).
+     Framed by the dashboard Settings card / first-run wizard / guest shell's
+     GitHub tab; auth is inherited from the cockpit gate upstream. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connect GitHub</title>
+  <style>
+    :root { --bg:#0a0a0a; --card:#141414; --line:#262626; --fg:#e5e5e5; --dim:#888; --accent:#f59e0b; --ok:#22c55e; --err:#ef4444; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { background: var(--bg); color: var(--fg); display: flex;
+           font-family: system-ui, -apple-system, sans-serif; font-size: 0.9rem; padding: 16px; }
+    /* margin:auto (not align/justify center) so a card taller than the frame
+       overflows evenly instead of clipping its top (SHE-101). */
+    .card { width: 100%; max-width: 440px; margin: auto; background: var(--card); border: 1px solid var(--line);
+            border-radius: 12px; padding: 22px 24px; text-align: center; }
+    .head { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; font-weight: 700; font-size: 1rem; }
+    .head svg { width: 22px; height: 22px; fill: var(--fg); }
+    .sub { color: var(--dim); font-size: 0.82rem; line-height: 1.5; margin: 0 0 16px; }
+    .state { display: none; }
+    .state.active { display: block; }
+    button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; }
+    .btn { width: 100%; padding: 10px; background: var(--accent); color: #0a0a0a; font-weight: 600; }
+    .btn:hover { filter: brightness(1.08); }
+    .btn-ghost { background: transparent; border: 1px solid var(--line); color: var(--dim); padding: 7px 14px; font-size: 0.8rem; margin-top: 10px; }
+    .btn-ghost:hover { color: var(--fg); border-color: var(--dim); }
+    .code { font-family: 'SF Mono', Menlo, monospace; font-size: 1.7rem; letter-spacing: 0.15em; font-weight: 700;
+            background: #0a0a0a; border: 1px dashed var(--line); border-radius: 8px; padding: 12px; margin: 12px 0;
+            user-select: all; cursor: pointer; }
+    .waiting { color: var(--dim); font-size: 0.8rem; margin-top: 12px; }
+    .waiting::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px;
+                       border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+                       animation: spin 0.9s linear infinite; vertical-align: -1px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ok { color: var(--ok); font-weight: 600; }
+    .err { color: var(--err); font-size: 0.8rem; margin-top: 12px; display: none; }
+    .note { color: var(--dim); font-size: 0.78rem; margin-top: 10px; }
+    a { color: var(--accent); }
+    .repos { text-align: left; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .repos-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 8px; }
+    .repos-filter { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+                    background: #0a0a0a; color: var(--fg); font: inherit; font-size: 0.8rem; margin-bottom: 8px; }
+    .repos-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+    .repo-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+                border-bottom: 1px solid var(--line); font-size: 0.8rem; }
+    .repo-row:last-child { border-bottom: 0; }
+    .repo-row:hover { background: #1a1a1a; }
+    .repo-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .repo-meta { flex: none; color: var(--dim); font-size: 0.72rem; }
+    .repo-meta.done { color: var(--ok); }
+    .repo-meta.failed { color: var(--err); }
+    .repos-empty { padding: 12px; color: var(--dim); font-size: 0.8rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      GitHub
+    </div>
+
+    <div class="state active" id="st-loading">
+      <p class="sub">Checking connection…</p>
+    </div>
+
+    <div class="state" id="st-off">
+      <p class="sub">Sign in with your own GitHub account so agents can push, pull,
+        and open PRs as you. Takes about 30 seconds — no keys to copy.</p>
+      <button class="btn" id="connect">Connect GitHub</button>
+    </div>
+
+    <div class="state" id="st-pending">
+      <p class="sub">Copy this one-time code, then confirm it on GitHub:</p>
+      <div class="code" id="device-code" title="Click to select"></div>
+      <button class="btn" id="open-github">Open github.com/login/device</button>
+      <div class="waiting">Waiting for you to confirm on GitHub…</div>
+      <button class="btn-ghost" id="cancel">Cancel</button>
+    </div>
+
+    <div class="state" id="st-on">
+      <p class="sub" style="margin-bottom:4px"><span class="ok">✓ Connected</span><span id="gh-user"></span></p>
+      <p class="note" id="gh-note">Agents can push and pull with your GitHub identity.</p>
+      <div class="repos" id="repos" hidden>
+        <div class="repos-title">Bring your repositories onto the box</div>
+        <input class="repos-filter" id="repos-filter" type="search" placeholder="Filter…" hidden>
+        <div class="repos-list" id="repos-list"><div class="repos-empty">Loading your repositories…</div></div>
+        <button class="btn" id="clone-btn" style="margin-top:10px" disabled>Select repositories to clone</button>
+        <p class="note">Selected repos are cloned into your home folder.</p>
+      </div>
+      <button class="btn-ghost" id="disconnect">Disconnect</button>
+    </div>
+
+    <div class="err" id="err"></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    // Tell the embedder how tall the card is so a fixed-height iframe (the
+    // dashboard Settings panel) can grow to fit instead of stacking its own
+    // scrollbar on top of the repo list's (SHE-101). Full-pane embedders (the
+    // guest shell) just ignore the message.
+    const _card = document.querySelector('.card');
+    new ResizeObserver(() => {
+      if (window.parent === window) return;
+      window.parent.postMessage(
+        { type: 'shellteam:github-card-height', height: _card.offsetHeight + 32 }, '*');
+    }).observe(_card);
+
+    const states = ['st-loading', 'st-off', 'st-pending', 'st-on'];
+    function show(id) { states.forEach((s) => $(s).classList.toggle('active', s === id)); }
+    function showErr(msg) { $('err').textContent = msg; $('err').style.display = 'block'; }
+
+    let poll = null;
+    function stopPoll() { if (poll) { clearInterval(poll); poll = null; } }
+
+    async function refresh() {
+      const s = await fetch('api/github/status').then((r) => r.json()).catch(() => null);
+      if (!s) { show('st-off'); showErr('Could not reach the cockpit.'); return s; }
+      if (s.authenticated) {
+        stopPoll();
+        $('gh-user').textContent = s.username ? ` as @${s.username}` : '';
+        $('gh-note').textContent = s.viaEnvToken
+          ? 'This workspace runs on a fixed access token (GH_TOKEN in its environment), which overrides any account you connect here. To use a different account, remove that token from the environment and restart the workspace.'
+          : 'Agents can push and pull with your GitHub identity.';
+        $('disconnect').style.display = s.viaEnvToken ? 'none' : '';
+        show('st-on');
+        loadRepos();
+      } else if (!poll) {
+        show('st-off');
+        if (s.error) showErr(s.error);
+      }
+      return s;
+    }
+
+    // ─── Repo picker: pick repos, clone them into ~/projects on the box ──────
+    let repos = null;         // last /api/github/repos payload, null until loaded
+    let lastJobs = {};        // last clone-status jobs, kept across re-renders
+    let clonePoll = null;
+
+    function repoStatus(repo, jobs) {
+      const job = jobs[repo.nameWithOwner];
+      if (job?.status === 'cloning') return { text: 'cloning…', cls: '' };
+      if (job?.status === 'failed') return { text: job.error || 'failed', cls: 'failed' };
+      if (repo.cloned || job?.status === 'done') return { text: '✓ on the box', cls: 'done' };
+      // A same-named folder that isn't this repo: cloning would clobber it.
+      if (repo.occupied) return { text: 'name taken', cls: 'failed' };
+      return { text: repo.isPrivate ? 'private' : '', cls: '' };
+    }
+
+    function renderRepos(jobs = lastJobs) {
+      lastJobs = jobs;
+      const list = $('repos-list');
+      list.textContent = '';
+      const filter = $('repos-filter').value.trim().toLowerCase();
+      const shown = repos.filter((r) => r.nameWithOwner.toLowerCase().includes(filter));
+      if (!shown.length) {
+        list.insertAdjacentHTML('beforeend', '<div class="repos-empty"></div>');
+        list.firstChild.textContent = repos.length ? 'No repository matches the filter.'
+          : 'No repositories on this account yet.';
+      }
+      for (const repo of shown) {
+        const row = document.createElement('label');
+        row.className = 'repo-row';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.value = repo.nameWithOwner;
+        const settled = repo.cloned || repo.occupied || jobs[repo.nameWithOwner];
+        box.disabled = repo.cloned || repo.occupied
+          || (!!settled && jobs[repo.nameWithOwner]?.status !== 'failed');
+        box.addEventListener('change', syncCloneBtn);
+        const name = document.createElement('span');
+        name.className = 'repo-name';
+        name.textContent = repo.nameWithOwner;
+        name.title = repo.description || repo.nameWithOwner;
+        const meta = document.createElement('span');
+        const st = repoStatus(repo, jobs);
+        meta.className = `repo-meta ${st.cls}`;
+        meta.textContent = st.text;
+        row.append(box, name, meta);
+        list.append(row);
+      }
+      syncCloneBtn();
+    }
+
+    function selectedRepos() {
+      return [...$('repos-list').querySelectorAll('input:checked')].map((el) => el.value);
+    }
+
+    function syncCloneBtn() {
+      const n = selectedRepos().length;
+      $('clone-btn').disabled = !n;
+      $('clone-btn').textContent = n ? `Clone ${n} ${n === 1 ? 'repository' : 'repositories'} onto this box`
+        : 'Select repositories to clone';
+    }
+
+    async function loadRepos() {
+      if (repos) return;   // loaded once per page life; a reload refreshes
+      $('repos').hidden = false;
+      const resp = await fetch('api/github/repos').then((r) => r.json()).catch((e) => ({ error: String(e) }));
+      if (resp.error) {
+        $('repos-list').firstChild.textContent = `Could not list repositories: ${resp.error}`;
+        return;
+      }
+      repos = resp.repos;
+      $('repos-filter').hidden = repos.length < 8;
+      renderRepos();
+    }
+
+    async function pollClones() {
+      const resp = await fetch('api/github/clone-status').then((r) => r.json()).catch(() => null);
+      if (!resp) return;
+      renderRepos(resp.jobs);
+      if (!Object.values(resp.jobs).some((j) => j.status === 'cloning')) {
+        clearInterval(clonePoll);
+        clonePoll = null;
+      }
+    }
+
+    $('repos-filter').addEventListener('input', () => renderRepos());
+    $('clone-btn').addEventListener('click', async () => {
+      $('err').style.display = 'none';
+      const resp = await fetch('api/github/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repos: selectedRepos() }),
+      }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+      if (resp.error) return showErr(resp.error);
+      renderRepos(resp.jobs);
+      if (!clonePoll) clonePoll = setInterval(pollClones, 2000);
+    });
+
+    $('connect').addEventListener('click', async () => {
+      $('err').style.display = 'none';
+      $('connect').disabled = true;
+      const resp = await fetch('api/github/connect', { method: 'POST' }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+      $('connect').disabled = false;
+      if (resp.error) return showErr(resp.error);
+      $('device-code').textContent = resp.userCode;
+      $('open-github').onclick = () => window.open(resp.verificationUrl, '_blank', 'noopener');
+      $('device-code').onclick = () => { getSelection().selectAllChildren($('device-code')); navigator.clipboard?.writeText(resp.userCode); };
+      show('st-pending');
+      poll = setInterval(refresh, 3000);
+    });
+
+    $('cancel').addEventListener('click', async () => {
+      stopPoll();
+      await fetch('api/github/disconnect', { method: 'POST' });
+      show('st-off');
+    });
+
+    $('disconnect').addEventListener('click', async () => {
+      await fetch('api/github/disconnect', { method: 'POST' });
+      refresh();
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

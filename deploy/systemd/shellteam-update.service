@@ -1,0 +1,18 @@
+# ShellTeam self-update — fast-forward the checkout to the latest release tag
+# and re-run install.sh. Triggered by shellteam-update.timer; whether it acts
+# is decided by AUTO_UPDATE in .env (off by default), read by the script at
+# each run — so toggling in Settings needs no unit changes.
+# Oneshot: a failed/rolled-back update leaves the unit red in systemctl --user,
+# loud per the no-silent-failure rule.
+[Unit]
+Description=ShellTeam self-update (release-tag fast-forward)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+Environment=HOME=%h
+# install.sh re-resolves tools (uv, node, nginx) — give it the same PATH the
+# installing user had, like the other units.
+Environment=PATH=@AGENT_PATH@
+ExecStart=/usr/bin/env bash @REPO@/scripts/self-update.sh
+TimeoutStartSec=1200

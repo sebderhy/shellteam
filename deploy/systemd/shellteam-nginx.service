@@ -1,0 +1,21 @@
+# ShellTeam cloud-computer file server (nginx). Installed as a systemd --user
+# unit by install.sh, which substitutes the @TOKENS@ below. Serves $HOME (with
+# dotfiles blocked) on port 80. A --user unit can bind 80 because install.sh
+# grants the nginx binary cap_net_bind_service.
+[Unit]
+Description=ShellTeam file server (nginx)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+PIDFile=@STATE@/nginx.pid
+ExecStartPre=@NGINX@ -t -c @REPO@/deploy/nginx/shellteam.conf
+ExecStart=@NGINX@ -c @REPO@/deploy/nginx/shellteam.conf
+ExecReload=@NGINX@ -s reload -c @REPO@/deploy/nginx/shellteam.conf
+ExecStop=@NGINX@ -s quit -c @REPO@/deploy/nginx/shellteam.conf
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

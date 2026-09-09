@@ -1,0 +1,19 @@
+# ShellTeam dreaming — one nightly knowledge-consolidation sweep (the
+# `dreaming` module). Triggered by shellteam-dream.timer (or an owner
+# "run now" from the Knowledge tab, which calls the API instead).
+# Oneshot: a failed sweep leaves the unit red in systemctl --user — loud,
+# per the no-silent-failure rule. The sweep itself holds a flock, so a
+# timer firing during a manual run exits cleanly instead of double-running.
+[Unit]
+Description=ShellTeam dreaming (nightly knowledge sweep)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+EnvironmentFile=@REPO@/.env
+# Extraction shells out to the `claude` CLI — a bare systemd --user PATH does
+# not include ~/.local/bin, so render the installing user's PATH like ai-chat.
+Environment=PATH=@AGENT_PATH@
+Environment=HOME=%h
+ExecStart=@UV@ run python -m api.services.dreaming
+TimeoutStartSec=1800

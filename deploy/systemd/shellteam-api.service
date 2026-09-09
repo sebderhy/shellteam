@@ -1,0 +1,37 @@
+# ShellTeam control plane (FastAPI). Installed as a systemd --user unit by
+# install.sh, which substitutes the @TOKENS@ below. Reach it at :${API_PORT}.
+#
+# --proxy-headers + --forwarded-allow-ips 127.0.0.1: trust X-Forwarded-Proto from
+# the local Caddy so request.url.scheme is "https" behind TLS. Without it the
+# injected cockpit URL would be http:// on an https:// page (mixed-content block).
+[Unit]
+Description=ShellTeam control plane (API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+# Default so a minimal .env (no API_PORT line — the Cloud cloud-init shape)
+# still yields a valid --port. EnvironmentFile settings override Environment=,
+# so an explicit API_PORT in .env always wins.
+Environment=API_PORT=8000
+EnvironmentFile=@REPO@/.env
+# systemd --user gives services a bare PATH (/usr/bin:/bin) that omits
+# ~/.local/bin — where `uv` lives. The API shells out (the org ship gate runs
+# git/uv/docker and the project's deploy script), so it needs the same enriched
+# PATH the cockpit unit gets. @AGENT_PATH@ = ~/.local/bin + node dir + installer PATH.
+Environment=PATH=@AGENT_PATH@
+# --no-server-header: uvicorn's transport-level "server: uvicorn" banner is
+# added below the ASGI app, so middleware can't mask it — only this flag can
+# (SECURITY.md's stack-banner claim depends on it).
+ExecStart=@UV@ run uvicorn api.main:app --host 127.0.0.1 --port ${API_PORT} --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header
+Restart=on-failure
+RestartSec=3
+# A planned stop (restart, deploy) delivers SIGTERM; the `uv run` wrapper exits
+# 143 after uvicorn's clean shutdown, which systemd otherwise records as
+# "Failed with result 'exit-code'" — a false red entry on every deploy.
+SuccessExitStatus=143
+
+[Install]
+WantedBy=default.target
