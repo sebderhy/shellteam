@@ -43,6 +43,22 @@
            employee shell keeps its own layout. */
         .topbar .fb-trigger { margin-left: auto; }
 
+        /* Trial banner (api/config.py TRIAL_FILE): a countdown and one link,
+           shown only on a time-boxed box such as the shellteam.sh live demo. */
+        .trial-bar {
+            display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+            padding: 7px 16px; flex-shrink: 0;
+            background: var(--brand); color: #fff;
+            font-size: var(--text-sm); font-weight: var(--weight-medium);
+        }
+        .trial-bar[hidden] { display: none; }
+        .trial-bar .trial-clock { font-variant-numeric: tabular-nums; }
+        .trial-bar a {
+            color: #fff; text-decoration: underline; text-underline-offset: 3px;
+        }
+        .trial-bar a:hover { text-decoration-thickness: 2px; }
+        .trial-bar.trial-over { background: var(--text-tertiary); }
+
         /* Feedback widget CSS lives in the shared module /static/feedback.js */
         .status-dot {
             width: 8px; height: 8px; border-radius: 50%;
@@ -400,6 +416,11 @@
             <span id="status-text">checking…</span>
         </span>
     </header>
+    <div class="trial-bar" id="trial-bar" hidden role="status">
+        <span><span id="trial-label"></span> · <span class="trial-clock" id="trial-clock"></span></span>
+        <a id="trial-cta" href="#" target="_blank" rel="noopener" hidden></a>
+    </div>
+    <script type="application/json" id="trial-config">__TRIAL_JSON__</script>
 
     <!-- Workspace split: the tabs + panels are the left half; when a report is
          open it takes the right half at full height, reaching the tab row. -->
@@ -1881,6 +1902,32 @@
                 else if (d.kind === 'report-close') closeReport();
                 else if (d.kind === 'provider-settings') openAIProviderSettings(d.provider);
             });
+        })();
+
+        // ─── Trial banner ────────────────────────────────────────────────────
+        // Server-injected JSON (null when the box has no ~/.shellteam/trial.json).
+        (function () {
+            var cfg = null;
+            try { cfg = JSON.parse(document.getElementById('trial-config').textContent); } catch (e) { cfg = null; }
+            if (!cfg || !cfg.ends_at) return;
+            var bar = document.getElementById('trial-bar');
+            var clock = document.getElementById('trial-clock');
+            var cta = document.getElementById('trial-cta');
+            document.getElementById('trial-label').textContent = cfg.label || 'Trial';
+            if (cfg.cta_url) { cta.href = cfg.cta_url; cta.textContent = cfg.cta_label || 'Get your own box'; cta.hidden = false; }
+            bar.hidden = false;
+            function tick() {
+                var left = cfg.ends_at - Math.floor(Date.now() / 1000);
+                if (left <= 0) {
+                    clock.textContent = 'your seat has ended';
+                    bar.classList.add('trial-over');
+                    return;
+                }
+                var m = Math.floor(left / 60), s = left % 60;
+                clock.textContent = m + ':' + (s < 10 ? '0' : '') + s + ' left';
+                setTimeout(tick, 1000);
+            }
+            tick();
         })();
     </script>
 </body>

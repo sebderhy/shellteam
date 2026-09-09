@@ -231,3 +231,45 @@ class TestCspScope:
         resp = client.get("/", headers={"host": "localhost"})
         assert resp.status_code == 200
         assert "script-src" in resp.headers.get("content-security-policy", "")
+
+
+class TestTrialBanner:
+    """api/config.py TRIAL_FILE: a countdown + link the dashboard shows on a
+    time-boxed box (the shellteam.sh live demo). Absent file = no banner and
+    no raw placeholder; a malformed file is ignored loudly, never rendered."""
+
+    def test_no_file_renders_null(self, client, monkeypatch, tmp_path):
+        import api.config as config
+        monkeypatch.setattr(config, "TRIAL_FILE", tmp_path / "trial.json")
+        body = client.get("/", headers={"host": "localhost"}).text
+        assert '<script type="application/json" id="trial-config">null</script>' in body
+        assert "__TRIAL_JSON__" not in body
+
+    def test_file_is_injected_typed_and_escaped(self, client, monkeypatch, tmp_path):
+        import json
+        import api.config as config
+        f = tmp_path / "trial.json"
+        f.write_text(json.dumps({"ends_at": "1900000000", "label": "Trial seat</script><b>",
+                                 "cta_url": "https://shellteam.sh/reserve.html?utm_source=try",
+                                 "cta_label": "Keep what you build", "extra": "dropped"}))
+        monkeypatch.setattr(config, "TRIAL_FILE", f)
+        body = client.get("/", headers={"host": "localhost"}).text
+        start = body.index('id="trial-config">') + len('id="trial-config">')
+        blob = body[start: body.index("</script>", start)]
+        cfg = json.loads(blob)
+        assert cfg == {"ends_at": 1900000000, "label": "Trial seat</script><b>",
+                       "cta_url": "https://shellteam.sh/reserve.html?utm_source=try",
+                       "cta_label": "Keep what you build"}
+        assert "</script><b>" not in blob          # escaped as <\/script>, cannot close the block
+        assert 'id="trial-bar"' in body
+
+    def test_bad_file_or_http_cta_is_dropped(self, client, monkeypatch, tmp_path):
+        import json
+        import api.config as config
+        f = tmp_path / "trial.json"
+        monkeypatch.setattr(config, "TRIAL_FILE", f)
+        f.write_text("{not json")
+        assert 'id="trial-config">null</script>' in client.get("/", headers={"host": "localhost"}).text
+        f.write_text(json.dumps({"ends_at": 1900000000, "cta_url": "http://evil.example/"}))
+        body = client.get("/", headers={"host": "localhost"}).text
+        assert '"cta_url": ""' in body

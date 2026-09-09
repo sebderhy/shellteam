@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from pathlib import Path
@@ -412,6 +413,31 @@ if FRONTEND_DIR.exists():
         mtimes = [(FRONTEND_DIR / n).stat().st_mtime for n in names if (FRONTEND_DIR / n).exists()]
         return str(int(max(mtimes))) if mtimes else "0"
 
+    def _trial_json() -> str:
+        """The trial banner config as JSON for a <script type=application/json>
+        block, or ``null``. Read per request so the file can appear after boot
+        (the demo writes it when a seat starts). Only known keys, typed, make it
+        into the page; ``</`` is escaped so the file cannot close the script."""
+        from api.config import TRIAL_FILE
+
+        if not TRIAL_FILE.exists():
+            return "null"
+        try:
+            raw = json.loads(TRIAL_FILE.read_text(encoding="utf-8"))
+            cfg = {
+                "ends_at": int(raw["ends_at"]),
+                "label": str(raw.get("label", "Trial")),
+                "cta_url": str(raw.get("cta_url", "")),
+                "cta_label": str(raw.get("cta_label", "")),
+            }
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            logging.getLogger(__name__).warning("Ignoring malformed %s: %s", TRIAL_FILE, exc)
+            return "null"
+        if cfg["cta_url"] and not cfg["cta_url"].startswith("https://"):
+            logging.getLogger(__name__).warning("Ignoring non-https trial cta_url in %s", TRIAL_FILE)
+            cfg["cta_url"] = ""
+        return json.dumps(cfg).replace("</", "<\\/")
+
     def _render(filename: str, request: Request) -> HTMLResponse:
         """Serve a frontend HTML page with owner/cockpit placeholders filled in.
 
@@ -438,6 +464,7 @@ if FRONTEND_DIR.exists():
         from api.config import STEEL_PORT
 
         html = html.replace("__STEEL_PORT__", str(STEEL_PORT))
+        html = html.replace("__TRIAL_JSON__", _trial_json())
         # These shells are tiny and change with every deploy; never let a browser
         # serve a stale dashboard/terminal/browser page (it would show old chrome).
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})

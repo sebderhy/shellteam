@@ -129,6 +129,10 @@ def validate_modules() -> None:
 # where the cloud-computer file server is rooted. In the native edition this is
 # the VPS user's $HOME (no per-user partitioning).
 HOME_DIR = Path(os.environ.get("SHELLTEAM_HOME", str(Path.home())))
+# Trial banner: when this file exists ({"ends_at": <epoch>, "label", "cta_url",
+# "cta_label"}), the dashboard shows a countdown to ends_at plus the link. Written
+# by whoever runs a time-boxed box (the shellteam.sh live demo); absent otherwise.
+TRIAL_FILE = HOME_DIR / ".shellteam" / "trial.json"
 
 # Port the cloud-computer file server (nginx) listens on. The subdomain proxy
 # forwards bare-username requests (no "-<port>" suffix) here, and this is the

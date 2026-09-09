@@ -5,6 +5,14 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-09-09
+
+### Added
+- **Trial banner.** When `~/.shellteam/trial.json` exists (`ends_at`, `label`,
+  `cta_url`, `cta_label`), the dashboard shows a countdown to `ends_at` and one
+  link above the tabs. Written by whoever runs a time-boxed box (the
+  shellteam.sh live demo); a box without the file renders nothing.
+
 ## [0.1.21] - 2026-09-09
 
 ### Changed
