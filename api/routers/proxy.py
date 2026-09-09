@@ -49,7 +49,7 @@ from api.services.auth import (
     verify_token,
 )
 from api.services.runtime import resolve_username_owner, start_computer
-from api.services import activity, content_inline, ports, reports
+from api.services import activity, app_routes, content_inline, ports, reports
 from api.services.ratelimit import note_unpublished_read
 
 log = logging.getLogger(__name__)
@@ -62,6 +62,29 @@ SUBDOMAIN_RE = re.compile(
     rf"^(?P<username>[a-z][a-z0-9-]+?)(?:-(?P<port>\d+))?\.{_escaped_domain}$"
 )
 RESERVED_SUBDOMAINS = {"app", "api", "www"}
+
+
+def resolve_host(host: str) -> tuple[str, int] | None:
+    """Map a subdomain host to ``(username, port)``, or None when it is not one.
+
+    ``<owner>.<APP_DOMAIN>`` is the file host, ``<label>-<port>.<APP_DOMAIN>`` a
+    port preview, and a bare ``<name>.<APP_DOMAIN>`` whose label is a registered
+    named app route resolves to that route's port under the OWNER — so a named
+    host and its port host are the same app to every gate downstream
+    (docs/decisions/20260909-named-app-routes.md). An unregistered label keeps
+    the legacy meaning (a username on the file port) so nothing else changes.
+    """
+    m = SUBDOMAIN_RE.match(host)
+    if not m:
+        return None
+    username = m.group("username")
+    if m.group("port"):
+        return username, int(m.group("port"))
+    if username != OWNER_USERNAME and username not in RESERVED_SUBDOMAINS:
+        named = app_routes.port_for_name(OWNER_ID, username)
+        if named is not None:
+            return OWNER_USERNAME, named
+    return username, FILE_PORT
 
 _HOP_BY_HOP_HEADERS = {
     "connection",
@@ -305,10 +328,10 @@ def _origin_is_owner_app_sibling(origin: str | None, target_port: int) -> bool:
         host = origin.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0].lower()
     except IndexError:
         return False
-    m = SUBDOMAIN_RE.match(host)
-    if not m or m.group("username") != OWNER_USERNAME:
+    resolved = resolve_host(host)
+    if not resolved or resolved[0] != OWNER_USERNAME:
         return False
-    origin_port = int(m.group("port")) if m.group("port") else FILE_PORT
+    origin_port = resolved[1]
     return origin_port != FILE_PORT and origin_port not in reserved_service_ports()
 
 
@@ -730,13 +753,12 @@ async def proxy_subdomain(request: Request, path: str):
         return await serve_owner_file(request, path)
 
     # Only handle subdomain requests (not direct API calls on unknown hosts)
-    match = SUBDOMAIN_RE.match(host)
-    if not match:
+    resolved = resolve_host(host.split(":")[0])
+    if not resolved:
         from api.config import NOT_FOUND_HTML
         return HTMLResponse(status_code=404, content=NOT_FOUND_HTML)
 
-    username = match.group("username")
-    port = int(match.group("port")) if match.group("port") else FILE_PORT
+    username, port = resolved
 
     # Skip known subdomains
     if username in RESERVED_SUBDOMAINS:
@@ -874,15 +896,14 @@ async def proxy_websocket(scope, receive, send):
 
     log.info("WS proxy: host=%s path=%s", host, path)
 
-    match = SUBDOMAIN_RE.match(host)
-    if not match:
+    resolved = resolve_host(host)
+    if not resolved:
         log.info("WS proxy: no subdomain match for %s", host)
         ws = WebSocket(scope, receive, send)
         await ws.close(1008, "Invalid host")
         return
 
-    username = match.group("username")
-    port = int(match.group("port")) if match.group("port") else FILE_PORT
+    username, port = resolved
     log.info("WS proxy: username=%s port=%d", username, port)
 
     if username in RESERVED_SUBDOMAINS:

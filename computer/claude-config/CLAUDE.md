@@ -74,6 +74,8 @@ curl -s -X POST {api_base}/internal/ports \
 
 Public ports are reachable at `https://{username}-PORT.localhost` — useful for webhooks, APIs, demos.
 
+**Give a long-lived app a name.** `POST {api_base}/internal/apps` with `{"name": "myapp", "port": 3000}` (same auth headers) registers `https://myapp.localhost` -> port 3000. Share that URL instead of the port one: it survives port changes, and visibility follows the port (private, share link, or public). `GET {api_base}/internal/apps` lists, `DELETE {api_base}/internal/apps/myapp` removes.
+
 
 **File access levels:**
 - `~/anything` → Owner only (login required)

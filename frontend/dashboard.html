@@ -194,6 +194,19 @@
         .card a { color: var(--brand); text-decoration: none; }
         .card a:hover { text-decoration: underline; }
         .muted { color: var(--text-tertiary); font-size: var(--text-xs); margin-top: 10px; line-height: 1.5; }
+        /* Named app routes (Settings) */
+        .routes-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: var(--text-sm); flex-wrap: wrap; }
+        .routes-row:not(:last-child) { border-bottom: 1px solid var(--border); }
+        .routes-row .name { font-family: var(--font-mono); font-size: var(--text-xs); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+        .routes-row .port { color: var(--text-secondary); font-family: var(--font-mono); font-size: var(--text-xs); }
+        .routes-row .vis { font-size: var(--text-xs); padding: 2px 8px; border-radius: 999px; background: var(--surface-2, #1f1f1f); color: var(--text-secondary); }
+        .routes-row .vis.public { background: rgba(245,158,11,.18); color: #f59e0b; }
+        .routes-btn { padding: 6px 12px; border: 0; border-radius: 8px; background: #262626; color: #e5e5e5; font-weight: 600; font-size: .78rem; cursor: pointer; }
+        .routes-btn.primary { background: #f59e0b; color: #0a0a0a; }
+        .routes-form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+        .routes-form input { padding: 8px 10px; border-radius: 8px; border: 1px solid #333; background: #141414; color: #e5e5e5; font-size: .8rem; font-family: var(--font-mono); }
+        .routes-form input[name=name] { flex: 1; min-width: 140px; }
+        .routes-form input[name=port] { width: 90px; }
 
         /* ── AI providers panel ───────────────────────────────────────────── */
         .ai-err { display: none; color: var(--negative); font-size: var(--text-xs); margin-bottom: 10px; }
@@ -528,6 +541,25 @@
                         </div>
                         <p id="enroll-expiry" class="muted" style="margin:10px 0 0;font-size:.78rem"></p>
                     </div>
+                </div>
+
+                <div class="card" id="routes-card">
+                    <h2>App names</h2>
+                    <p class="muted" style="margin-top:0">
+                        Give an app running on a port a stable address:
+                        <span id="routes-example" style="font-family:var(--font-mono)"></span>.
+                        The name keeps working when the port changes. Who can open it
+                        follows the port: private by default, public if you made the port public.
+                    </p>
+                    <div id="routes-list"></div>
+                    <form class="routes-form" id="routes-form" autocomplete="off">
+                        <input name="name" placeholder="name (e.g. inkling)" maxlength="32" required
+                            pattern="[a-z][a-z0-9\-]{0,30}[a-z0-9]" title="2 to 32 chars: starts with a letter, then lowercase letters, digits, hyphens"/>
+                        <input name="port" type="number" placeholder="port" min="1024" max="65535" required/>
+                        <button class="routes-btn primary" type="submit">Save</button>
+                    </form>
+                    <p class="muted" id="routes-err" role="alert" style="color:#f87171;display:none"></p>
+                    <p class="muted">Saving an existing name repoints it. To rename, remove it and save the new name.</p>
                 </div>
 
                 <div class="card">
@@ -955,6 +987,61 @@
         document.getElementById('set-owner').textContent = OWNER_USERNAME;
         document.getElementById('set-domain').textContent = getBaseDomain();
         document.getElementById('set-public').textContent = `${getBaseDomain()}/public/`;
+
+        // ─── Named app routes (Settings card) ───────────────────────────────
+        (function appRoutes() {
+            const list = document.getElementById('routes-list');
+            const form = document.getElementById('routes-form');
+            const errEl = document.getElementById('routes-err');
+            const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = msg ? '' : 'none'; };
+            document.getElementById('routes-example').textContent = `https://myapp.${getBaseDomain()}`;
+            const esc = (t) => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+            function render(apps) {
+                if (!apps.length) {
+                    list.innerHTML = '<p class="muted" style="margin:0">No names yet.</p>';
+                    return;
+                }
+                list.innerHTML = apps.map(a => `
+                    <div class="routes-row">
+                        <a class="name" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url.replace(/^https:\/\//, ''))}</a>
+                        <span class="port">:${a.port}</span>
+                        <span class="vis${a.public ? ' public' : ''}">${a.public ? 'Public' : 'Private'}</span>
+                        <button class="routes-btn" type="button" data-remove="${esc(a.name)}">Remove</button>
+                    </div>`).join('');
+            }
+            async function call(method, path, body) {
+                const r = await fetch(path, {
+                    method, headers: body ? { 'Content-Type': 'application/json' } : {},
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+                return j;
+            }
+            async function load() {
+                try { render((await call('GET', '/api/computers/apps')).apps); }
+                catch (e) { console.error('[routes] load', e); list.innerHTML = `<p class="muted" style="margin:0">Could not load: ${esc(e.message)}</p>`; }
+            }
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = form.elements.name.value.trim().toLowerCase();
+                const port = parseInt(form.elements.port.value, 10);
+                try {
+                    render((await call('POST', '/api/computers/apps', { name, port })).apps);
+                    form.reset(); showErr('');
+                } catch (err) { console.error('[routes] save', err); showErr('Could not save: ' + err.message); }
+            });
+            list.addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-remove]');
+                if (!btn) return;
+                const name = btn.dataset.remove;
+                if (!confirm(`Remove https://${name}.${getBaseDomain()}? The app keeps running on its port.`)) return;
+                try { render((await call('DELETE', `/api/computers/apps/${encodeURIComponent(name)}`)).apps); showErr(''); }
+                catch (err) { console.error('[routes] remove', err); showErr('Could not remove: ' + err.message); }
+            });
+            document.getElementById('tab-settings').addEventListener('click', load);
+            if (location.hash === '#settings') load();
+        })();
 
         // ─── Add a device (one-time enrollment link + QR) ───────────────────
         (function deviceEnroll() {

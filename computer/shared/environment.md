@@ -52,6 +52,18 @@ journalctl --user -u app-myapp -f
    ```
    Returns `{"url": ...}` — anyone with the link can use the app (all methods, its WebSockets included) until it expires.
 2. **Fully public port** (for webhooks/APIs that must accept anonymous traffic indefinitely) — the ports API with `{"port": 3000, "public": true}`; remember to flip it back.
+
+**Give a long-lived app a name.** `{username}-3000.localhost` is tied to the port; a named route is not. Register `https://NAME.localhost` -> port (2 to 32 chars, lowercase letters, digits, hyphens) and hand out the pretty URL. Who can open it follows the PORT (private by default; share link or public toggle apply to the name too), and repointing the name to another port keeps the URL, the installed PWA and its localStorage:
+
+```bash
+curl -s -X POST {api_base}/internal/apps \
+  -H "Authorization: Bearer $SHELLTEAM_AI_TOKEN" \
+  -H "X-Shellteam-User-Id: $SHELLTEAM_USER_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "myapp", "port": 3000}'   # then share https://myapp.localhost
+# list: GET {api_base}/internal/apps   remove: DELETE {api_base}/internal/apps/myapp
+# share link on the name: POST {api_base}/internal/ports/share -d '{"name": "myapp", "ttl": 86400}'
+```
 <!-- END:ports -->
 
 <!-- BEGIN:visibility -->

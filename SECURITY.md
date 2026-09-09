@@ -102,6 +102,13 @@ Two things follow from taking that seriously:
      read" — it cannot write files, and reaching the cockpit port with it
      requires a trusted browser `Origin` (the dashboard or the cockpit itself),
      so it can't be ridden cross-origin either.
+   - **Named app routes** (`<name>.<APP_DOMAIN>` -> a registered port) are
+     resolved to their port *before* the gate runs, so a name is exactly as
+     private, shared or public as the port it points at; it is never a new
+     trust edge. Names live on their own subdomain, never as a path on the
+     dashboard host (that origin holds the master cookie). Only registered
+     names get an on-demand certificate.
+     (docs/decisions/20260909-named-app-routes.md)
    - **Sharing mints signed, expiring links** (`?sig=&exp=`, S3-presigned style):
      one path, limited time, all links revoked by rotating `OWNER_TOKEN`. A raw
      `?token=` in a URL is **never** accepted; the only URL-borne credentials are

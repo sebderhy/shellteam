@@ -13,7 +13,7 @@ from api.config import APP_DOMAIN
 # port the cockpit binds (lib/constants.mjs honours the same env var).
 COCKPIT_PORT = os.environ.get("AI_CHAT_PORT", "3456")
 from api.dependencies import get_current_user, require_trusted_origin
-from api.services import runtime as containers, activity, ports, report_catalog, reports
+from api.services import runtime as containers, activity, app_routes, ports, report_catalog, reports
 from api.services.ratelimit import RateLimiter
 from api.models.schemas import ComputerStatus
 
@@ -95,6 +95,35 @@ async def set_port_visibility(body: PortVisibilityRequest, user: dict = Depends(
 async def list_public_ports(user: dict = Depends(get_current_user)):
     """List the user's publicly accessible ports."""
     return {"public_ports": sorted(ports.get_public_ports(user["id"]))}
+
+
+# --- Named app routes (owner, cookie-authed — Settings card) ---
+
+
+class AppRouteRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    port: int = Field(..., ge=1, le=65535)
+
+
+@router.get("/apps")
+async def list_app_routes(user: dict = Depends(get_current_user)):
+    return {"apps": app_routes.describe(user["id"])}
+
+
+@router.post("/apps", dependencies=[Depends(require_trusted_origin)])
+async def set_app_route(body: AppRouteRequest, user: dict = Depends(get_current_user)):
+    try:
+        app_routes.set_route(user["id"], body.name, body.port)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"apps": app_routes.describe(user["id"])}
+
+
+@router.delete("/apps/{name}", dependencies=[Depends(require_trusted_origin)])
+async def remove_app_route(name: str, user: dict = Depends(get_current_user)):
+    if not app_routes.remove_route(user["id"], name):
+        raise HTTPException(status_code=404, detail=f"No named route '{name}'")
+    return {"apps": app_routes.describe(user["id"])}
 
 
 # --- Report visibility (owner, cookie-authed — used by the dashboard panel) ---

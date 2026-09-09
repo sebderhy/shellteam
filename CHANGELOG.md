@@ -5,6 +5,20 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-09-09
+
+### Added
+- **Named app routes.** Give an app running on a port a stable address:
+  `https://<name>.<APP_DOMAIN>` -> port, registered from the box
+  (`POST /internal/apps {"name","port"}`) or the Settings card ("App names").
+  The name is served through the same gate as `<owner>-<port>`: private by
+  default, a share link or the public toggle on the port applies to the name,
+  and repointing the name to another port keeps the URL, installed PWAs and
+  their localStorage. `POST /internal/ports/share` accepts `{"name": ...}` to
+  mint the link on the named host. Reserved labels and `<label>-<digits>`
+  names are refused; on-demand TLS issues certificates only for registered
+  names. (docs/decisions/20260909-named-app-routes.md)
+
 ## [0.1.22] - 2026-09-09
 
 ### Added

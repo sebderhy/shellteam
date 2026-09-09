@@ -26,7 +26,7 @@ AI_CHAT_PORT = os.environ.get("AI_CHAT_PORT", "3456")
 
 from api.config import RUNTIME, migrate_legacy_state_dir  # noqa: E402
 from api.routers import ai_tools, auth, computers, enroll, feedback, integrations, knowledge, mirror, settings, terminal, internal, proxy  # noqa: E402
-from api.services import ports as port_service, reports as report_service  # noqa: E402
+from api.services import app_routes, ports as port_service, reports as report_service  # noqa: E402
 from api.services.ratelimit import RateLimiter  # noqa: E402
 
 # Global rate limit — 120 req/min per IP (catch-all safety net)
@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
             "this box is only reachable over a trusted private overlay."
         )
     port_service.seed_from_disk()
+    app_routes.seed_from_disk()
     report_service.seed_from_disk()
     # ~/public is no longer an ambient world-readable mount (a stray write or a
     # prompt-injected agent could publish by touching a path). Serving now
