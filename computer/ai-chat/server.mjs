@@ -35,6 +35,7 @@ import {
   saveOpenAIApiKey,
   getCliEnv,
   authModeFor,
+  modelPermitted,
   subscriptionStatusFor,
   recordSubscriptionAuthFailure,
   startOAuth,
@@ -97,7 +98,7 @@ import {
 import * as TerminalBridge from "./lib/terminal-bridge.mjs";
 import { attachShellSocket } from "./lib/shell-terminal.mjs";
 import { startDeviceFlow as startGitHubFlow, getStatus as getGitHubStatus, disconnect as disconnectGitHub, listRepos as listGitHubRepos, startClones as startGitHubClones, cloneStatus as gitHubCloneStatus } from "./lib/github-auth.mjs";
-import { loadCatalog } from "./lib/model-catalog.mjs";
+import { includedModelsByFamily, loadCatalog } from "./lib/model-catalog.mjs";
 import {
   handleUpload as sharedHandleUpload,
   handleTranscribe as sharedHandleTranscribe,
@@ -202,6 +203,10 @@ function authFlags() {
       antigravity: authModeFor("antigravity"),
       opencode: authModeFor("opencode"),
     },
+    // Models offered on this box's own key ({ codex: ["gpt-5.6-terra-max"] },
+    // from INCLUDED_MODELS). A family listed here bills "included": the UI asks
+    // for the user's own plan first and offers exactly these models "on us".
+    includedModels: includedModelsByFamily(),
     // Health is independent from billing mode. An expired subscription can
     // coexist with "apikey" when ShellTeam has fallen back to a metered key.
     subscriptionStatus: {
@@ -1268,7 +1273,14 @@ chatWSS.on("connection", (ws, req) => {
         // instead of resurrecting the closed slot's. The targeted ack lets the
         // requesting client rename its optimistic local tab.
         const config = {};
-        if (msg.model) config.model = msg.model;
+        if (msg.model) {
+          const permitted = modelPermitted(msg.model);
+          if (!permitted.ok) {
+            ws.send(JSON.stringify({ type: "error", slot: hint ?? null, message: permitted.reason }));
+            break;
+          }
+          config.model = msg.model;
+        }
         if (msg.cwd) config.cwd = msg.cwd;
         const allocated = allocateSlotId(hint, (id) => delegationBroker.isBrokerSlot(id));
         createSlot(allocated, config);

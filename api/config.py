@@ -158,6 +158,15 @@ def reserved_service_ports() -> set[int]:
     function keeps test overrides of the env honest."""
     return {API_PORT, AI_CHAT_PORT_NUM, FILE_PORT, STEEL_PORT}
 
+# PUBLIC_SHARING=off keeps a box from making ANYTHING world-readable: no
+# public ports, no signed share links, no published reports, and anything
+# already marked public on disk is served as private. For boxes that strangers
+# drive (a live demo, a box run for someone else) so a visitor cannot host a
+# page on the operator's domain. Default on: sharing is a core feature.
+PUBLIC_SHARING = os.environ.get("PUBLIC_SHARING", "on").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+
 # "Made with ShellTeam" footer on HTML served to third parties — published
 # reports and signed share links. The owner's own views are never badged
 # (docs/decisions/20260715-share-footer.md). Set SHARE_FOOTER=false to disable.

@@ -14,6 +14,7 @@ from api.config import APP_DOMAIN
 COCKPIT_PORT = os.environ.get("AI_CHAT_PORT", "3456")
 from api.dependencies import get_current_user, require_trusted_origin
 from api.services import runtime as containers, activity, app_routes, ports, report_catalog, reports
+from api.services.exposure_policy import require_public_sharing
 from api.services.ratelimit import RateLimiter
 from api.models.schemas import ComputerStatus
 
@@ -84,6 +85,8 @@ class PortVisibilityRequest(BaseModel):
 @router.post("/ports")
 async def set_port_visibility(body: PortVisibilityRequest, user: dict = Depends(get_current_user)):
     """Toggle public visibility for a port on the user's container."""
+    if body.public:
+        require_public_sharing()
     try:
         result = ports.set_port_visibility(user["id"], body.port, body.public)
     except ValueError as e:
@@ -156,6 +159,8 @@ async def set_report_visibility(body: ReportVisibilityRequest, user: dict = Depe
     reach it (in-box agents go through /internal/reports, which stays confined
     to reports/ and public/).
     """
+    if body.public:
+        require_public_sharing()
     relpath = _resolve_report(user["id"], body.path, owner_initiated=True)
     try:
         result = reports.set_report_visibility(user["id"], relpath, body.public)

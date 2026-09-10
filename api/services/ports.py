@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from api.config import DATA_DIR, reserved_service_ports
+from api.services.exposure_policy import public_sharing_enabled
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ def is_port_public(user_id: str, port: int) -> bool:
     # value would serve the cockpit/browser with auth skipped. A reserved port
     # is never public regardless of what disk says (seed_from_disk also scrubs).
     if port in reserved_service_ports():
+        return False
+    if not public_sharing_enabled():
         return False
     return port in _public_ports.get(user_id, set())
 

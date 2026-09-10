@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from api.config import APP_DOMAIN, APP_URL, OWNER_ID, OWNER_USERNAME, RUNTIME
 from api.services import runtime as containers, app_routes, ports, reports, composio as composio_svc
+from api.services.exposure_policy import require_public_sharing
 from api.services.internal_auth import verify_notify_token
 from api.services.notify import send_notification
 from api.services.ratelimit import RateLimiter
@@ -82,6 +83,8 @@ async def set_port_visibility_internal(body: InternalPortRequest, request: Reque
     Auth: per-user HMAC token + X-Shellteam-User-Id header.
     """
     user_id = _verify_internal_auth(request)
+    if body.public:
+        require_public_sharing()
     try:
         result = ports.set_port_visibility(user_id, body.port, body.public)
     except ValueError as e:
@@ -123,6 +126,7 @@ async def mint_port_share_internal(body: InternalPortShareRequest, request: Requ
     from api.services.auth import sign_share_port
 
     user_id = _verify_internal_auth(request)
+    require_public_sharing()
     if not OWNER_TOKEN:
         raise HTTPException(
             status_code=409,
@@ -228,6 +232,8 @@ async def set_report_visibility_internal(body: InternalReportRequest, request: R
     the caller should hand out.
     """
     scope, home_dir, url_prefix = _publish_principal(request)
+    if body.public:
+        require_public_sharing()
     relpath = _report_relpath(home_dir, body.path)
     try:
         result = reports.set_report_visibility(scope, relpath, body.public)

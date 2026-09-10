@@ -114,6 +114,12 @@ Two things follow from taking that seriously:
      `?token=` in a URL is **never** accepted; the only URL-borne credentials are
      the single-use enrollment code and a one-time `GET /?token=` redemption that
      immediately sets the cookies and scrubs the query.
+   - **`PUBLIC_SHARING=off` closes every anonymous door at once.** For a box a
+     stranger drives (a live demo, a box you run for a colleague): public port
+     toggles, share links and report publishing all refuse with a clear 403,
+     and the read side treats nothing as public even if a published set is on
+     disk. The visitor keeps everything they can reach signed in; they just
+     cannot host a page on your domain.
 
    - **Served content is origin-sandboxed.** File URLs are main-domain paths, so
      an agent-written or `~/public` HTML file is served *on the dashboard origin*.

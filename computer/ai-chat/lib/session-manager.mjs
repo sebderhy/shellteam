@@ -8,6 +8,8 @@ import {
   saveApiKey,
   loadOpenAIApiKey,
   recordSubscriptionAuthFailure,
+  modelPermitted,
+  permittedModelOr,
 } from "./session.mjs";
 import { loadAdapterClass, supports, agentIdFor } from "./agents/registry.mjs";
 import { resolveModelId } from "./model-catalog.mjs";
@@ -306,6 +308,10 @@ function truncateTitle(content) {
 export function setSlotModel(slotId, model) {
   const slot = getSlot(slotId);
   if (!slot) return { error: "This tab no longer exists — it was closed on another device." };
+  // Every model change lands here (picker, create_tab, delegation broker) —
+  // the one place to refuse a model the box's included key does not cover.
+  const permitted = modelPermitted(model);
+  if (!permitted.ok) return { error: permitted.reason };
   const oldModel = slot.config.model;
   slot.config.model = model;
   touchSlot(slotId);
@@ -1152,7 +1158,7 @@ export function restoreSlots() {
 
   for (const s of saved) {
     const slot = materializeSlot(s.id);
-    if (s.model) slot.config.model = resolveModelId(s.model);
+    if (s.model) slot.config.model = permittedModelOr(resolveModelId(s.model), `tab ${s.id} model`);
     if (s.cwd) slot.config.cwd = clampToWorkspaceLock(s.cwd);
     slot.sessionId = s.sessionId || null;
     slot.sessionFamily = s.sessionFamily || null;

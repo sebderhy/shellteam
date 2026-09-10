@@ -73,6 +73,11 @@ window.App = {
         // Per-family OAuth health, independent from billing mode. "expired"
         // can coexist with "apikey" when a metered key took over.
         subscriptionStatus: null,
+        // Models offered on this box's own key, by family ({ codex: [ids] }),
+        // from INCLUDED_MODELS. A family listed here bills "included": the
+        // setup screen asks for the user's own plan first and offers these
+        // "on us"; the picker lists only them until a plan is connected.
+        includedModels: {},
         // Provider-normalized subscription quota data. The cockpit refreshes this
         // in the background and the server caches provider checks, so the compact
         // header monitor remains current without repeatedly opening provider TUIs.
@@ -625,7 +630,10 @@ function openModelPicker() {
         html += `<div class="picker-group-label">${escHtml(a.label || a.id)}
             ${badge ? `<span class="auth-badge ${badge.cls}" title="${escHtml(badge.title)}">${badge.label}</span>` : ''}
         </div>`;
-        for (const m of (a.models || [])) {
+        // On an included key the family offers only its INCLUDED_MODELS; the
+        // rest come back the moment the user connects their own plan.
+        const models = (a.models || []).filter(m => modelPermittedHere(m.id));
+        for (const m of models) {
             const current = m.id === S.currentModel;
             html += `<div class="session-item model-item${current ? ' active' : ''}" onclick="pickModel('${jsArg(m.id)}')">
                 <span class="model-item-name">${escHtml(m.name || m.id)}</span>
@@ -854,7 +862,31 @@ function hasAuthForModel(model) {
     const family = agentIdForModel(model);
     if (!agentInstalled(family)) return false;  // no CLI, so credentials are moot
     if (isOpenCodeModel(model)) return S.hasOpenCode;  // only when a server-side Fireworks key exists
-    return familyHasAuth(family);
+    return familyHasAuth(family) && modelPermittedHere(model);
+}
+
+// Included-key gating (mirrors modelPermitted in lib/session.mjs): when a
+// family runs on the box's own key, only its INCLUDED_MODELS may be picked.
+function includedModelsFor(family) {
+    return (S.includedModels && S.includedModels[family]) || [];
+}
+function familyIsIncluded(family) {
+    return S.authMode?.[family] === 'included' && includedModelsFor(family).length > 0;
+}
+function modelPermittedHere(model) {
+    const family = agentIdForModel(model);
+    return !familyIsIncluded(family) || includedModelsFor(family).includes(model);
+}
+// The family's own credentials (subscription or the user's key) — an included
+// box key is the operator's courtesy, not something the user connected.
+function familyHasOwnAuth(family) {
+    const mode = S.authMode?.[family];
+    return mode === 'subscription' || mode === 'apikey';
+}
+// Where a fresh tab lands for a family: its included model on an included key,
+// else the family's usual default.
+function preferredModelFor(family, fallback) {
+    return familyIsIncluded(family) ? includedModelsFor(family)[0] : fallback;
 }
 
 // The setup tab that connects the credentials a model needs.
@@ -879,7 +911,7 @@ function billingModeForModel(model) {
 const BILLING_BADGE = {
     subscription: { label: 'Subscription', cls: 'sub', title: 'Runs on your subscription — no per-token API charges.' },
     apikey:       { label: 'API · metered', cls: 'api', title: 'Billed per token via your API key — far more expensive than a subscription. Connect a subscription in AI settings to switch.' },
-    included:     { label: 'API key', cls: 'inc', title: 'Runs via the Fireworks API key configured on this box.' },
+    included:     { label: 'Included', cls: 'inc', title: 'Runs on the API key configured on this box, not on your subscription. Nothing to connect.' },
     none:         { label: 'Not connected', cls: 'off', title: 'No credentials for this model yet — open AI settings to connect.' },
 };
 
@@ -1411,16 +1443,36 @@ function hasAnyProvider() {
         || (agentInstalled('opencode') && S.hasOpenCode);
 }
 
+// The user explicitly took the "on us" option (renderIncludedFallback). Kept in
+// this browser: an included key is a courtesy fallback, so the setup screen
+// asks for the user's OWN plan first and only stops asking once they chose it.
+const INCLUDED_CHOSEN_KEY = 'shellteam.includedChosen';
+function includedFallbackChosen() {
+    return localStorage.getItem(INCLUDED_CHOSEN_KEY) === '1';
+}
+
+function hasIncludedFamily() {
+    return Object.keys(SETUP_TAB_FAMILY).map(t => SETUP_TAB_FAMILY[t])
+        .some(fam => agentInstalled(fam) && familyIsIncluded(fam));
+}
+
 function isAuthed() {
     // When OpenCode is available (managed Fireworks key), a brand-new box can chat
     // immediately. When it is NOT (OSS box with no FIREWORKS_API_KEY), a box with
     // zero credentials has no working agent, so we must show the setup flow instead
     // of silently dropping the user into a chat that fails on first message.
     //
+    // A family whose only credential is the box's INCLUDED key is different: the
+    // operator wants the user asked for their own plan first, so it counts only
+    // once the user has explicitly chosen the "on us" option.
+    //
     // This does NOT suppress the per-model auth screen: `changeModel()` still calls
     // `hasAuthForModel(model)` and shows setup if the user switches to a provider
     // without credentials. `isAuthed()` only gates the initial chat-vs-setup choice.
-    return hasAnyProvider();
+    if (!hasAnyProvider()) return false;
+    const own = ['claude', 'codex', 'antigravity'].some(fam => agentInstalled(fam) && familyHasOwnAuth(fam))
+        || (agentInstalled('opencode') && S.hasOpenCode);
+    return own || !hasIncludedFamily() || includedFallbackChosen();
 }
 
 function showChat() {
@@ -1461,6 +1513,32 @@ function continueWithOpenCode() {
     changeModel(model);
 }
 
+function continueWithIncluded(model) {
+    localStorage.setItem(INCLUDED_CHOSEN_KEY, '1');
+    _manualConfigOpen = false;
+    $('setupClose').classList.add('hidden');
+    changeModel(model);
+}
+
+// One button per model the box offers on its own key, under every setup tab:
+// "connect your plan" stays the headline, the courtesy option comes second.
+function renderIncludedFallback() {
+    const box = $('setupIncluded');
+    if (!box) return;
+    const entries = [];
+    for (const fam of Object.values(SETUP_TAB_FAMILY)) {
+        if (!agentInstalled(fam) || !familyIsIncluded(fam)) continue;
+        for (const id of includedModelsFor(fam)) entries.push(id);
+    }
+    box.classList.toggle('hidden', entries.length === 0);
+    if (!entries.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="setup-divider"><span>or skip the sign-in</span></div>`
+        + entries.map(id => `<button class="setup-btn setup-included-btn" type="button" onclick="continueWithIncluded('${jsArg(id)}')">
+                ${escHtml(modelDisplayName(id))} <span class="setup-included-tag">on us</span>
+            </button>`).join('')
+        + `<div class="setup-hint" style="text-align: center; margin-top: 8px;">Runs on this box's own key, nothing billed to you. Connect your plan any time for the full model list.</div>`;
+}
+
 function updateSetupDots() {
     const ccDot = $('dot-cc');
     const cdxDot = $('dot-cdx');
@@ -1473,6 +1551,7 @@ function updateSetupDots() {
     if (agyDot) agyDot.classList.toggle('attention', subscriptionHealthForFamily('antigravity') === 'expired');
     updateSetupTabVisibility();
     updateOpenCodeSetup();
+    renderIncludedFallback();
 }
 
 // Setup tab ↔ agent family. A family whose CLI isn't installed on the box gets
@@ -1550,7 +1629,7 @@ function autoSwitchToAuthedModel() {
     // OpenCode is the fallback when the box has a Fireworks key configured.
     const fallbacks = [
         { check: () => agentInstalled('claude') && familyHasAuth('claude'), model: 'claude-opus-5' },
-        { check: () => agentInstalled('codex') && familyHasAuth('codex'), model: 'gpt-5.6-sol-max' },
+        { check: () => agentInstalled('codex') && familyHasAuth('codex'), model: preferredModelFor('codex', 'gpt-5.6-sol-max') },
         { check: () => agentInstalled('opencode') && S.hasOpenCode, model: opencodeDefaultModel() },
     ];
     for (const { check, model } of fallbacks) {
@@ -2227,6 +2306,7 @@ function handleStatusMessage(msg) {
     if (msg.installedAgents) S.installedAgents = msg.installedAgents;
     S.apiKeySource = msg.apiKeySource || S.apiKeySource;
     if (msg.authMode) S.authMode = msg.authMode;
+    if (msg.includedModels) S.includedModels = msg.includedModels;
     if (msg.subscriptionStatus) S.subscriptionStatus = msg.subscriptionStatus;
     renderSubscriptionWarning();
     // NB: top-level msg.sessionId is a legacy slot-0-only field (server sends

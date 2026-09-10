@@ -26,6 +26,7 @@ import os
 from pathlib import Path
 
 from api.config import DATA_DIR
+from api.services.exposure_policy import public_sharing_enabled
 
 log = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ def is_report_public(user_id: str, relpath: str) -> bool:
     """True when ``relpath`` is published — exactly, or inside a published
     directory (segment-prefix match, so ``public/logo`` never grants
     ``public/logos-secret``)."""
-    if not relpath:
+    if not relpath or not public_sharing_enabled():
         return False
     rel = relpath.lstrip("/").rstrip("/")
     entries = _public_reports.get(user_id, set())
@@ -124,6 +125,8 @@ def is_report_public(user_id: str, relpath: str) -> bool:
 
 
 def get_public_reports(user_id: str) -> set[str]:
+    if not public_sharing_enabled():
+        return set()
     return set(_public_reports.get(user_id, set()))
 
 

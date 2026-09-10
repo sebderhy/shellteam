@@ -3,7 +3,25 @@
 All notable changes to ShellTeam are documented here. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.26] - 2026-09-10
+
+### Added
+- **`INCLUDED_MODELS`: offer a box key "on us", limited to chosen models.**
+  A key in `.env` used to read as the user's own: the cockpit skipped the
+  setup screen and landed on the family's default (GPT-5.6 Sol for Codex)
+  with every model one click away. Listing catalog ids in `INCLUDED_MODELS`
+  flips that family to the "included" billing mode: the setup screen asks for
+  the user's own subscription first and shows the included models as an
+  "on us" button underneath; the picker lists only those models until a plan
+  is connected; the server refuses any other model of that family; persisted
+  defaults and tabs naming an excluded model are coerced, with a log line.
+  Built for the live demo (a capped OpenAI key limited to GPT-5.6 Terra).
+- **`PUBLIC_SHARING=off`: a box that can never make anything world-readable.**
+  Public port toggles, signed share links (files and apps) and report
+  publishing refuse with a clear 403, and the read side serves nothing as
+  public even when a published set survives on disk. Unpublishing still works.
+  For boxes strangers drive (the live demo), so a visitor cannot host a page
+  on the operator's domain. Default on; sharing is unchanged for everyone else.
 
 ## [0.1.25] - 2026-09-10
 

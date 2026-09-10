@@ -29,7 +29,7 @@ import {
   OAUTH_SCOPES,
 } from "./constants.mjs";
 import { agentIdFor } from "./agents/registry.mjs";
-import { resolveModelId } from "./model-catalog.mjs";
+import { agentIdForModel, includedModelsByFamily, resolveModelId } from "./model-catalog.mjs";
 import { opencodeConfigPath } from "./agent-layer.mjs";
 // clearAllHistory removed — history is now managed by SessionManager
 
@@ -46,7 +46,39 @@ export function loadModel() {
   // has since left the catalog (e.g. Opus 4.8 -> Opus 5), which would strand
   // every new tab on a dead pin the picker can't select.
   const saved = existsSync(MODEL_FILE) ? readFileSync(MODEL_FILE, "utf8").trim() : DEFAULT_MODEL;
-  return resolveModelId(saved);
+  return permittedModelOr(resolveModelId(saved), "saved default model");
+}
+
+/**
+ * Whether this box may run `model` right now. The only refusal today: the
+ * model's family runs on the box's own key as an "included" fallback
+ * (INCLUDED_MODELS) and the model is not on that list — the visitor must
+ * connect their own plan for it. Returns { ok } or { ok: false, reason }.
+ */
+export function modelPermitted(model) {
+  const family = agentIdForModel(model);
+  const included = includedModelsByFamily()[family] || [];
+  // No INCLUDED_MODELS for this family = nothing to gate. (OpenCode's proxy
+  // also bills "included", but that is not this allowlist.)
+  if (!included.length || authModeFor(family) !== "included" || included.includes(model)) return { ok: true };
+  return {
+    ok: false,
+    reason: `${model} is not included on this box's key (included: ${included.join(", ")}). Connect your own plan in AI settings to use it.`,
+  };
+}
+
+/**
+ * `model` when this box may run it, else the family's first included model —
+ * logged, never silent. For persisted state (default model, saved tabs) that
+ * predates INCLUDED_MODELS: a golden image saved with GPT-5.6 Sol must not
+ * start visitors on the flagship the operator chose not to include.
+ */
+export function permittedModelOr(model, what) {
+  const verdict = modelPermitted(model);
+  if (verdict.ok) return model;
+  const fallback = includedModelsByFamily()[agentIdForModel(model)][0];
+  console.warn(`[session] ${what} ${model} is not permitted here — using ${fallback} (${verdict.reason})`);
+  return fallback;
 }
 
 export function saveModel(model) {
@@ -344,9 +376,9 @@ function claudeApiKey() {
 export function authModeFor(family) {
   switch (family) {
     case "claude":
-      return subscriptionStatusFor("claude") === "connected" ? "subscription" : claudeApiKey() ? "apikey" : "none";
+      return subscriptionStatusFor("claude") === "connected" ? "subscription" : claudeApiKey() ? keyMode("claude") : "none";
     case "codex":
-      return subscriptionStatusFor("codex") === "connected" ? "subscription" : loadOpenAIApiKey() ? "apikey" : "none";
+      return subscriptionStatusFor("codex") === "connected" ? "subscription" : loadOpenAIApiKey() ? keyMode("codex") : "none";
     case "antigravity":
       // agy authenticates only via Google OAuth — there is no user-API-key path.
       // Validate the token (not bare file existence): agy can leave a partial/
@@ -358,6 +390,17 @@ export function authModeFor(family) {
       return null;
   }
 }
+
+// How a family's API key bills: the user's own money ("apikey"), or — when the
+// operator listed models of this family in INCLUDED_MODELS — the box's key
+// offered as a courtesy fallback ("included", same mode OpenCode's proxy uses).
+function keyMode(family) {
+  return (includedModelsByFamily()[family] || []).length ? "included" : "apikey";
+}
+
+// The CLI gets the family's key in both key-backed modes; only a subscription
+// login (or no credentials) strips it.
+const KEY_MODES = new Set(["apikey", "included"]);
 
 // Apply an API key to its env var(s), or strip them when key is null. Stripping
 // is the whole point in subscription mode: it removes any ambient/stale key that
@@ -373,12 +416,13 @@ export function getCliEnv(cwd = HOME) {
   const env = { ...process.env, HOME };
 
   // Subscription-first (see authModeFor): pass a family's API key through ONLY in
-  // genuine apikey mode; in subscription/none mode strip the var so an ambient or
-  // stale key can't silently override — and out-bill — the user's subscription.
+  // a key-backed mode (apikey, or included via INCLUDED_MODELS); in
+  // subscription/none mode strip the var so an ambient or stale key can't
+  // silently override — and out-bill — the user's subscription.
   const claudeMode = authModeFor("claude");
   const codexMode = authModeFor("codex");
-  applyKeyVars(env, ["ANTHROPIC_API_KEY"], claudeMode === "apikey" ? claudeApiKey() : null);
-  applyKeyVars(env, ["OPENAI_API_KEY"], codexMode === "apikey" ? loadOpenAIApiKey() : null);
+  applyKeyVars(env, ["ANTHROPIC_API_KEY"], KEY_MODES.has(claudeMode) ? claudeApiKey() : null);
+  applyKeyVars(env, ["OPENAI_API_KEY"], KEY_MODES.has(codexMode) ? loadOpenAIApiKey() : null);
   // Google/Antigravity: agy uses its own Google OAuth token; a GEMINI_API_KEY /
   // GOOGLE_API_KEY in the env (often ambient on the box) hijacks that into a
   // degraded API-key backend. No agent we launch needs these keys — always strip.

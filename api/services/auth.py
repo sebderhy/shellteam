@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from fastapi import Request, HTTPException, Response
 
 from api.config import APP_DOMAIN, MAIN_HOSTS, OWNER_ID, OWNER_EMAIL, OWNER_USERNAME, OWNER_TOKEN, DATA_DIR
+from api.services.exposure_policy import public_sharing_enabled
 
 log = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ def sign_share_path(path: str, exp: int) -> str:
 
 def verify_share_sig(path: str, sig: str | None, exp: str | None) -> bool:
     """True when ``sig`` is a live signature for exactly this path."""
-    if not OWNER_TOKEN or not sig or not exp:
+    if not OWNER_TOKEN or not sig or not exp or not public_sharing_enabled():
         return False
     try:
         exp_ts = int(exp)
@@ -143,6 +144,8 @@ def sign_share_port(port: int, exp: int) -> str:
 def verify_share_port_sig(port: int, sig: str | None, exp: str | None) -> bool:
     """True when ``sig`` is a live share signature for exactly this port."""
     if not OWNER_TOKEN or not isinstance(sig, str) or not isinstance(exp, str):
+        return False
+    if not public_sharing_enabled():
         return False
     try:
         exp_ts = int(exp)

@@ -321,6 +321,12 @@
                         Continue with OpenCode
                     </button>
                 </div>
+
+                <!-- Models this box offers on its OWN key (INCLUDED_MODELS in .env):
+                     rendered by renderIncludedFallback() under every tab, so the
+                     user is asked for their own plan first and sees the courtesy
+                     option second. Hidden when the box includes nothing. -->
+                <div class="setup-included hidden" id="setupIncluded"></div>
             </div>
         </div>
 

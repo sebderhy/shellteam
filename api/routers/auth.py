@@ -19,6 +19,7 @@ from api.services.auth import (
     token_is_owner,
 )
 from api.services.ratelimit import RateLimiter, note_auth_failure
+from api.services.exposure_policy import require_public_sharing
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -95,6 +96,7 @@ async def mint_share_link(
     link exposes that single port (all methods — apps are interactive) until
     ``exp``. Rotating OWNER_TOKEN revokes every outstanding link at once.
     """
+    require_public_sharing()
     if not OWNER_TOKEN:
         raise HTTPException(
             status_code=409,

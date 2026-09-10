@@ -59,6 +59,38 @@ const _FAMILY_DEFAULTS = {
 };
 
 /**
+ * Models the box OFFERS ON ITS OWN KEY, by agent family, from `INCLUDED_MODELS`
+ * in .env (comma-separated catalog ids). Setting it declares the family's API
+ * key as a courtesy fallback for whoever drives this cockpit (a demo, a box you
+ * run for someone else) rather than the user's own money: the cockpit asks for
+ * their subscription first, offers exactly these models "on us", and refuses
+ * every other model of that family until they connect their own plan.
+ * Empty (default) = nothing included; keys in .env bill as "apikey" as before.
+ * Ids the catalog does not know are dropped LOUDLY (a typo must not widen the
+ * allowlist to "anything"). Parsed once per process, like the catalog itself.
+ */
+let _included = null;
+
+export function includedModelsByFamily(env = process.env) {
+  if (_included) return _included;
+  const byFamily = {};
+  const raw = (env.INCLUDED_MODELS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  for (const id of raw) {
+    if (!isKnownModel(id)) {
+      console.error(`[model-catalog] INCLUDED_MODELS names "${id}", which is not in config/models.json — ignored`);
+      continue;
+    }
+    (byFamily[agentIdForModel(id)] ||= []).push(id);
+  }
+  if (raw.length) console.log(`[model-catalog] included models (on this box's key): ${JSON.stringify(byFamily)}`);
+  _included = byFamily;
+  return _included;
+}
+
+/** Test hook: forget the parsed INCLUDED_MODELS so a changed env is re-read. */
+export function resetIncludedModelsCache() { _included = null; }
+
+/**
  * Resolve a persisted model id to one the catalog currently offers. A tab saved
  * against a model that has since left the catalog (renamed or removed — e.g.
  * Opus 4.8 -> Opus 5) would otherwise show a dead pin the picker can't select;
