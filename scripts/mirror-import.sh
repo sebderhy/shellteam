@@ -41,7 +41,7 @@ export SHELLTEAM_MIRROR_CRED=""
 # pinned to a release TAG, never a mutable ref: this code reads your dotfiles,
 # so whoever can move a branch must not be able to change what runs here.
 # Bump MIRROR_FALLBACK_REF when tagging a release (docs/release-qa.md).
-MIRROR_FALLBACK_REF="v0.1.26"
+MIRROR_FALLBACK_REF="v0.1.27"
 if [ -n "${MIRROR_RAW_BASE:-}" ]; then
     RAW_BASE="$MIRROR_RAW_BASE"
 elif [ -n "$BOX_ARG" ]; then

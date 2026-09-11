@@ -592,6 +592,8 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 .setup-hint {
     font-size: 12px; color: var(--text-dim); line-height: 1.5; text-align: left;
 }
+.setup-hint a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
+.setup-hint a:hover { color: var(--accent); }
 .setup-hint code {
     background: var(--surface-el); padding: 2px 6px; border-radius: 4px;
     font-family: var(--mono); font-size: 11px; color: var(--text-muted);

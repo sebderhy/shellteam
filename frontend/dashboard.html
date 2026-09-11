@@ -1908,7 +1908,8 @@
                 visBtn.classList.toggle('is-public', pub);
                 visBtn.disabled = toggleDisabled;
                 visBtn.title = toggleDisabled
-                    ? (pub ? 'Served from ~/public — always public' : 'Cannot change visibility')
+                    ? (pub ? 'Served from ~/public — always public'
+                           : (relpath ? 'Cannot change visibility' : 'An app on a port: share it from the Apps tab'))
                     : (pub ? 'Public — click to make private' : 'Private — click to make public');
                 // Private reports are shareable too, via a signed 24h link — no
                 // need to make the file public just to show someone once.
@@ -1930,7 +1931,7 @@
                 // leave allow-same-origin on for a subsequent untrusted report.
                 frame.setAttribute('sandbox', isFirstPartyApp(u) ? TRUSTED_SANDBOX : STRICT_SANDBOX);
                 frame.src = u;
-                titleEl.textContent = title || (relpath ? relpath.split('/').pop() : 'Report');
+                titleEl.textContent = title || (relpath ? relpath.split('/').pop() : new URL(u, location.href).hostname);
                 panel.classList.remove('hidden');
                 split.classList.add('report-open');
                 refreshStatus();

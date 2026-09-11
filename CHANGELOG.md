@@ -3,6 +3,17 @@
 All notable changes to ShellTeam are documented here. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.27] - 2026-09-11
+
+### Fixed
+- **Apps the agent deploys now open in the side panel.** The panel only
+  recognised links ending in `.html`, so "here is your app:
+  `https://kahava.<APP_DOMAIN>`" (a named route, or an `owner-<port>` host)
+  left it shut while a report file opened it. Any page on an app host of this
+  box now opens next to the chat; assets, the cockpit and the dashboard do not.
+- Setup screen: the "get an API key" links under each provider's key field
+  rendered in the browser's default blue; they now follow the cockpit palette.
+
 ## [0.1.26] - 2026-09-10
 
 ### Added

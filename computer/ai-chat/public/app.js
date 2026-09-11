@@ -498,13 +498,28 @@ const ReportPanel = {
     isBoxReport(href) {
         let u;
         try { u = new URL(href, location.href); } catch { return false; }
-        if (!/\.html?$/i.test(u.pathname)) return false;
         if (u.origin === location.origin) return false;
         const here = location.hostname;
         const h = u.hostname;
+        if (this.isBoxApp(u, here)) return true;
+        if (!/\.html?$/i.test(u.pathname)) return false;
         if (h === 'localhost' || h.endsWith('.localhost') || h === '127.0.0.1') return true;
         const base = (host) => host.split('.').slice(-2).join('.');
         return here.includes('.') && base(h) === base(here);
+    },
+
+    // An app the agent serves on this box: `<name>.<APP_DOMAIN>` or
+    // `<owner>-<port>.<APP_DOMAIN>`, i.e. a sibling of the cockpit's own host
+    // (`<owner>-3456.<APP_DOMAIN>`), at its root or an extension-less route. The
+    // page a visitor would open on a phone is what the panel should show, not
+    // only files named *.html. Assets (png, json, css) are not pages.
+    isBoxApp(u, here) {
+        const labels = here.split('.');
+        const appDomain = labels.length >= 3 ? labels.slice(1).join('.') : here;
+        const h = u.hostname;
+        if (h === appDomain || !h.endsWith('.' + appDomain)) return false;
+        const last = u.pathname.split('/').pop();
+        return !last || !last.includes('.') || /\.html?$/i.test(last);
     },
 
     // Ask the dashboard shell to open the report. Standalone (no parent frame):
@@ -515,7 +530,7 @@ const ReportPanel = {
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({
                 source: 'shellteam-cockpit', kind: 'report-open',
-                url: abs, title: title || decodeURIComponent(abs.split('/').pop() || 'Report'),
+                url: abs, title: title || decodeURIComponent(abs.split('/').pop() || new URL(abs).hostname),
             }, '*');
         } else {
             window.open(abs, '_blank', 'noopener');
