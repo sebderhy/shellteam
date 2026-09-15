@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -62,6 +63,10 @@ async def terminal_websocket(ws: WebSocket):
         return
 
     activity.connection_opened(user_id)
+    # One INFO line per terminal session at each end: the request log is how an
+    # operator later tells "opened the Terminal tab" from "typed nothing".
+    opened_at = time.monotonic()
+    log.info("Terminal shell opened for %s", user_id)
 
     async def shell_to_browser():
         try:
@@ -108,6 +113,7 @@ async def terminal_websocket(ws: WebSocket):
     finally:
         shell.close()
         activity.connection_closed(user_id)
+        log.info("Terminal shell closed for %s after %.0fs", user_id, time.monotonic() - opened_at)
         try:
             await ws.close()
         except Exception:

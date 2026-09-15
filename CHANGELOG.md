@@ -3,6 +3,21 @@
 All notable changes to ShellTeam are documented here. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+## [0.1.28] - 2026-09-15
+
+### Fixed
+- **Voice input now shows on boxes that transcribe through the managed relay.**
+  A box holding only `SHELLTEAM_RELAY_URL` + `SHELLTEAM_RELAY_TOKEN` (no
+  ElevenLabs key on disk) could transcribe, but the capability status keyed
+  the mic on `ELEVENLABS_API_KEY` alone, so the cockpit never offered it.
+
+### Changed
+- The control plane logs one line when a terminal session opens and one when
+  it closes (with its duration), so a box's request log tells "opened the
+  Terminal tab" from "typed nothing" without reading shell history.
+
 ## [0.1.27] - 2026-09-11
 
 ### Fixed

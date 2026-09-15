@@ -17,7 +17,10 @@ let _cached = null;
 function envFallback() {
   return {
     opencode: !!process.env.FIREWORKS_API_KEY,
-    stt: !!process.env.ELEVENLABS_API_KEY,
+    // Voice input also works through the managed relay (Cloud boxes hold a
+    // relay token, never the ElevenLabs key) — mirrors api/services/stt.py.
+    stt: !!process.env.ELEVENLABS_API_KEY
+      || (!!process.env.SHELLTEAM_RELAY_URL && !!process.env.SHELLTEAM_RELAY_TOKEN),
     // Voice output rides the same key, but never the scoped guest STT token —
     // a cockpit that only has SHELLTEAM_STT_TOKEN cannot reach /internal/ai/tts,
     // so promising it a speak button would be a lie the first time it was used.

@@ -82,3 +82,20 @@ async def test_relay_error_surfaces_loudly(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="relay HTTP 429"):
         await stt.transcribe(AUDIO)
+
+
+def test_relay_alone_makes_voice_input_available(monkeypatch):
+    """A managed box holds only a relay token: the cockpit must still show the
+    mic. Regression: capability_status() once keyed stt on ELEVENLABS_API_KEY
+    only, so every Cloud box (and the live demo) hid voice input for good."""
+    from api.services import feature_keys
+
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("SHELLTEAM_RELAY_URL", raising=False)
+    monkeypatch.delenv("SHELLTEAM_RELAY_TOKEN", raising=False)
+    assert feature_keys.capability_status()["stt"] is False
+    monkeypatch.setenv("SHELLTEAM_RELAY_URL", "https://relay.example.com/relay")
+    assert feature_keys.capability_status()["stt"] is False  # url without token is not a source
+    monkeypatch.setenv("SHELLTEAM_RELAY_TOKEN", "strelay_abc")
+    assert feature_keys.capability_status()["stt"] is True
+    assert feature_keys.capability_status()["tts"] is False  # the relay has no /tts

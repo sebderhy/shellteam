@@ -47,6 +47,19 @@ test("before any fetch, availability falls back to process env", () => {
   assert.deepEqual(aiAvailability(), { opencode: true, stt: false, tts: false });
 });
 
+test("a managed box with only a relay token still gets the mic (env fallback)", () => {
+  _resetAiAvailabilityCache();
+  process.env.SHELLTEAM_RELAY_URL = "https://relay.example.com/relay";
+  process.env.SHELLTEAM_RELAY_TOKEN = "strelay_abc";
+  try {
+    assert.equal(aiAvailability().stt, true);
+    assert.equal(aiAvailability().tts, false, "the relay has no /tts");
+  } finally {
+    delete process.env.SHELLTEAM_RELAY_URL;
+    delete process.env.SHELLTEAM_RELAY_TOKEN;
+  }
+});
+
 test("a guest cockpit with only a voice-input token is offered no voice output", () => {
   // Employee cockpits hold SHELLTEAM_STT_TOKEN, never the master token, and the
   // control plane accepts it on /stt alone. Showing them a speak button would

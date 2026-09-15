@@ -155,14 +155,17 @@ class TestTerminalShellCheck:
 
 
 class TestTerminalIO:
-    def test_shell_output_sent_to_websocket(self):
-        """Data from the shell should be sent to the WebSocket client."""
+    def test_shell_output_sent_to_websocket(self, caplog):
+        """Data from the shell should be sent to the WebSocket client, and the
+        session leaves an opened/closed pair in the log (the demo box's session
+        record relies on it to tell terminal use from no terminal use)."""
         shell = FakeShell(chunks=[b"hello from shell", b""])
 
         with (
             _mock_verify_token(),
             _mock_get_status(),
             _mock_open_shell(shell),
+            caplog.at_level("INFO", logger="api.routers.terminal"),
         ):
             with TestClient(app) as client:
                 with client.websocket_connect(
@@ -172,6 +175,9 @@ class TestTerminalIO:
                     assert data == b"hello from shell"
 
         assert shell.closed
+        messages = [r.getMessage() for r in caplog.records]
+        assert any(m.startswith("Terminal shell opened for") for m in messages)
+        assert any(m.startswith("Terminal shell closed for") and m.endswith("s") for m in messages)
 
     def test_resize_command(self):
         """Resize JSON messages should call shell.resize."""

@@ -28,6 +28,8 @@ from typing import Awaitable, Callable
 
 import httpx
 
+from api.services import stt
+
 log = logging.getLogger(__name__)
 
 # The .env the whole stack reads: systemd units use EnvironmentFile=@REPO@/.env
@@ -151,11 +153,15 @@ def capability_status() -> dict[str, bool]:
     """Live `{capability: available}` flags for every key that gates one —
     read from os.environ at call time. The single source /internal/ai/status
     serves (never returns key values)."""
-    return {
+    flags = {
         capability: bool(os.environ.get(spec.env_var))
         for spec in FEATURE_KEYS.values()
         for capability in spec.capabilities
     }
+    # Managed boxes transcribe through the relay with no ElevenLabs key on disk
+    # (stt.transcribe's second source) — the mic must show for them too.
+    flags["stt"] = flags["stt"] or stt.relay_configured()
+    return flags
 
 
 # --- .env persistence -------------------------------------------------------

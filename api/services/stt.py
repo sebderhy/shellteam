@@ -19,15 +19,26 @@ import httpx
 log = logging.getLogger(__name__)
 
 
+def _relay() -> tuple[str, str]:
+    return (os.environ.get("SHELLTEAM_RELAY_URL", "").rstrip("/"),
+            os.environ.get("SHELLTEAM_RELAY_TOKEN", ""))
+
+
+def relay_configured() -> bool:
+    """True when this box can transcribe through the managed relay (no own key
+    needed). Feeds the cockpit's voice-input availability, so a managed box
+    shows the mic exactly when transcription would actually work."""
+    return all(_relay())
+
+
 async def transcribe(audio_bytes: bytes, filename: str = "audio.mp3", content_type: str = "audio/mpeg") -> str:
     """Transcribe audio bytes via ElevenLabs Scribe v2. Returns transcribed text."""
     key = os.environ.get("ELEVENLABS_API_KEY", "")
     if key:
         return await _transcribe_direct(key, audio_bytes, filename, content_type)
 
-    relay_url = os.environ.get("SHELLTEAM_RELAY_URL", "").rstrip("/")
-    relay_token = os.environ.get("SHELLTEAM_RELAY_TOKEN", "")
-    if relay_url and relay_token:
+    if relay_configured():
+        relay_url, relay_token = _relay()
         return await _transcribe_via_relay(relay_url, relay_token, audio_bytes, filename, content_type)
 
     raise RuntimeError("Voice transcription needs an ElevenLabs API key — add it in Settings → Feature keys (no restart needed)")
