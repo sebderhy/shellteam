@@ -2799,6 +2799,15 @@ async function copyToClipboard(text) {
     return ok;
 }
 
+// The dashboard relays the owner's click on an element of the report shown in
+// the side panel (frontend/review-picker.js → dashboard.html → here): it lands
+// in the quote tray as a pointer the agent can act on. Parent frame only.
+window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (e.source !== window.parent || !d || d.source !== 'shellteam-dashboard') return;
+    if (d.kind === 'report-comment') window.QuoteReview?.addFromReport(d);
+});
+
 // Report links open in the right-side panel, delegated on the stable #messages
 // container so they keep working after switchSessionTab restores a tab's DOM via
 // innerHTML (which drops per-element listeners). Keyed on isBoxReport, so any box

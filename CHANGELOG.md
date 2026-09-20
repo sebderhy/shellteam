@@ -5,6 +5,21 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-09-20
+
+### Added
+- **`VISITOR_REDIRECT_URL`**: send a browser that opens the dashboard without a
+  session to your own page (a landing site, docs) instead of the `OWNER_TOKEN`
+  prompt. The one-time `/?token=` link still signs the owner in first; the
+  prompt stays the default when the variable is empty.
+- **Review by pointing in the side panel.** Two new buttons on a report or
+  deck: **Comment** puts the element you click into the chat's quote tray as
+  `> file › selector` plus the quoted text, so the agent knows exactly which
+  part you mean; **Edit text** lets you fix words in place, saved by an
+  exact-match replace in the source file (an ambiguous or unmatched snippet is
+  handed to the agent instead, never guessed). Owner's view only; the served
+  document stays origin-sandboxed.
+
 ## [0.1.28] - 2026-09-15
 
 ### Fixed

@@ -49,7 +49,7 @@ from api.services.auth import (
     verify_token,
 )
 from api.services.runtime import resolve_username_owner, start_computer
-from api.services import activity, app_routes, content_inline, ports, reports
+from api.services import activity, app_routes, content_inline, ports, report_review, reports
 from api.services.ratelimit import note_unpublished_read
 
 log = logging.getLogger(__name__)
@@ -605,15 +605,13 @@ def _share_footer_applies(request: Request, published: bool, via_share_sig: bool
     return published and not request_grants_files_read(request)
 
 
-def _inline_sandboxed_images(request: Request, response: Response, relpath: str) -> Response:
-    """Inline same-subtree images into HTML that will be content-sandboxed.
+def _rewrite_sandboxed_html(request: Request, response: Response, rewrite) -> Response:
+    """Run ``rewrite(body) -> body`` on a 200 text/html response that will be
+    content-sandboxed; everything else passes through untouched.
 
-    The sandbox CSP (opaque origin) makes the browser CORS-block every
-    subresource of a served report, so relative ``<img>`` refs render broken
-    outside the cockpit panel — see api/services/content_inline.py for the full
-    rationale and the safety bounds. Non-sandboxed responses (the trusted file
-    UI, dashboard pages) and non-HTML pass through untouched, so this can never
-    alter a page whose subresources already load.
+    Non-sandboxed responses (the trusted file UI, dashboard pages) and non-HTML
+    are never altered, so a rewrite can never touch a page whose subresources
+    already load or whose origin is real.
     """
     ctype = response.headers.get("content-type", "")
     if (
@@ -629,11 +627,36 @@ def _inline_sandboxed_images(request: Request, response: Response, relpath: str)
 
     if not _wants_content_sandbox(request, response):
         return response
-    body = content_inline.inline_local_images(response.body, relpath, HOME_DIR)
+    body = rewrite(response.body)
     if body is response.body:
         return response
     headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
     return Response(content=body, status_code=200, headers=headers)
+
+
+def _inline_sandboxed_images(request: Request, response: Response, relpath: str) -> Response:
+    """Inline same-subtree images into HTML that will be content-sandboxed.
+
+    The sandbox CSP (opaque origin) makes the browser CORS-block every
+    subresource of a served report, so relative ``<img>`` refs render broken
+    outside the cockpit panel — see api/services/content_inline.py for the full
+    rationale and the safety bounds.
+    """
+    return _rewrite_sandboxed_html(
+        request, response, lambda body: content_inline.inline_local_images(body, relpath, HOME_DIR)
+    )
+
+
+def _inject_review_picker(request: Request, response: Response) -> Response:
+    """Append the review picker to the OWNER's view of sandboxed HTML.
+
+    The picker lets the side panel offer "comment on this element" / "edit this
+    text" (api/services/report_review.py). Only the owner's own credential gets
+    it: a signed share link or a published page is a visitor's view.
+    """
+    if not request_grants_files_read(request):
+        return response
+    return _rewrite_sandboxed_html(request, response, report_review.inject_picker)
 
 
 def _append_share_footer(response: Response) -> Response:
@@ -731,6 +754,7 @@ async def serve_owner_file(request: Request, path: str) -> Response:
         return HTMLResponse(status_code=404, content=NOT_FOUND_HTML)
     if reached:
         response = _inline_sandboxed_images(request, response, p)
+        response = _inject_review_picker(request, response)
     if reached and _share_footer_applies(request, is_published_report, via_share_sig, p):
         response = _append_share_footer(response)
     return response

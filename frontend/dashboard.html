@@ -148,6 +148,7 @@
         .report-btn:hover:not(:disabled) { border-color: var(--brand); }
         .report-btn:disabled { opacity: .45; cursor: not-allowed; }
         .report-btn.is-public { color: var(--positive); border-color: var(--positive); }
+        .report-btn.is-on { color: var(--brand); border-color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, var(--surface-1)); }
         .report-btn-icon { padding: 0; width: 30px; justify-content: center; font-size: 15px; }
         .report-frame { flex: 1; width: 100%; border: 0; background: #fff; }
 
@@ -661,6 +662,12 @@
         <div class="report-panel-header">
             <span class="report-panel-title" id="reportTitle">Report</span>
             <div class="report-panel-actions">
+                <!-- Review tools: shown once the framed document's picker reports in
+                     (only the owner's view of a sandboxed HTML file carries it). -->
+                <button class="report-btn" id="reportCommentBtn" hidden aria-pressed="false"
+                        title="Click an element in the document to comment on it in the chat">💬 Comment</button>
+                <button class="report-btn" id="reportEditBtn" hidden aria-pressed="false"
+                        title="Click text in the document to edit it in place">✎ Edit text</button>
                 <button class="report-btn" id="reportVisBtn" title="Make public / private">🔒 Private</button>
                 <button class="report-btn" id="reportShareBtn" title="Make public to share" disabled>Share</button>
                 <button class="report-btn report-btn-icon" id="reportOpenBtn" title="Open in new tab">↗</button>
@@ -1875,8 +1882,11 @@
             const shareBtn = document.getElementById('reportShareBtn');
             const openBtn = document.getElementById('reportOpenBtn');
             const closeBtn = document.getElementById('reportCloseBtn');
+            const commentBtn = document.getElementById('reportCommentBtn');
+            const editBtn = document.getElementById('reportEditBtn');
             const toastEl = document.getElementById('dashToast');
             let url = null, relpath = null, isPublic = false, toastTimer;
+            let reviewMode = 'off';   // 'off' | 'comment' | 'edit' — mirrors the picker inside the frame
 
             function toast(msg, isErr) {
                 toastEl.textContent = msg;
@@ -1925,8 +1935,70 @@
                     setPublic(!!(await r.json()).public);
                 } catch (e) { console.error('[report] status', e); setPublic(false); }
             }
+            // ─ Review by pointing (docs/decisions/20260920-report-review-picker.md) ─
+            // The framed document is opaque-origin, so the picker lives INSIDE it
+            // (api/services/report_review.py injects it into the owner's view) and
+            // talks to us by postMessage. We relay picks to the cockpit's quote tray
+            // and turn in-place text edits into a deterministic save; when the
+            // server can't match the text exactly once, the edit goes to the agent.
+            function setReviewMode(mode) {
+                reviewMode = mode;
+                for (const [btn, m] of [[commentBtn, 'comment'], [editBtn, 'edit']]) {
+                    btn.classList.toggle('is-on', mode === m);
+                    btn.setAttribute('aria-pressed', String(mode === m));
+                }
+                frame.contentWindow?.postMessage({ source: 'shellteam-dashboard', kind: 'review-mode', mode }, '*');
+            }
+            function resetReview() {
+                reviewMode = 'off';
+                commentBtn.hidden = editBtn.hidden = true;
+                for (const btn of [commentBtn, editBtn]) { btn.classList.remove('is-on'); btn.setAttribute('aria-pressed', 'false'); }
+            }
+            commentBtn.addEventListener('click', () => setReviewMode(reviewMode === 'comment' ? 'off' : 'comment'));
+            editBtn.addEventListener('click', () => setReviewMode(reviewMode === 'edit' ? 'off' : 'edit'));
+            function sendToChat(d, comment) {
+                const agentsFrame = document.getElementById('agents-iframe');
+                agentsFrame?.contentWindow?.postMessage({
+                    source: 'shellteam-dashboard', kind: 'report-comment',
+                    path: relpath, selector: d.selector, text: d.text, comment: comment || '',
+                }, '*');
+                switchTab('agents');
+            }
+            async function saveTextEdit(d) {
+                const r = await fetch('/api/computers/reports/edit', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: relpath, selector: d.selector, old_html: d.old_html, new_html: d.new_html }),
+                });
+                if (r.ok) { toast('Saved to ' + relpath.split('/').pop()); return; }
+                const j = await r.json().catch(() => ({}));
+                if (r.status === 409) {
+                    // The exact-match save refused (text missing or ambiguous): the
+                    // agent, who knows the file, applies it instead — with the same
+                    // pointer the comment flow uses. Loud, never silent.
+                    console.warn('[report] edit handed to the agent:', j.detail);
+                    sendToChat({ selector: d.selector, text: d.old_text }, `Replace this text with: "${d.new_text}"`);
+                    toast('Could not match this text in the file; handed the edit to the agent', true);
+                    return;
+                }
+                console.error('[report] edit', r.status, j);
+                toast('Could not save: ' + (j.detail || `HTTP ${r.status}`), true);
+            }
+            function onReportMessage(d) {
+                if (d.kind === 'review-ready') {
+                    if (!relpath) return;   // an app on a port never carries the picker
+                    commentBtn.hidden = editBtn.hidden = false;
+                } else if (d.kind === 'review-pick') {
+                    sendToChat(d);
+                } else if (d.kind === 'review-edit') {
+                    saveTextEdit(d);
+                } else if (d.kind === 'review-mode') {
+                    setReviewMode('off');
+                }
+            }
+
             function openReport(u, title) {
                 url = u; relpath = relpathFromUrl(u);
+                resetReview();
                 // Set sandbox BEFORE src so the new document inherits it. Never
                 // leave allow-same-origin on for a subsequent untrusted report.
                 frame.setAttribute('sandbox', isFirstPartyApp(u) ? TRUSTED_SANDBOX : STRICT_SANDBOX);
@@ -1940,6 +2012,7 @@
                 panel.classList.add('hidden');
                 split.classList.remove('report-open');
                 frame.src = 'about:blank';
+                resetReview();
             }
             visBtn.addEventListener('click', async () => {
                 if (!relpath || visBtn.disabled) return;
@@ -1984,6 +2057,7 @@
 
             window.addEventListener('message', (e) => {
                 const d = e.data;
+                if (d && d.source === 'shellteam-report' && e.source === frame.contentWindow) return onReportMessage(d);
                 const agentsFrame = document.getElementById('agents-iframe');
                 if (!d || d.source !== 'shellteam-cockpit' || e.source !== agentsFrame?.contentWindow) return;
                 if (d.kind === 'report-open' && d.url) openReport(d.url, d.title);

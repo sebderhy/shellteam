@@ -174,6 +174,7 @@ write to the owner's coding-agent config** (`~/.claude`, `~/.claude.json`,
 | `frontend/dashboard.html` | Tabbed cockpit shell served at `/` |
 | `frontend/terminal.html`, `frontend/browser.html` | Terminal + browser-screencast pages |
 | `frontend/reports.html` / `api/services/report_catalog.py` | Reports tab: `~/reports` catalog grouped by originating workspace (transcript-scan attribution) |
+| `frontend/review-picker.js` / `api/services/report_review.py` | Review by pointing: picker injected into the owner's view of sandboxed HTML (comment on an element → cockpit quote tray; in-place text edit → exact-match save) |
 | `computer/ai-chat/` | The ai-chat cockpit (Node service on `:3456`) |
 | `deploy/systemd/*.service` | `systemd --user` unit templates (rendered by `install.sh`) |
 | `deploy/nginx/shellteam.conf` | File-server nginx config template |

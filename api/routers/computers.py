@@ -13,7 +13,7 @@ from api.config import APP_DOMAIN
 # port the cockpit binds (lib/constants.mjs honours the same env var).
 COCKPIT_PORT = os.environ.get("AI_CHAT_PORT", "3456")
 from api.dependencies import get_current_user, require_trusted_origin
-from api.services import runtime as containers, activity, app_routes, ports, report_catalog, reports
+from api.services import runtime as containers, activity, app_routes, ports, report_catalog, report_review, reports
 from api.services.exposure_policy import require_public_sharing
 from api.services.ratelimit import RateLimiter
 from api.models.schemas import ComputerStatus
@@ -167,6 +167,33 @@ async def set_report_visibility(body: ReportVisibilityRequest, user: dict = Depe
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"path": relpath, "public": relpath in result}
+
+
+class ReportTextEditRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    old_html: str = Field(..., min_length=1)
+    new_html: str
+    selector: str = ""
+
+
+@router.post("/reports/edit", dependencies=[Depends(require_trusted_origin)])
+async def edit_report_text(body: ReportTextEditRequest, user: dict = Depends(get_current_user)):
+    """Save an in-place text edit made in the side panel (owner-only, dashboard origin).
+
+    The snippet must occur exactly once in the file; otherwise 409 and the
+    dashboard hands the edit to the coding agent instead of guessing. Same
+    origin gate as publishing: a content-sandboxed page (Origin: null) can
+    never drive a write to the owner's files.
+    """
+    relpath = _resolve_report(user["id"], body.path, owner_initiated=True)
+    try:
+        report_review.apply_text_edit(
+            containers.user_home_dir(user["id"]), relpath, body.old_html, body.new_html, body.selector
+        )
+    except report_review.EditNotApplicable as e:
+        log.info("Text edit on %s at %s refused: %s", relpath, body.selector, e)
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"path": relpath, "saved": True}
 
 
 @router.get("/reports")

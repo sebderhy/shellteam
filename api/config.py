@@ -174,6 +174,23 @@ SHARE_FOOTER = os.environ.get("SHARE_FOOTER", "true").strip().lower() not in (
     "0", "false", "no", "off",
 )
 
+# VISITOR_REDIRECT_URL sends a browser that opens the dashboard WITHOUT a
+# session (no cookie, no Bearer) to that page instead of showing the
+# OWNER_TOKEN prompt, so a stranger who types the domain lands on your site
+# rather than on a login form. The owner still gets in by opening the one-time
+# `/?token=` link the installer printed: it is redeemed into the session
+# cookies before the redirect is considered. Empty (default) keeps the prompt.
+# Ignored in localhost-trust mode (OWNER_TOKEN unset), where nobody is a visitor.
+VISITOR_REDIRECT_URL = os.environ.get("VISITOR_REDIRECT_URL", "").strip()
+if VISITOR_REDIRECT_URL and not VISITOR_REDIRECT_URL.startswith("https://"):
+    import logging
+
+    logging.getLogger(__name__).error(
+        "Ignoring VISITOR_REDIRECT_URL=%r: must start with https:// (the token prompt stays)",
+        VISITOR_REDIRECT_URL,
+    )
+    VISITOR_REDIRECT_URL = ""
+
 # Branded 404 page (dark theme, matches app design)
 NOT_FOUND_HTML = (
     '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'

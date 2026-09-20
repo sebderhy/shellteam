@@ -7,12 +7,21 @@
 //     --> the comment
 // so the agent sees no new syntax; this is pure input acceleration.
 //
+// The same tray also takes pointers from the report side panel (the dashboard
+// relays the owner's click on an element of a served HTML file — see
+// frontend/review-picker.js): such a quote carries a `ref` {path, selector} and
+// is sent as
+//     > reports/deck.html › section#pricing > p.lead
+//     > "quoted text"
+//     --> the comment
+// so the agent knows which file and which element the remark is about.
+//
 // State is per-conversation-slot: app.js saves/restores getQuotes()/setQuotes()
 // across switchSessionTab, exactly like the composer draft. Highlights of the
 // source text live in the message DOM (class `qc-src`, keyed by data-qid) so
 // they survive the innerHTML snapshot/restore that tab-switching does.
 window.QuoteReview = (() => {
-    let quotes = [];          // [{ id, text, comment }]
+    let quotes = [];          // [{ id, text, comment, ref? }]  ref = { path, selector } for report picks
     let nextId = 1;
     let pendingRange = null;   // Range captured when the selection pill is shown
     let tray, pill, messages;
@@ -103,6 +112,22 @@ window.QuoteReview = (() => {
         notifyChange();
     }
 
+    // A pointer relayed from the report side panel (dashboard postMessage). The
+    // text is what the owner saw in the document; nothing here is trusted beyond
+    // being shown back to them in the tray before they send it.
+    function addFromReport({ path, selector, text, comment }) {
+        if (typeof path !== 'string' || typeof selector !== 'string') return;
+        const id = nextId++;
+        quotes.push({
+            id, text: String(text || '').trim(), comment: String(comment || ''),
+            ref: { path, selector },
+        });
+        render();
+        const ta = tray.querySelector(`[data-cid="${id}"] .qc-comment`);
+        if (ta) ta.focus();
+        notifyChange();
+    }
+
     function removeQuote(id) {
         unhighlight(id);
         quotes = quotes.filter((q) => q.id !== id);
@@ -126,14 +151,16 @@ window.QuoteReview = (() => {
             return;
         }
         tray.classList.remove('hidden');
+        const refs = quotes.filter((q) => q.ref).length;
+        const on = refs === 0 ? 'on this reply' : refs === quotes.length ? 'on the document' : 'pending';
         tray.innerHTML =
             `<div class="qc-head"><span class="qc-count">${quotes.length}</span> ` +
-            `${quotes.length === 1 ? 'comment' : 'comments'} on this reply</div>` +
+            `${quotes.length === 1 ? 'comment' : 'comments'} ${on}</div>` +
             quotes.map((q, i) => `
                 <div class="qc" data-cid="${q.id}">
                     <div class="qc-quote">
                         <span class="qc-num">${i + 1}</span>
-                        <span class="qc-text">"${esc(q.text)}"</span>
+                        <span class="qc-body">${q.ref ? `<span class="qc-ref" title="${esc(q.ref.path)} › ${esc(q.ref.selector)}">${esc(q.ref.path.split('/').pop())} › ${esc(q.ref.selector)}</span>` : ''}<span class="qc-text">"${esc(q.text)}"</span></span>
                         <button class="qc-x" title="Remove" data-x="${q.id}">&times;</button>
                     </div>
                     <div class="qc-grow" data-rep="${esc(q.comment)}">
@@ -193,9 +220,10 @@ window.QuoteReview = (() => {
     // preserving tray order. Quotes left without a comment go through as pure
     // block-quotes so nothing selected is silently dropped.
     function assemble() {
-        return quotes.map((q) => (
-            q.comment.trim() ? `> ${q.text}\n--> ${q.comment.trim()}` : `> ${q.text}`
-        )).join('\n\n');
+        return quotes.map((q) => {
+            const quote = q.ref ? `> ${q.ref.path} › ${q.ref.selector}\n> "${q.text}"` : `> ${q.text}`;
+            return q.comment.trim() ? `${quote}\n--> ${q.comment.trim()}` : quote;
+        }).join('\n\n');
     }
 
     const hasContent = () => quotes.length > 0;
@@ -203,11 +231,12 @@ window.QuoteReview = (() => {
     // Per-slot persistence. Store plain data (not DOM refs) so it survives the
     // innerHTML snapshot/restore; highlights are re-linked by data-qid in the
     // restored markup.
+    const plain = (q) => ({ id: q.id, text: q.text, comment: q.comment, ...(q.ref ? { ref: { ...q.ref } } : {}) });
     function getQuotes() {
-        return quotes.map((q) => ({ id: q.id, text: q.text, comment: q.comment }));
+        return quotes.map(plain);
     }
     function setQuotes(arr) {
-        quotes = (arr || []).map((q) => ({ id: q.id, text: q.text, comment: q.comment }));
+        quotes = (arr || []).map(plain);
         for (const q of quotes) if (q.id >= nextId) nextId = q.id + 1;
         render();
     }
@@ -232,5 +261,5 @@ window.QuoteReview = (() => {
         if (typeof window.onQuoteReviewChange === 'function') window.onQuoteReviewChange();
     }
 
-    return { init, assemble, hasContent, getQuotes, setQuotes, clear };
+    return { init, addFromReport, assemble, hasContent, getQuotes, setQuotes, clear };
 })();

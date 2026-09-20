@@ -1231,8 +1231,13 @@ kbd { font-family: var(--mono); }
     cursor: pointer; /* click scrolls the transcript to the quoted source */
 }
 .qc-num { font-size: 11px; font-weight: 700; color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+.qc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.qc-ref {
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--accent);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .qc-text {
-    font-size: 12.5px; color: var(--text-muted); font-style: italic; flex: 1;
+    font-size: 12.5px; color: var(--text-muted); font-style: italic;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .qc-x {

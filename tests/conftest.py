@@ -69,6 +69,12 @@ os.environ["COMPOSIO_API_KEY"] = ""
 for _k in ("NOTIFY_TELEGRAM_BOT_TOKEN", "NOTIFY_TELEGRAM_CHAT_ID", "NOTIFY_NTFY_TOPIC"):
     os.environ[_k] = ""
 
+# A box with VISITOR_REDIRECT_URL set (the operator's landing page) bounces
+# session-less shell requests off-box; the suite must see the default token
+# prompt or every anonymous `GET /` follows a redirect out to the internet.
+# tests/test_visitor_redirect.py sets its own value via monkeypatch.
+os.environ["VISITOR_REDIRECT_URL"] = ""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient

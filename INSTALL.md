@@ -309,6 +309,11 @@ session cookies and immediately stripped from the URL.)
 
 Open `https://<domain>` in a browser. The first load asks for the `OWNER_TOKEN`.
 
+Prefer that strangers who type your domain never see a login form? Set
+`VISITOR_REDIRECT_URL=https://your-site.example` in `.env`: a browser with no
+session is sent there instead, and only the `/?token=` link (or a session it
+already holds) reaches the dashboard.
+
 ### 4.5 Behind an existing web server (nginx/Apache/your own Caddy)
 
 If something already serves `:80`/`:443`, **don't fight it** — `--remote`/`--domain`

@@ -470,6 +470,29 @@ if FRONTEND_DIR.exists():
         # serve a stale dashboard/terminal/browser page (it would show old chrome).
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
+    def _visitor_redirect(request: Request):
+        """The VISITOR_REDIRECT_URL gate for the HTML shells (dashboard, tabs).
+
+        Returns a redirect when the box has a token, the operator configured a
+        visitor page, and this request carries no owner credential; None means
+        "serve the shell" (owner session, localhost-trust, or knob unset, in
+        which case the dashboard's client-side overlay asks for the token).
+        """
+        from fastapi.responses import RedirectResponse
+        from api import config
+        from api.services.auth import get_token_from_request, token_is_owner
+
+        if not config.VISITOR_REDIRECT_URL or not OWNER_TOKEN:
+            return None
+        if token_is_owner(get_token_from_request(request)):
+            return None
+        logging.getLogger(__name__).info(
+            "Visitor without a session on %s -> %s", request.url.path, config.VISITOR_REDIRECT_URL
+        )
+        return RedirectResponse(
+            url=config.VISITOR_REDIRECT_URL, status_code=302, headers={"Cache-Control": "no-store"}
+        )
+
     @app.get("/")
     async def dashboard_page(request: Request):
         from fastapi.responses import RedirectResponse
@@ -498,10 +521,12 @@ if FRONTEND_DIR.exists():
                 # not a softer target than the login endpoint.
                 note_auth_failure(request)
                 logging.getLogger(__name__).warning(
-                    "Rejected ?token= dashboard URL (invalid token) — redirecting to login"
+                    "Rejected ?token= dashboard URL (invalid token) — redirecting to /"
                 )
             return resp
 
+        if bounce := _visitor_redirect(request):
+            return bounce
         resp = _render("dashboard.html", request)
         # Refresh/migrate the session cookies on every authed dashboard load:
         # upgrades pre-split sessions (JS-readable domain-wide master) to the
@@ -513,11 +538,13 @@ if FRONTEND_DIR.exists():
 
     @app.get("/terminal")
     async def terminal_page(request: Request):
+        if bounce := _visitor_redirect(request):
+            return bounce
         return FileResponse(FRONTEND_DIR / "terminal.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/browser")
     async def browser_page(request: Request):
-        return _render("browser.html", request)
+        return _visitor_redirect(request) or _render("browser.html", request)
 
     @app.get("/reports")
     async def reports_page(request: Request):
@@ -527,7 +554,7 @@ if FRONTEND_DIR.exists():
         # route, it shadows only the literal `/reports` path (previously a
         # non-servable directory hit on the file catch-all); `/reports/<file>`
         # still flows through serve_owner_file untouched.
-        return _render("reports.html", request)
+        return _visitor_redirect(request) or _render("reports.html", request)
 
     @app.get("/apps")
     async def apps_page(request: Request):
@@ -535,14 +562,14 @@ if FRONTEND_DIR.exists():
         # anyone like the other shells; every action behind it is owner-authed
         # (/api/integrations, the cockpit's github card). Also the OAuth
         # landing page: Composio redirects to /apps?app_connected=<toolkit>.
-        return _render("apps.html", request)
+        return _visitor_redirect(request) or _render("apps.html", request)
 
     @app.get("/knowledge")
     async def knowledge_page(request: Request):
         # Only exists with the dreaming module — literally the same gate as
         # its API, so page and API can never disagree.
         knowledge._require_dreaming()
-        return _render("knowledge.html", request)
+        return _visitor_redirect(request) or _render("knowledge.html", request)
 
 
 # Browser tabs API (before catch-all proxy)
