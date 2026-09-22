@@ -73,6 +73,22 @@ const PAGES = [
       return fails;
     })()`,
   },
+  // The side panel on a phone takes the whole screen; its header once pushed
+  // ✕ (and Share, ↗) past the right edge as soon as the Comment / Edit text
+  // buttons appeared (2026-09-20, found on Seb's phone; every suite green).
+  // Opened through the REAL path: the cockpit's report-open message and the
+  // picker's review-ready, so every header button is present as in production.
+  {
+    path: "/", label: "/ (side panel open)", requiredActions: true,
+    actions: ["#reportCommentBtn", "#reportEditBtn", "#reportVisBtn", "#reportShareBtn", "#reportOpenBtn", "#reportCloseBtn"],
+    setup: `(() => {
+      const from = (source, data) => window.dispatchEvent(new MessageEvent('message', { data, source }));
+      from(document.getElementById('agents-iframe').contentWindow,
+           { source: 'shellteam-cockpit', kind: 'report-open', url: '/reports/phone-geometry-qa-probe.html', title: 'phone-geometry-qa-probe.html' });
+      from(document.getElementById('reportFrame').contentWindow,
+           { source: 'shellteam-report', kind: 'review-ready' });
+    })()`,
+  },
   // The Files editor SPA — its toolbar made New File/Folder/Delete unusable
   // at 320px while every static suite stayed green (round-4 audit: a stale
   // staged copy shipped exactly that). The deliberately-nonexistent path

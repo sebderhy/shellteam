@@ -5,7 +5,7 @@
  * plan. Before this, that key read as plain "apikey": the cockpit skipped the
  * setup screen (so nobody was asked to connect their own plan) and landed on
  * GPT-5.6 Sol, the priciest choice, with every Codex model one click away.
- * With INCLUDED_MODELS=gpt-5.6-terra-max the family bills "included", only the
+ * With INCLUDED_MODELS=gpt-6-luna-max the family bills "included", only the
  * listed models may run, and persisted state naming anything else is coerced.
  */
 import { after, beforeEach, describe, it } from "node:test";
@@ -52,9 +52,9 @@ describe("includedModelsByFamily", () => {
   });
 
   it("groups catalog ids by family and drops unknown ids instead of widening the list", () => {
-    process.env.INCLUDED_MODELS = "gpt-5.6-terra-max, claude-haiku-4-5-20251001,gpt-5.7-nope";
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max, claude-haiku-4-5-20251001,gpt-6-nope";
     assert.deepEqual(includedModelsByFamily(), {
-      codex: ["gpt-5.6-terra-max"],
+      codex: ["gpt-6-luna-max"],
       claude: ["claude-haiku-4-5-20251001"],
     });
   });
@@ -64,13 +64,13 @@ describe("authModeFor with an included key", () => {
   it("a key alone bills apikey; the same key with INCLUDED_MODELS bills included", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
     assert.equal(authModeFor("codex"), "apikey");
-    process.env.INCLUDED_MODELS = "gpt-5.6-terra-max";
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max";
     resetIncludedModelsCache();
     assert.equal(authModeFor("codex"), "included");
   });
 
   it("INCLUDED_MODELS without a key still reads none, and only affects its own family", () => {
-    process.env.INCLUDED_MODELS = "gpt-5.6-terra-max";
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max";
     assert.equal(authModeFor("codex"), "none");
     process.env.ANTHROPIC_API_KEY = "sk-ant-demo";
     assert.equal(authModeFor("claude"), "apikey");
@@ -78,7 +78,7 @@ describe("authModeFor with an included key", () => {
 
   it("the CLI still receives the key in included mode", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
-    process.env.INCLUDED_MODELS = "gpt-5.6-terra-max";
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max";
     assert.equal(getCliEnv().OPENAI_API_KEY, "sk-demo");
   });
 });
@@ -86,11 +86,11 @@ describe("authModeFor with an included key", () => {
 describe("modelPermitted", () => {
   it("refuses a non-included model of an included family, with the way out in the reason", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
-    process.env.INCLUDED_MODELS = "gpt-5.6-terra-max";
-    assert.deepEqual(modelPermitted("gpt-5.6-terra-max"), { ok: true });
-    const verdict = modelPermitted("gpt-5.6-sol-max");
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max";
+    assert.deepEqual(modelPermitted("gpt-6-luna-max"), { ok: true });
+    const verdict = modelPermitted("gpt-6-sol-max");
     assert.equal(verdict.ok, false);
-    assert.match(verdict.reason, /gpt-5\.6-sol-max is not included/);
+    assert.match(verdict.reason, /gpt-6-sol-max is not included/);
     assert.match(verdict.reason, /Connect your own plan/);
     // Other families are untouched.
     assert.deepEqual(modelPermitted("claude-opus-5"), { ok: true });
@@ -98,22 +98,22 @@ describe("modelPermitted", () => {
 
   it("permits everything when the family is not on an included key", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
-    assert.deepEqual(modelPermitted("gpt-5.6-sol-max"), { ok: true });
+    assert.deepEqual(modelPermitted("gpt-6-sol-max"), { ok: true });
   });
 
   it("leaves OpenCode alone: its proxy bills 'included' but is not this allowlist", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
-    process.env.INCLUDED_MODELS = "gpt-5.6-terra-max";
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max";
     assert.deepEqual(modelPermitted("deepseek-v4-pro"), { ok: true });
     assert.deepEqual(modelPermitted("glm-5p3"), { ok: true });
   });
 
   it("coerces persisted state that predates INCLUDED_MODELS (golden image saved on Sol)", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
-    process.env.INCLUDED_MODELS = "gpt-5.6-terra-max";
-    saveModel("gpt-5.6-sol-max");
-    assert.equal(loadModel(), "gpt-5.6-terra-max");
-    assert.equal(permittedModelOr("gpt-5.6-sol-max", "test"), "gpt-5.6-terra-max");
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max";
+    saveModel("gpt-6-sol-max");
+    assert.equal(loadModel(), "gpt-6-luna-max");
+    assert.equal(permittedModelOr("gpt-6-sol-max", "test"), "gpt-6-luna-max");
     assert.equal(permittedModelOr("claude-opus-5", "test"), "claude-opus-5");
   });
 });
@@ -131,7 +131,7 @@ describe("wiring pins", () => {
     assert.match(app, /return familyHasAuth\(family\) && modelPermittedHere\(model\);/);
     assert.match(app, /\.filter\(m => modelPermittedHere\(m\.id\)\)/);
     assert.match(app, /return own \|\| !hasIncludedFamily\(\) \|\| includedFallbackChosen\(\);/);
-    assert.match(app, /preferredModelFor\('codex', 'gpt-5\.6-sol-max'\)/);
+    assert.match(app, /preferredModelFor\('codex', 'gpt-6-sol-max'\)/);
     assert.match(app, /function continueWithIncluded\(model\) \{\s*\n\s*localStorage\.setItem\(INCLUDED_CHOSEN_KEY, '1'\);/);
     assert.match(html, /<div class="setup-included hidden" id="setupIncluded"><\/div>/);
   });

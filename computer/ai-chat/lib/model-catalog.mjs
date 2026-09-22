@@ -45,8 +45,8 @@ export function agentIdForModel(model) {
 
 /**
  * True when the catalog still offers this exact model — matched by `id` OR by
- * `cli` (a saved tab may hold the cli-form id, e.g. "gpt-5.6-sol" whose catalog
- * id is "gpt-5.6-sol-max"; that is still a known model, not an orphan).
+ * `cli` (a saved tab may hold the cli-form id, e.g. "gpt-6-sol" whose catalog
+ * id is "gpt-6-sol-max"; that is still a known model, not an orphan).
  */
 export function isKnownModel(model) {
   return agents().some((a) => (a.models || []).some((m) => m.id === model || m.cli === model));
@@ -134,8 +134,8 @@ export function configArgsForId(model) {
 /**
  * The model's context window in tokens, from the catalog's `limit.context`
  * (the single source of truth the browser meter also reads). Matches a catalog
- * model by id OR by its `cli` value, so a stale/cli-form id (e.g. "gpt-5.6-sol"
- * from a saved tab, whose catalog id is "gpt-5.6-sol-max") still resolves to
+ * model by id OR by its `cli` value, so a stale/cli-form id (e.g. "gpt-6-sol"
+ * from a saved tab, whose catalog id is "gpt-6-sol-max") still resolves to
  * the real 400k window instead of silently falling back. Falls back to 1M for
  * long-context "[1m]" variants and 200k otherwise — matching
  * `contextWindowForModel` in public/app.js so the meter and the auto-compact

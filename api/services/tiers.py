@@ -5,7 +5,7 @@ kept (as a thin shim) only so existing call sites keep working without churn.
 """
 
 OWNER_FEATURES: dict = {
-    "coo_model": "claude-opus-5",
+    "coo_model": "claude-opus-5-5",
 }
 
 

@@ -84,7 +84,7 @@ describe("delegation broker", () => {
     assert.equal(result.slot_id, 1000);
     assert.ok(result.hint, "should include a hint about reusing task_name");
     assert.equal(
-      deps.calls.some((call) => call[0] === "setSlotModel" && call[2] === "gpt-5.6-sol-max"),
+      deps.calls.some((call) => call[0] === "setSlotModel" && call[2] === "gpt-6-sol-max"),
       true,
     );
   });

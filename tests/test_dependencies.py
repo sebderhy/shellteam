@@ -27,7 +27,7 @@ class TestGetCurrentUser:
         assert result["token"] == "fake-jwt-token"
         assert result["tier"] == "owner"
         # The owner always gets the full (all-true) feature set.
-        assert result["features"]["coo_model"] == "claude-opus-5"
+        assert result["features"]["coo_model"] == "claude-opus-5-5"
         assert set(result["features"]) == {"coo_model"}
 
     async def test_rejects_wrong_token(self):

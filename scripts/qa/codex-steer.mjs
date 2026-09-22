@@ -12,14 +12,14 @@
 //   resume     send one message on an existing slot (after the external event)
 //
 // Usage:  node scripts/qa/codex-steer.mjs [--url ws://127.0.0.1:3456/ws]
-//                 [--model gpt-5.6-sol-max] [--scenario all|steer|…] [--slot N]
+//                 [--model gpt-6-sol-max] [--scenario all|steer|…] [--slot N]
 // Exit 0 when every check passed. Needs Node 22+ (global WebSocket).
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a, i, all) => a.startsWith("--") ? [a.slice(2), all[i + 1]] : []).filter(Boolean),
 );
 const URL_ = args.url || "ws://127.0.0.1:3456/ws";
-const MODEL = args.model || "gpt-5.6-sol-max";
+const MODEL = args.model || "gpt-6-sol-max";
 const SCENARIO = args.scenario || "all";
 const TURN_TIMEOUT_MS = 240_000;
 const WRITER_RE = /already has an active writer/i;
@@ -142,7 +142,7 @@ async function scenarioSwitch(ws) {
   const t0 = Date.now();
   send(ws, { type: "send", slot, content: LONG("S") });
   await waitFor(ws, (m) => m.slot === slot && m.type === "tool_start");
-  send(ws, { type: "set_model", slot, model: MODEL === "gpt-5.6-sol-max" ? "gpt-5.6-terra-max" : "gpt-5.6-sol-max" });
+  send(ws, { type: "set_model", slot, model: MODEL === "gpt-6-sol-max" ? "gpt-6-luna-max" : "gpt-6-sol-max" });
   await sleep(1000);
   send(ws, { type: "send", slot, content: SHORT("H") });
   await waitFor(ws, (m) => m.slot === slot && m.type === "turn_done" && /DONE-H/.test(textOf(transcript(ws, slot, t0))), TURN_TIMEOUT_MS);

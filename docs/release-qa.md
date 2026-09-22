@@ -57,7 +57,7 @@ every source-level suite stayed green.
 ### Codex mid-turn steering
 
 ```bash
-node scripts/qa/codex-steer.mjs --url ws://127.0.0.1:3456/ws --model gpt-5.6-sol-max
+node scripts/qa/codex-steer.mjs --url ws://127.0.0.1:3456/ws --model gpt-6-sol-max
 ```
 
 Drives the **running** cockpit with a real Codex process: a message sent while

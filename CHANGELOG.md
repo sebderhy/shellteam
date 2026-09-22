@@ -5,6 +5,37 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-09-22
+
+### Added
+- **Claude Opus 5.5** (`claude-opus-5-5`, released today) is the Claude Code
+  default. Fable-level on most work at 40% less than Opus 5, 1M context. It
+  needs **Claude Code 2.1.280 or newer**; an older CLI answers with a 400 that
+  says so (`claude update` fixes it), and Fable 5.1 / Sonnet 5 / Haiku 4.5 keep
+  working meanwhile.
+- **GPT-6 Sol** (`gpt-6-sol`, max and ultra efforts) is the Codex default and
+  **GPT-6 Luna** (`gpt-6-luna`) the cheap tier, both released today with 1.05M
+  context at half the price of their GPT-5.6 namesakes. GPT-6 Astra stays the
+  flagship. Sol and Luna need **Codex CLI 0.156.0 or newer** on a ChatGPT
+  login (0.153.x is refused by the server and has no metadata for them).
+
+### Changed
+- Family defaults: Claude Code Opus 5 → Opus 5.5; Codex GPT-5.6 Sol (max) →
+  GPT-6 Sol (max). Tabs pinned to a retired model move to the family default.
+- In-place text edits in the side panel save with **Ctrl/Cmd+S** (Ctrl+Enter still works).
+
+### Removed
+- Opus 5 and the GPT-5.6 family (Sol, Terra, Luna) from the model picker: each
+  is now beaten on every axis by its successor.
+
+### Fixed
+- **Side panel on a phone: the close button was off the screen.** Six header
+  buttons in one row pushed ✕ (and Share, ↗) past the right edge once the
+  Comment / Edit text buttons appeared. The row now scrolls, the buttons drop
+  to icons when the panel is narrow, and ✕ sits outside the row so it can
+  never move. The phone-geometry gate now opens the side panel and checks
+  every header button.
+
 ## [0.1.29] - 2026-09-20
 
 ### Added

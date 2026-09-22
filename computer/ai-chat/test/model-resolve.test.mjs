@@ -23,9 +23,9 @@ test("known models pass through untouched (by id and by cli form)", () => {
   assert.equal(resolveModelId("claude-sonnet-5"), "claude-sonnet-5");
   // the current default is itself a known model
   assert.equal(resolveModelId(DEFAULT_CLAUDE_MODEL), DEFAULT_CLAUDE_MODEL);
-  // cli-form id (catalog id is gpt-5.6-sol-max) is still a known model
-  assert.equal(isKnownModel("gpt-5.6-sol"), true);
-  assert.equal(resolveModelId("gpt-5.6-sol"), "gpt-5.6-sol");
+  // cli-form id (catalog id is gpt-6-sol-max) is still a known model
+  assert.equal(isKnownModel("gpt-6-sol"), true);
+  assert.equal(resolveModelId("gpt-6-sol"), "gpt-6-sol");
 });
 
 test("orphans resolve within their own family, not always Claude", () => {

@@ -3,13 +3,13 @@ import { test } from "node:test";
 import { autoCompactLimitForModel, codexUsage } from "../lib/codex-agent.mjs";
 import { contextLimitForId } from "../lib/model-catalog.mjs";
 
-// A real Codex catalog entry (400k window). The proactive limit must sit well
+// A real Codex catalog entry (1.05M window). The proactive limit must sit well
 // below the ceiling so compaction fires with headroom to spare.
 test("Codex proactive auto-compact limit is a fraction of the model window", () => {
-  assert.equal(contextLimitForId("gpt-5.6-sol-max"), 400_000);
-  assert.equal(autoCompactLimitForModel("gpt-5.6-sol-max"), 320_000);
+  assert.equal(contextLimitForId("gpt-6-sol-max"), 1_050_000);
+  assert.equal(autoCompactLimitForModel("gpt-6-sol-max"), 840_000);
   assert.ok(
-    autoCompactLimitForModel("gpt-5.6-sol-max") < contextLimitForId("gpt-5.6-sol-max"),
+    autoCompactLimitForModel("gpt-6-sol-max") < contextLimitForId("gpt-6-sol-max"),
     "the limit must leave headroom below the hard window",
   );
 });
@@ -26,13 +26,13 @@ test("long-context [1m] variants scale the limit to the 1M window", () => {
   assert.equal(autoCompactLimitForModel("codex-experimental [1m]"), 800_000);
 });
 
-// A stale/cli-form model id (e.g. "gpt-5.6-sol" persisted in a saved tab, whose
-// catalog id is "gpt-5.6-sol-max") must resolve to the real 400k window via the
-// catalog `cli` value — not silently fall back to 200k, which would halve the
-// context meter's denominator and compact at 160k instead of 320k.
+// A stale/cli-form model id (e.g. "gpt-6-sol" persisted in a saved tab, whose
+// catalog id is "gpt-6-sol-max") must resolve to the real 1.05M window via the
+// catalog `cli` value — not silently fall back to 200k, which would shrink the
+// context meter's denominator and compact at 160k instead of 840k.
 test("cli-form model ids resolve to the real catalog window", () => {
-  assert.equal(contextLimitForId("gpt-5.6-sol"), 400_000);
-  assert.equal(autoCompactLimitForModel("gpt-5.6-sol"), 320_000);
+  assert.equal(contextLimitForId("gpt-6-sol"), 1_050_000);
+  assert.equal(autoCompactLimitForModel("gpt-6-sol"), 840_000);
 });
 
 // SHE-66: the context meter read "not reported by this agent yet" because

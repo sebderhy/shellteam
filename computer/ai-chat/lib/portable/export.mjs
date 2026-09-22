@@ -70,7 +70,7 @@ function rolloutStamp(d = new Date()) {
 
 // --- Claude → ~/.claude/projects/<enc cwd>/<uuid4>.jsonl ---
 
-function exportToClaude(csf, { cliVersion = "portable-sessions", model = "claude-opus-5", root = HOME } = {}) {
+function exportToClaude(csf, { cliVersion = "portable-sessions", model = "claude-opus-5-5", root = HOME } = {}) {
   const { events, synthesized, toolCalls } = prepare(csf);
   const sid = uuid4();
   const cwd = csf.session.cwd;

@@ -137,7 +137,22 @@
             flex: 1; min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold);
             color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .report-panel-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+        /* The actions row may shrink and scroll; ✕ is NOT inside it (see the markup),
+           so nothing can push the close button off the screen. */
+        .report-panel-actions {
+            display: flex; align-items: center; gap: 4px;
+            min-width: 0; overflow-x: auto; scrollbar-width: none;
+        }
+        .report-panel-actions::-webkit-scrollbar { display: none; }
+        /* Narrow panel (a phone, or a half-width split on a small laptop): the
+           buttons keep their icon and drop the word; the title attribute still
+           carries it. Container query, so the rule follows the PANEL's width. */
+        .report-panel { container-type: inline-size; }
+        @container (max-width: 560px) {
+            .report-panel-header { padding-left: 10px; gap: 6px; }
+            .report-btn-label { display: none; }
+            .report-btn:not(.report-btn-icon) { padding: 0 8px; }
+        }
         .report-btn {
             display: inline-flex; align-items: center; gap: 5px;
             height: 30px; padding: 0 11px; border-radius: var(--radius-md);
@@ -665,14 +680,16 @@
                 <!-- Review tools: shown once the framed document's picker reports in
                      (only the owner's view of a sandboxed HTML file carries it). -->
                 <button class="report-btn" id="reportCommentBtn" hidden aria-pressed="false"
-                        title="Click an element in the document to comment on it in the chat">💬 Comment</button>
+                        title="Click an element in the document to comment on it in the chat"><span class="report-btn-ico">💬</span><span class="report-btn-label">Comment</span></button>
                 <button class="report-btn" id="reportEditBtn" hidden aria-pressed="false"
-                        title="Click text in the document to edit it in place">✎ Edit text</button>
-                <button class="report-btn" id="reportVisBtn" title="Make public / private">🔒 Private</button>
+                        title="Click text in the document to edit it in place"><span class="report-btn-ico">✎</span><span class="report-btn-label">Edit text</span></button>
+                <button class="report-btn" id="reportVisBtn" title="Make public / private"><span class="report-btn-ico">🔒</span><span class="report-btn-label">Private</span></button>
                 <button class="report-btn" id="reportShareBtn" title="Make public to share" disabled>Share</button>
                 <button class="report-btn report-btn-icon" id="reportOpenBtn" title="Open in new tab">↗</button>
-                <button class="report-btn report-btn-icon" id="reportCloseBtn" title="Close">✕</button>
             </div>
+            <!-- Outside the actions row on purpose: the row scrolls when it does
+                 not fit, the close button never moves. -->
+            <button class="report-btn report-btn-icon" id="reportCloseBtn" title="Close">✕</button>
         </div>
         <iframe class="report-frame" id="reportFrame"
                 sandbox="allow-scripts allow-popups allow-forms allow-downloads"
@@ -1912,9 +1929,11 @@
                 try { return new URL(u, location.href).pathname.startsWith('/_editor/'); }
                 catch { return false; }
             }
+            // Icon + word; the word hides when the panel is narrow (container query).
+            const iconLabel = (ico, label) => `<span class="report-btn-ico">${ico}</span><span class="report-btn-label">${label}</span>`;
             function setPublic(pub, toggleDisabled = false) {
                 isPublic = pub;
-                visBtn.innerHTML = pub ? '🌐 Public' : '🔒 Private';
+                visBtn.innerHTML = pub ? iconLabel('🌐', 'Public') : iconLabel('🔒', 'Private');
                 visBtn.classList.toggle('is-public', pub);
                 visBtn.disabled = toggleDisabled;
                 visBtn.title = toggleDisabled
@@ -1924,7 +1943,7 @@
                 // Private reports are shareable too, via a signed 24h link — no
                 // need to make the file public just to show someone once.
                 shareBtn.disabled = !pub && !relpath;
-                shareBtn.textContent = pub ? 'Share' : 'Share 24h link';
+                shareBtn.innerHTML = pub ? 'Share' : 'Share<span class="report-btn-label"> 24h link</span>';
                 shareBtn.title = pub ? 'Share link' : 'Copy a signed link — anyone with it can view this file for 24h';
             }
             async function refreshStatus() {

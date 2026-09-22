@@ -61,7 +61,7 @@ function seedHome() {
   writeFileSync(
     join(home, ".config", "shellteam", "codex-history", `${SESSION_ID}.jsonl`),
     [
-      { type: "session_meta", model: "gpt-5.6-sol-max", cwd: home, timestamp: 1_700_000_000_000 },
+      { type: "session_meta", model: "gpt-6-sol-max", cwd: home, timestamp: 1_700_000_000_000 },
       { type: "user_message", content: "fork-race fixture: the source conversation" },
       { type: "text_done", content: "Acknowledged." },
     ].map((m) => JSON.stringify(m)).join("\n") + "\n",
@@ -71,7 +71,7 @@ function seedHome() {
     JSON.stringify([{
       id: 0, sessionId: SESSION_ID, sessionFamily: "codex", title: "source",
       createdAt: 1_700_000_000_000, lastUsedAt: 1_700_000_000_000,
-      model: "gpt-5.6-sol-max", cwd: home,
+      model: "gpt-6-sol-max", cwd: home,
     }]),
   );
   return home;

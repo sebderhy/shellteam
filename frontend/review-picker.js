@@ -46,7 +46,7 @@
         'box-shadow:0 2px 10px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap;';
     const HINTS = {
         comment: 'Click an element to comment on it · ↑ wider · ↓ narrower · Esc done',
-        edit: 'Click text to edit it · click elsewhere or Ctrl+Enter saves · Esc cancels',
+        edit: 'Click text to edit it · Ctrl+S or click elsewhere saves · Esc cancels',
     };
     function mount() {
         if (!box.isConnected) document.documentElement.appendChild(box);
@@ -168,7 +168,7 @@
         el.focus();
         outline(el);
         box.style.borderColor = '#3b82f6';
-        hint.textContent = 'Editing · click elsewhere or Ctrl+Enter saves · Esc cancels';
+        hint.textContent = 'Editing · Ctrl+S or click elsewhere saves · Esc cancels';
     }
     function finishEdit(cancel) {
         const { el, before, beforeText } = editing;
@@ -198,8 +198,11 @@
         if (mode === 'off') return;
         if (editing) {
             e.stopPropagation();
+            const mod = e.ctrlKey || e.metaKey;
+            // Ctrl/Cmd+S saves (the universal save key; preventDefault stops the
+            // browser's "save page" dialog). Ctrl/Cmd+Enter is kept as an alias.
             if (e.key === 'Escape') { e.preventDefault(); finishEdit(true); }
-            else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finishEdit(false); }
+            else if (mod && (e.key === 's' || e.key === 'S' || e.key === 'Enter')) { e.preventDefault(); finishEdit(false); }
             return;
         }
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMode('off'); post({ kind: 'review-mode', mode: 'off' }); return; }

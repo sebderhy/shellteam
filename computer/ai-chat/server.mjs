@@ -203,7 +203,7 @@ function authFlags() {
       antigravity: authModeFor("antigravity"),
       opencode: authModeFor("opencode"),
     },
-    // Models offered on this box's own key ({ codex: ["gpt-5.6-terra-max"] },
+    // Models offered on this box's own key ({ codex: ["gpt-6-luna-max"] },
     // from INCLUDED_MODELS). A family listed here bills "included": the UI asks
     // for the user's own plan first and offers exactly these models "on us".
     includedModels: includedModelsByFamily(),

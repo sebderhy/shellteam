@@ -92,6 +92,14 @@ test("the picker is inert outside a frame and never reaches the API itself", () 
   assert.match(pickerJs, /e\.source !== window\.parent/, "mode changes accepted from the parent only");
 });
 
+test("an in-place edit saves with Ctrl/Cmd+S (the universal save key), Ctrl+Enter kept as an alias", () => {
+  const save = pickerJs.match(/mod && \(e\.key === 's'[^\n]*finishEdit\(false\)/);
+  assert.ok(save, "Ctrl/Cmd+S must commit the edit");
+  assert.match(save[0], /e\.preventDefault\(\)/, "must stop the browser's save-page dialog");
+  assert.match(save[0], /e\.key === 'Enter'/, "Ctrl+Enter alias must stay");
+  assert.match(pickerJs, /Ctrl\+S or click elsewhere saves/, "the on-screen hint must teach Ctrl+S");
+});
+
 test("the dashboard relays picks from the report frame only and saves edits through the origin-gated route", () => {
   assert.match(dashboard, /d\.source === 'shellteam-report' && e\.source === frame\.contentWindow/);
   assert.match(dashboard, /fetch\('\/api\/computers\/reports\/edit'/);
@@ -100,4 +108,15 @@ test("the dashboard relays picks from the report frame only and saves edits thro
   for (const id of ["reportCommentBtn", "reportEditBtn"]) {
     assert.match(dashboard, new RegExp(`id="${id}" hidden`), `${id} must start hidden until the picker reports in`);
   }
+});
+
+test("the close button lives outside the scrolling actions row, so nothing can push it off a phone screen", () => {
+  // 2026-09-20: six buttons in one flex-shrink:0 row pushed ✕ past the right
+  // edge on a phone. The row now scrolls and ✕ is its sibling, not its child.
+  const header = dashboard.match(/<div class="report-panel-header">[\s\S]*?<\/iframe>/)[0];
+  const actions = header.match(/<div class="report-panel-actions">[\s\S]*?<\/div>/)[0];
+  assert.ok(!actions.includes('id="reportCloseBtn"'), "✕ must not be inside .report-panel-actions");
+  assert.ok(header.includes('id="reportCloseBtn"'), "✕ must still be in the header");
+  assert.match(dashboard, /\.report-panel-actions \{[^}]*overflow-x: auto/, "the actions row must scroll rather than overflow the header");
+  assert.match(dashboard, /@container \(max-width: 560px\)[\s\S]*?\.report-btn-label \{ display: none; \}/, "labels drop to icons in a narrow panel");
 });

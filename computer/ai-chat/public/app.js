@@ -33,7 +33,7 @@ window.App = {
         ws: null,
         sessionId: null,
         isGenerating: false,
-        currentModel: 'claude-opus-5',
+        currentModel: 'claude-opus-5-5',
         totalCost: 0,
         hasApiKey: false,
         hasOpenAIKey: false,
@@ -794,8 +794,8 @@ document.addEventListener('keydown', (e) => {
 function contextWindowForModel(model) {
     for (const agent of (S.catalog?.agents || [])) {
         for (const m of (agent.models || [])) {
-            // Match by id OR cli value so a stale/cli-form id (e.g. "gpt-5.6-sol",
-            // whose catalog id is "gpt-5.6-sol-max") still resolves to its real
+            // Match by id OR cli value so a stale/cli-form id (e.g. "gpt-6-sol",
+            // whose catalog id is "gpt-6-sol-max") still resolves to its real
             // window instead of falling back. Mirrors contextLimitForId in
             // lib/model-catalog.mjs so the meter and auto-compact threshold agree.
             if ((m.id === model || m.cli === model) && m.limit?.context) return m.limit.context;
@@ -1640,11 +1640,11 @@ function fillSuggestion(btn) {
 function autoSwitchToAuthedModel() {
     // Current model already has credentials — nothing to do
     if (hasAuthForModel(S.currentModel)) return false;
-    // Preference order: Claude Opus → Codex GPT-5.6 Sol → OpenCode.
+    // Preference order: Claude Opus → Codex GPT-6 Sol → OpenCode.
     // OpenCode is the fallback when the box has a Fireworks key configured.
     const fallbacks = [
-        { check: () => agentInstalled('claude') && familyHasAuth('claude'), model: 'claude-opus-5' },
-        { check: () => agentInstalled('codex') && familyHasAuth('codex'), model: preferredModelFor('codex', 'gpt-5.6-sol-max') },
+        { check: () => agentInstalled('claude') && familyHasAuth('claude'), model: 'claude-opus-5-5' },
+        { check: () => agentInstalled('codex') && familyHasAuth('codex'), model: preferredModelFor('codex', 'gpt-6-sol-max') },
         { check: () => agentInstalled('opencode') && S.hasOpenCode, model: opencodeDefaultModel() },
     ];
     for (const { check, model } of fallbacks) {
