@@ -483,7 +483,7 @@ export function appendClaudeSessionMarker(sessionId, marker) {
 // harness reminders. They must never render as the user's own bubble (SHE-65)
 // — the frontend shows entries marked internal as a muted system block.
 // Single classifier so live sends, persistence, and every replay branch agree.
-const INTERNAL_ENVELOPE_RE = /^\s*<(task-notification|local-command-stdout|command-|system-reminder)/;
+const INTERNAL_ENVELOPE_RE = /^\s*<(task-notification|local-command-stdout|command-|system-reminder|cockpit-notice)/;
 export function isInternalUserContent(content) {
   return typeof content === "string" && INTERNAL_ENVELOPE_RE.test(content);
 }

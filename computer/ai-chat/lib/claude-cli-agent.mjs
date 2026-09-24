@@ -1,12 +1,16 @@
 import { spawn } from "node:child_process";
 import { CodingAgent } from "./coding-agent.mjs";
 import { claudeLayerArgs } from "./agent-layer.mjs";
+import { hasWriter } from "./task-liveness.mjs";
 
 const WATCHDOG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;    // 10 minutes — kill idle CLI process
-// Background subagents live INSIDE the CLI process; a leaked tracker entry
-// (a subagent whose result line never arrived) must not pin the process
-// forever — after this long with zero stdout activity we reap regardless.
+// Subagents live INSIDE the CLI process; a leaked tracker entry (a subagent
+// whose completion never arrived) must not pin the process forever — after
+// this long with zero stdout activity we reap regardless. Background Bash
+// tasks are NOT under this cap: their liveness is checked against the task's
+// own shell (task-liveness.mjs), so a quiet multi-hour job is never reaped
+// (SHE-93).
 const STALE_SUBAGENT_MS = 60 * 60 * 1000;  // 1 hour
 
 /**
@@ -35,13 +39,14 @@ export class ClaudeCliAgent extends CodingAgent {
     this._recentMsgs = [];
     this._msgCount = 0;
     this._subagents = new Map();
-    // Background Bash tasks (run_in_background) — tracked like subagents so the
-    // idle reaper doesn't SIGTERM a CLI whose shell is still running a build or
-    // server. Launch is observed in the tool_result ("running in background
-    // with ID: bg…"), completion in the injected <task-notification> user
-    // message. The stale cap still bounds a leaked entry (a dev server never
-    // "completes" — persona steers those to systemd-run instead).
-    this._bgTasks = new Set();
+    // Background Bash tasks (run_in_background): id -> { outputFile, startedAt }.
+    // Launch is observed in the tool_result ("running in background with ID:
+    // bg…, Output is being written to: <file>"), completion in the injected
+    // <task-notification>. The idle reaper keeps the CLI alive while a task's
+    // shell still holds its output file open for writing — silence is not a
+    // signal, a watcher on a long job prints nothing for hours (SHE-93). A
+    // tracked task nobody writes to any more is finished and gets dropped.
+    this._bgTasks = new Map();
     this._startTime = null;
     this._lastEventAt = Date.now(); // any stdout line counts as activity (SHE-59)
     this._hadStreamEvents = false;
@@ -230,13 +235,31 @@ export class ClaudeCliAgent extends CodingAgent {
     this._process.on("close", (code, signal) => {
       // Flush remaining buffer
       if (buffer.trim()) this._processLine(buffer);
+      this._onProcessClose(code, signal);
+    });
+
+    this._resetWatchdog();
+  }
+
+  _onProcessClose(code, signal) {
+    {
       const pid = this._process?.pid;
       this._process = null;
-      // Background tasks live inside the CLI process — they died with it, and a
-      // stale entry must not pin the NEXT spawned process against the reaper.
+      // Log the exit before anything below can respawn (the lost-tasks nudge
+      // does), or the line would report the NEW process's uptime.
+      console.log(`[claude-cli] Process exited pid=${pid} code=${code} signal=${signal} (${Date.now() - this._startTime}ms, ${this._msgCount} msgs)`);
+      // Background tasks live inside the CLI process — they died with it. When
+      // the death was not asked for (stop() clears _isActive first) and tasks
+      // were still running, work was lost and the agent would never hear of it:
+      // hand the list to the session manager so it can resume the agent with a
+      // notice instead of leaving the user to prod it the next morning (SHE-93).
+      if (this._isActive && this._bgTasks.size > 0) {
+        console.log(`[claude-cli] Process died with ${this._bgTasks.size} background task(s) still running: ${[...this._bgTasks.keys()].join(", ")}`);
+        this.emit("background_tasks_lost", { tasks: this._bgTasksSnapshot(), exit: `code=${code} signal=${signal}` });
+      }
+      // A stale entry must not pin the NEXT spawned process against the reaper.
       this._bgTasks.clear();
       this._pendingQuestion = null;
-      console.log(`[claude-cli] Process exited pid=${pid} code=${code} signal=${signal} (${Date.now() - this._startTime}ms, ${this._msgCount} msgs)`);
 
       // Only emit a synthetic turn_done if a turn was actually IN PROGRESS when
       // the process died (crash mid-turn). A completed turn already cleared
@@ -257,9 +280,7 @@ export class ClaudeCliAgent extends CodingAgent {
           subtype: effSignal === "SIGINT" ? "interrupted" : effSignal === "SIGTERM" ? "stopped" : undefined,
         });
       }
-    });
-
-    this._resetWatchdog();
+    }
   }
 
   // --- Idle timeout ---
@@ -272,20 +293,52 @@ export class ClaudeCliAgent extends CodingAgent {
   _reapIfIdle() {
     this._idleTimer = null;
     if (!this._process || this._isGenerating) return;
-    // Background subagents (Task run_in_background) keep working inside this
-    // process after the main turn's `result`. Killing it "idle" orphaned whole
-    // fleets mid-flight — the SHE-59 teardown loop. Defer while subagents are
-    // tracked or stdout is still flowing; the stale cap reaps a process whose
-    // tracker leaked (no events at all for a full hour).
     const quietMs = Date.now() - this._lastEventAt;
-    const workAlive =
-      (this._subagents.size > 0 || this._bgTasks.size > 0) && quietMs < STALE_SUBAGENT_MS;
-    if (workAlive || quietMs < IDLE_TIMEOUT_MS) {
-      console.log(`[claude-cli] Idle check: ${this._subagents.size} subagent(s), ${this._bgTasks.size} background task(s) tracked, last event ${Math.round(quietMs / 1000)}s ago — deferring kill`);
+    const quietS = Math.round(quietMs / 1000);
+
+    // Background Bash tasks: judged by liveness, never by silence. A watcher on
+    // a multi-hour job legitimately prints nothing for hours (SHE-93: a 1 h
+    // silence cap reaped the CLI, the watcher died with it, and the agent never
+    // reported). The task's shell holds its output file open for writing until
+    // it exits, so that is the test; a task nobody writes to any more is done
+    // (or its notification was missed) and is dropped from the tracker.
+    const unverifiable = [];
+    for (const [id, task] of this._bgTasks) {
+      if (!task.outputFile) { unverifiable.push(id); continue; }
+      if (hasWriter(task.outputFile)) continue;
+      this._bgTasks.delete(id);
+      console.log(`[claude-cli] Background task ${id}: no process writes ${task.outputFile} any more — finished, untracking (${this._bgTasks.size} left)`);
+      this._emitBackgroundTasks();
+    }
+    const live = [...this._bgTasks.keys()].filter((id) => !unverifiable.includes(id));
+    if (live.length > 0) {
+      console.log(`[claude-cli] Idle check: ${live.length} background task(s) still running (${live.join(", ")}), quiet ${quietS}s — deferring kill`);
       this._startIdleTimer();
       return;
     }
-    console.log(`[claude-cli] Idle timeout (${IDLE_TIMEOUT_MS / 1000}s quiet, no subagents or background tasks) — killing process`);
+    if (quietMs < IDLE_TIMEOUT_MS) {
+      console.log(`[claude-cli] Idle check: stdout active ${quietS}s ago — deferring kill`);
+      this._startIdleTimer();
+      return;
+    }
+    // Subagents (Task/Agent) work inside this process after the main turn's
+    // `result`; killing it "idle" orphaned whole fleets (SHE-59). They stream
+    // events while they work, so a full hour without any stdout means the
+    // tracker leaked — the stale cap bounds that. Same for a background task
+    // whose launch text carried no output path (nothing to test liveness on).
+    const tracked = this._subagents.size + unverifiable.length;
+    if (tracked > 0 && quietMs < STALE_SUBAGENT_MS) {
+      console.log(`[claude-cli] Idle check: ${this._subagents.size} subagent(s) and ${unverifiable.length} unverifiable background task(s) tracked, quiet ${quietS}s (stale cap ${STALE_SUBAGENT_MS / 1000}s) — deferring kill`);
+      this._startIdleTimer();
+      return;
+    }
+    const reason = tracked > 0
+      ? `stale cap: ${this._subagents.size} subagent(s) and ${unverifiable.length} unverifiable background task(s) still tracked but no stdout for ${quietS}s, assuming their completions were lost`
+      : `quiet for ${quietS}s with nothing tracked`;
+    console.log(`[claude-cli] Idle timeout (${reason}) — killing process`);
+    // Anything still tracked here was judged finished/leaked above: a deliberate
+    // reap must not read as lost work in _onProcessClose.
+    this._bgTasks.clear();
     this._process.stdin.end();
     this._process.kill("SIGTERM");
     // Don't set _isActive=false — we'll respawn on next sendMessage()
@@ -375,6 +428,8 @@ export class ClaudeCliAgent extends CodingAgent {
     }
 
     // --- compact_boundary ---
+    if (msg.type === "system" && this._trackTaskSystemMessage(msg)) return;
+
     if (msg.type === "system" && msg.subtype === "compact_boundary") {
       this.emit("session_event", { event: "compacted" });
       return;
@@ -664,22 +719,90 @@ export class ClaudeCliAgent extends CodingAgent {
     return "";
   }
 
+  /**
+   * Claude Code >= 2.1.28x narrates background work as structured `system`
+   * messages: task_started {task_id, tool_use_id, task_type}, task_updated,
+   * background_tasks_changed {tasks: [...]} (the authoritative live set) and
+   * task_notification {task_id, tool_use_id, output_file, status}. Captured
+   * from a real run in test/fixtures/claude-stream-background-task.jsonl. The
+   * tool_result / <task-notification> text forms below stay as the fallback
+   * for older CLIs; both paths land in the same tracker, idempotently.
+   * Returns true when the message was one of these.
+   */
+  _trackTaskSystemMessage(msg) {
+    switch (msg.subtype) {
+      case "task_started":
+        if (msg.task_id) this._trackTaskStart(msg.task_id, { toolUseId: msg.tool_use_id || null, taskType: msg.task_type || null });
+        return true;
+      case "background_tasks_changed": {
+        const live = new Set((msg.tasks || []).map((t) => t.task_id));
+        for (const id of [...this._bgTasks.keys()]) {
+          if (live.has(id)) continue;
+          this._bgTasks.delete(id);
+          console.log(`[claude-cli] Background task ${id} finished per the CLI's task list (${this._bgTasks.size} tracked)`);
+          this._emitBackgroundTasks();
+        }
+        return true;
+      }
+      case "task_notification":
+        this._trackTaskEnd(msg.task_id, msg.tool_use_id);
+        return true;
+      case "task_updated":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  _trackTaskStart(id, fields) {
+    const prev = this._bgTasks.get(id);
+    const task = { outputFile: null, toolUseId: null, ...prev, startedAt: prev?.startedAt || Date.now() };
+    for (const [k, v] of Object.entries(fields)) if (v != null) task[k] = v;
+    this._bgTasks.set(id, task);
+    console.log(`[claude-cli] Background task ${id} ${prev ? "updated" : "started"} (${this._bgTasks.size} tracked, output ${task.outputFile || "unknown"})`);
+    this._emitBackgroundTasks();
+  }
+
+  _trackTaskEnd(id, toolUseId) {
+    if (id && this._bgTasks.delete(id)) {
+      console.log(`[claude-cli] Background task ${id} finished (${this._bgTasks.size} tracked)`);
+      this._emitBackgroundTasks();
+    }
+    // An async subagent (Agent run_in_background) completes through this same
+    // notification — never through a parent_tool_use_id `result` — and it names
+    // the Agent tool call in tool_use_id. Without this the entry leaked and the
+    // idle check counted phantom subagents (SHE-93).
+    if (toolUseId && this._subagents.has(toolUseId)) {
+      console.log(`[claude-cli] Subagent ${toolUseId} finished via task notification (${this._subagents.size - 1} tracked)`);
+      this._untrackSubagent(toolUseId);
+    }
+  }
+
+  _bgTasksSnapshot() {
+    return [...this._bgTasks].map(([id, task]) => ({ id, ...task }));
+  }
+
+  _emitBackgroundTasks() {
+    this.emit("background_tasks", { tasks: this._bgTasksSnapshot() });
+  }
+
   _trackBackgroundTask(block) {
     const text = this._blockText(block);
     if (!text) return;
-    // Launch: the Bash tool's own result announces the background ID.
+    // Launch: the Bash tool's own result announces the background ID and the
+    // output file its shell writes to — the handle the reaper tests liveness on.
     const launched = text.match(/running in background with ID:?\s*([A-Za-z0-9_-]+)/i);
     if (launched) {
-      this._bgTasks.add(launched[1]);
-      console.log(`[claude-cli] Background task ${launched[1]} started (${this._bgTasks.size} tracked)`);
+      const outputFile = text.match(/Output is being written to:\s*(\S+)/i)?.[1]?.replace(/\.$/, "") || null;
+      this._trackTaskStart(launched[1], { outputFile });
       return;
     }
     // Completion: the harness injects a <task-notification> user message.
     if (text.includes("<task-notification>")) {
-      const id = text.match(/<task-id>([A-Za-z0-9_-]+)<\/task-id>/)?.[1];
-      if (id && this._bgTasks.delete(id)) {
-        console.log(`[claude-cli] Background task ${id} finished (${this._bgTasks.size} tracked)`);
-      }
+      this._trackTaskEnd(
+        text.match(/<task-id>([A-Za-z0-9_-]+)<\/task-id>/)?.[1],
+        text.match(/<tool-use-id>([A-Za-z0-9_-]+)<\/tool-use-id>/)?.[1],
+      );
     }
   }
 
@@ -704,9 +827,11 @@ export class ClaudeCliAgent extends CodingAgent {
   }
 
   _handleSubagentResult(msg) {
-    const parentId = msg.parent_tool_use_id;
-    const tracked = this._subagents.get(parentId);
-    const steps = tracked?.steps || 0;
+    this._untrackSubagent(msg.parent_tool_use_id);
+  }
+
+  _untrackSubagent(parentId) {
+    const steps = this._subagents.get(parentId)?.steps || 0;
     this._subagents.delete(parentId);
     this.emit("subagent_done", { parent_id: parentId, steps });
   }

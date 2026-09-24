@@ -55,6 +55,8 @@ import {
 import {
   setBroadcast,
   restoreSlots,
+  resumeLostBackgroundTasks,
+  beginShutdown,
   listSlots,
   createSlot,
   clientCreateSlot,
@@ -153,6 +155,10 @@ function broadcast(obj) {
 }
 setBroadcast(broadcast);
 restoreSlots();
+// A slot whose CLI died with background tasks running (this very restart, or
+// a crash the previous process never got to report) is resumed with a notice
+// naming them, once clients can receive the reply (SHE-93).
+setTimeout(resumeLostBackgroundTasks, 3000).unref();
 
 // Keep key-gated capability flags (OpenCode, voice input) live: poll the
 // control plane and push a fresh status to every connected client the moment
@@ -1447,6 +1453,7 @@ terminalWSS.on("connection", (ws) => {
 // --- Graceful Shutdown ---
 
 function shutdown() {
+  beginShutdown();
   clearInterval(heartbeatInterval);
   // A tab created/closed inside the 300 ms save debounce must survive the
   // restart — flush before exiting so clients never need to resurrect tabs.

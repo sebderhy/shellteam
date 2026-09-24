@@ -99,6 +99,9 @@ function materializeSlot(id) {
       totalCost: 0,
       watchdogRestarts: 0,
       lastUsedAt: Date.now(),
+      // Background Bash tasks the slot's CLI is running (SHE-93). Persisted so
+      // a cockpit restart can tell the agent which of its jobs died with it.
+      bgTasks: [],
     });
   }
   return slots.get(id);
@@ -607,6 +610,10 @@ export function stopAgent(slotId = 0) {
   const slot = getSlot(slotId);
   if (!slot) return;
   if (slot.agent) slot.agent.stop();
+  // A deliberate stop abandons the CLI's background tasks with it. A shutdown
+  // does not: they must survive in TABS_FILE so the restarted cockpit can tell
+  // the agent what it lost (resumeLostBackgroundTasks).
+  if (!shuttingDown) slot.bgTasks = [];
   slot.agent = null;
   slot.isGenerating = false;
   slot.streamingText = "";
@@ -615,6 +622,49 @@ export function stopAgent(slotId = 0) {
 
 export function stopAllAgents() {
   for (const [id] of slots) stopAgent(id);
+}
+
+let shuttingDown = false;
+/** The server is exiting: keep every slot's background-task record for the restart. */
+export function beginShutdown() { shuttingDown = true; }
+
+function lostTasksNotice(tasks, reason) {
+  const n = tasks.length;
+  return [
+    "<cockpit-notice>",
+    `Your Claude Code process ended (${reason}) while ${n} background task${n === 1 ? " was" : "s were"} still running:`,
+    ...tasks.map((t) => `- ${t.id}${t.outputFile ? ` (output: ${t.outputFile})` : ""}${t.startedAt ? `, started ${new Date(t.startedAt).toISOString()}` : ""}`),
+    "Background tasks die with the process: these did not finish and no completion notification will ever arrive for them. Check their output files and the state of the work they were doing or watching, restart what is still needed, then report the outcome to the user.",
+    "</cockpit-notice>",
+  ].join("\n");
+}
+
+/**
+ * Resume a slot whose CLI died with background tasks running, with a notice
+ * naming them (SHE-93: the benchmark finished overnight, the watcher died with
+ * the reaped CLI, and the agent sat silent until the user typed "So?"). The
+ * record is cleared first, so a slot is nudged at most once per loss.
+ */
+export async function nudgeLostBackgroundTasks(slotId, reason) {
+  const slot = getSlot(slotId);
+  if (!slot || !slot.bgTasks?.length) return false;
+  const tasks = slot.bgTasks;
+  slot.bgTasks = [];
+  saveTabs();
+  console.log(`[session-mgr] Slot ${slotId}: ${tasks.length} background task(s) died with the CLI (${reason}) — resuming the agent with a notice`);
+  const message = lostTasksNotice(tasks, reason);
+  addUserMessage(slotId, message, { internal: true });
+  if (!slot.agent) await startAgent(slotId);
+  return sendMessage(slotId, message);
+}
+
+/** After restoreSlots: nudge every slot that lost background tasks to the restart. */
+export function resumeLostBackgroundTasks() {
+  for (const [id, slot] of slots) {
+    if (!slot.bgTasks?.length) continue;
+    nudgeLostBackgroundTasks(id, "the cockpit restarted")
+      .catch((e) => console.error(`[session-mgr] Slot ${id}: resuming after lost background tasks failed: ${e.message}`));
+  }
 }
 
 export function interruptAgent(slotId = 0) {
@@ -938,6 +988,17 @@ function wireAgentEvents(slotId, agent) {
     slotBroadcast(slotId, "subagent_progress", data);
   });
 
+  on("background_tasks", ({ tasks }) => {
+    slot.bgTasks = tasks || [];
+    saveTabs();
+  });
+  on("background_tasks_lost", ({ tasks, exit }) => {
+    slot.bgTasks = tasks || [];
+    if (shuttingDown) { saveTabs(); return; } // the restart will nudge
+    nudgeLostBackgroundTasks(slotId, `exited unexpectedly, ${exit}`)
+      .catch((e) => console.error(`[session-mgr] Slot ${slotId}: resuming after lost background tasks failed: ${e.message}`));
+  });
+
   on("subagent_done", (data) => {
     touchSlot(slotId);
     addToHistory(slotId, { type: "subagent_done", parent_id: data.parent_id, steps: data.steps });
@@ -1099,6 +1160,7 @@ function writeTabsNow() {
     title: s.title || null,
     createdAt: s.createdAt || Date.now(),
     lastUsedAt: s.lastUsedAt || Date.now(),
+    ...(s.bgTasks?.length ? { bgTasks: s.bgTasks } : {}),
     ...s.config,
   }));
   try { writeFileSync(TABS_FILE, JSON.stringify(data)); }
@@ -1165,6 +1227,7 @@ export function restoreSlots() {
     slot.title = s.title || null;
     slot.createdAt = s.createdAt || slot.createdAt || Date.now();
     slot.lastUsedAt = s.lastUsedAt || Date.now();
+    slot.bgTasks = Array.isArray(s.bgTasks) ? s.bgTasks : [];
 
     // Load history and correct cwd from the session's authoritative record
     if (s.sessionId) {

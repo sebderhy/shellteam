@@ -5,6 +5,20 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-09-24
+
+### Fixed
+- **Long background jobs no longer get their agent killed after an hour of
+  silence (SHE-93).** The idle reaper treated a quiet background Bash task
+  (a watcher on a multi-hour benchmark) as leaked, reaped the CLI, and the
+  watcher died with it; the agent never reported and had to be prodded. A task
+  now counts as running while its shell is alive (it holds the output file
+  open for writing), however quiet it stays. Async subagents are released when
+  their completion notification arrives instead of being counted forever, and
+  the kill log states the real reason. When a CLI does die with tasks running
+  (a crash, or the cockpit restarting for a release), the agent is resumed
+  with a notice naming the lost tasks so it can check and restart them.
+
 ## [0.1.30] - 2026-09-22
 
 ### Added
