@@ -113,6 +113,119 @@ class TestPickerDelivery:
         assert MARK not in resp.text
 
 
+# --- Integration: apps on a port (the owner's side-panel view) -----------------------
+# The panel's Comment/Edit buttons were dead on every app (Seb, 2026-09-25, on his
+# own site at home.<domain>): the picker only reached files, so an app page never
+# said review-ready. The owner's framed view of an app document now carries it;
+# every other app response keeps streaming through untouched.
+
+APP_PORT = 4000
+APP_HOST = {"host": f"alice-{APP_PORT}.localhost"}
+IFRAME = {"sec-fetch-dest": "iframe"}
+
+
+@pytest.fixture
+def app_owner():
+    from unittest.mock import AsyncMock, patch
+
+    with patch(
+        "api.routers.proxy.resolve_username_owner",
+        new_callable=AsyncMock,
+        return_value=("172.20.0.5", "user-uuid-1234"),
+    ):
+        yield
+
+
+def _owner_cookie():
+    from api.services.auth import FILES_COOKIE, files_token
+
+    return {"cookie": f"{FILES_COOKIE}={files_token()}"}
+
+
+def _mock_app(path="/", html=REPORT_HTML, ctype="text/html; charset=utf-8", status=200):
+    respx.get(f"http://172.20.0.5:{APP_PORT}{path}").mock(
+        return_value=httpx.Response(status, text=html, headers={"content-type": ctype})
+    )
+
+
+class TestAppPickerDelivery:
+    @respx.mock
+    def test_owner_panel_view_of_an_app_page_gets_picker(self, app_owner):
+        _mock_app()
+        with TestClient(app, base_url="http://localhost") as client:
+            resp = client.get("/", headers={**APP_HOST, **IFRAME, **_owner_cookie()})
+        assert resp.status_code == 200
+        assert MARK in resp.text
+        assert resp.text.index(MARK) < resp.text.index("</body>")
+        assert int(resp.headers["content-length"]) == len(resp.content)
+
+    @respx.mock
+    def test_top_level_app_visit_is_byte_identical(self, app_owner):
+        _mock_app()
+        with TestClient(app, base_url="http://localhost") as client:
+            resp = client.get("/", headers={**APP_HOST, **_owner_cookie()})
+        assert resp.text == REPORT_HTML
+
+    @respx.mock
+    def test_share_link_visitor_of_an_app_gets_no_picker(self, app_owner):
+        from api.services.auth import PORT_SHARE_COOKIE, port_share_cookie_value
+
+        exp = int(time.time()) + 600
+        _mock_app()
+        with TestClient(app, base_url="http://localhost") as client:
+            resp = client.get("/", headers={
+                **APP_HOST, **IFRAME,
+                "cookie": f"{PORT_SHARE_COOKIE}={port_share_cookie_value(APP_PORT, exp)}",
+            })
+        assert resp.status_code == 200
+        assert MARK not in resp.text
+
+    @respx.mock
+    def test_anonymous_visitor_of_a_public_app_gets_no_picker(self, app_owner, monkeypatch):
+        monkeypatch.setattr("api.routers.proxy.ports.is_port_public", lambda *_: True)
+        _mock_app()
+        with TestClient(app, base_url="http://localhost") as client:
+            resp = client.get("/", headers={**APP_HOST, **IFRAME})
+        assert resp.status_code == 200
+        assert MARK not in resp.text
+
+    @respx.mock
+    def test_app_non_html_and_errors_are_untouched(self, app_owner):
+        _mock_app("/data.json", html='{"a": 1}', ctype="application/json")
+        _mock_app("/missing", html="<html><body>nope</body></html>", status=404)
+        with TestClient(app, base_url="http://localhost") as client:
+            data = client.get("/data.json", headers={**APP_HOST, **IFRAME, **_owner_cookie()})
+            missing = client.get("/missing", headers={**APP_HOST, **IFRAME, **_owner_cookie()})
+        assert data.text == '{"a": 1}'
+        assert MARK not in missing.text
+
+
+class TestPanelAppButtonsWiring:
+    """The dashboard half: the panel must accept the picker on an app and route
+    Private/Share to the port endpoints instead of disabling them."""
+
+    def test_dashboard_panel_handles_apps(self):
+        html = (report_review.FRONTEND_DIR / "dashboard.html").read_text()
+        assert "an app on a port never carries the picker" not in html
+        assert "share it from the Apps tab" not in html
+        assert "fetch('/api/computers/ports'" in html
+        assert "`port=${appPort}`" in html
+
+
+class TestPortVisibilityOriginGate:
+    def test_content_origin_cannot_flip_a_port_public(self):
+        # The panel now drives POST /api/computers/ports, so it gets the same
+        # dashboard-origin gate as publishing a file: an app or report page on a
+        # same-site subdomain must never make a port world-readable.
+        with TestClient(app) as client:
+            resp = client.post(
+                "/api/computers/ports",
+                headers={**LOCAL, **BEARER, "Origin": "https://alice-4000.localhost"},
+                json={"port": 4000, "public": True},
+            )
+        assert resp.status_code == 403
+
+
 # --- Unit: apply_text_edit -----------------------------------------------------------
 
 SOURCE = (

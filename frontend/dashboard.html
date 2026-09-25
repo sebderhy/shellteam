@@ -1902,7 +1902,9 @@
             const commentBtn = document.getElementById('reportCommentBtn');
             const editBtn = document.getElementById('reportEditBtn');
             const toastEl = document.getElementById('dashToast');
-            let url = null, relpath = null, isPublic = false, toastTimer;
+            // A panel shows either a file on this origin (relpath) or an app on a
+            // port subdomain (appPort); never both.
+            let url = null, relpath = null, appPort = null, isPublic = false, toastTimer;
             let reviewMode = 'off';   // 'off' | 'comment' | 'edit' — mirrors the picker inside the frame
 
             function toast(msg, isErr) {
@@ -1914,10 +1916,27 @@
             }
             function relpathFromUrl(u) {
                 try {
+                    const x = new URL(u, location.href);
+                    if (x.host !== location.host) return null;   // an app, not a file
                     // /_editor/<path> is our editor SPA opening <path>; the real
                     // file (for publish/share) is <path>, not the SPA route.
-                    return new URL(u, location.href).pathname.replace(/^\/+/, '').replace(/^_editor\//, '');
+                    return x.pathname.replace(/^\/+/, '').replace(/^_editor\//, '');
                 } catch { return null; }
+            }
+            // `<owner>-<port>.<domain>` carries its port; a named route
+            // (`<name>.<domain>`) is looked up in the owner's app routes.
+            async function appPortForUrl(u) {
+                let host;
+                try { host = new URL(u, location.href).hostname; } catch { return null; }
+                const suffix = '.' + location.hostname;
+                if (!host.endsWith(suffix)) return null;
+                const label = host.slice(0, -suffix.length);
+                const m = label.match(/-(\d+)$/);
+                if (m) return Number(m[1]);
+                const r = await fetch('/api/computers/apps');
+                if (!r.ok) throw new Error(`apps HTTP ${r.status}`);
+                const app = (await r.json()).apps.find((a) => a.name === label);
+                return app ? app.port : null;
             }
             // Our own first-party apps served on this origin (the /_editor/ SPA)
             // need same-origin to run their authenticated fetches (file tree +
@@ -1937,22 +1956,34 @@
                 visBtn.classList.toggle('is-public', pub);
                 visBtn.disabled = toggleDisabled;
                 visBtn.title = toggleDisabled
-                    ? (pub ? 'Served from ~/public — always public'
-                           : (relpath ? 'Cannot change visibility' : 'An app on a port: share it from the Apps tab'))
+                    ? (pub ? 'Served from ~/public — always public' : 'Cannot change visibility')
                     : (pub ? 'Public — click to make private' : 'Private — click to make public');
-                // Private reports are shareable too, via a signed 24h link — no
-                // need to make the file public just to show someone once.
-                shareBtn.disabled = !pub && !relpath;
+                // Private reports and apps are shareable too, via a signed 24h
+                // link — no need to make them public just to show someone once.
+                shareBtn.disabled = !pub && !relpath && !appPort;
                 shareBtn.innerHTML = pub ? 'Share' : 'Share<span class="report-btn-label"> 24h link</span>';
-                shareBtn.title = pub ? 'Share link' : 'Copy a signed link — anyone with it can view this file for 24h';
+                shareBtn.title = pub ? 'Share link' : `Copy a signed link — anyone with it can view this ${appPort ? 'app' : 'file'} for 24h`;
             }
             async function refreshStatus() {
                 if (relpath && relpath.startsWith('public/')) return setPublic(true, true);
-                if (!relpath) return setPublic(false, true);
+                if (!relpath) return refreshAppStatus();
                 try {
                     const r = await fetch(`/api/computers/reports?path=${encodeURIComponent(relpath)}`);
                     setPublic(!!(await r.json()).public);
                 } catch (e) { console.error('[report] status', e); setPublic(false); }
+            }
+            async function refreshAppStatus() {
+                const forUrl = url;
+                try {
+                    const port = await appPortForUrl(forUrl);
+                    if (forUrl !== url) return;   // the panel moved on meanwhile
+                    appPort = port;
+                    if (!port) return setPublic(false, true);
+                    const r = await fetch('/api/computers/ports');
+                    if (!r.ok) throw new Error(`ports HTTP ${r.status}`);
+                    if (forUrl !== url) return;
+                    setPublic((await r.json()).public_ports.includes(port));
+                } catch (e) { console.error('[report] app status', e); setPublic(false, true); }
             }
             // ─ Review by pointing (docs/decisions/20260920-report-review-picker.md) ─
             // The framed document is opaque-origin, so the picker lives INSIDE it
@@ -1979,11 +2010,20 @@
                 const agentsFrame = document.getElementById('agents-iframe');
                 agentsFrame?.contentWindow?.postMessage({
                     source: 'shellteam-dashboard', kind: 'report-comment',
-                    path: relpath, selector: d.selector, text: d.text, comment: comment || '',
+                    // An app has no file behind the URL we know: the agent that
+                    // built it maps the page URL to its source.
+                    path: relpath || url, selector: d.selector, text: d.text, comment: comment || '',
                 }, '*');
                 switchTab('agents');
             }
             async function saveTextEdit(d) {
+                if (!relpath) {
+                    // An app page: no file to patch deterministically, so the edit
+                    // goes straight to the agent that owns the app's source.
+                    sendToChat({ selector: d.selector, text: d.old_text }, `Replace this text with: "${d.new_text}"`);
+                    toast('Edit sent to the agent, it will update the app source');
+                    return;
+                }
                 const r = await fetch('/api/computers/reports/edit', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ path: relpath, selector: d.selector, old_html: d.old_html, new_html: d.new_html }),
@@ -2004,7 +2044,6 @@
             }
             function onReportMessage(d) {
                 if (d.kind === 'review-ready') {
-                    if (!relpath) return;   // an app on a port never carries the picker
                     commentBtn.hidden = editBtn.hidden = false;
                 } else if (d.kind === 'review-pick') {
                     sendToChat(d);
@@ -2016,7 +2055,7 @@
             }
 
             function openReport(u, title) {
-                url = u; relpath = relpathFromUrl(u);
+                url = u; relpath = relpathFromUrl(u); appPort = null;
                 resetReview();
                 // Set sandbox BEFORE src so the new document inherits it. Never
                 // leave allow-same-origin on for a subsequent untrusted report.
@@ -2034,13 +2073,18 @@
                 resetReview();
             }
             visBtn.addEventListener('click', async () => {
-                if (!relpath || visBtn.disabled) return;
+                if (!(relpath || appPort) || visBtn.disabled) return;
                 const next = !isPublic;
                 try {
-                    const r = await fetch('/api/computers/reports', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: relpath, public: next }),
-                    });
+                    const r = relpath
+                        ? await fetch('/api/computers/reports', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ path: relpath, public: next }),
+                        })
+                        : await fetch('/api/computers/ports', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ port: appPort, public: next }),
+                        });
                     if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || `HTTP ${r.status}`); }
                     setPublic(next);
                 } catch (e) { console.error('[report] publish', e); toast('Could not change visibility: ' + e.message, true); }
@@ -2049,10 +2093,11 @@
                 if (!url) return;
                 let shareUrl = url;
                 if (!isPublic) {
-                    if (!relpath) return;
-                    // Mint a signed, expiring link (24h) for this one file.
+                    if (!relpath && !appPort) return;
+                    // Mint a signed, expiring link (24h) for this one file or app.
+                    const what = relpath ? `path=${encodeURIComponent(relpath)}` : `port=${appPort}`;
                     try {
-                        const r = await fetch(`/api/auth/share?path=${encodeURIComponent(relpath)}&ttl=86400`);
+                        const r = await fetch(`/api/auth/share?${what}&ttl=86400`);
                         const j = await r.json().catch(() => ({}));
                         if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
                         shareUrl = j.url;

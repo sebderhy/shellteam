@@ -627,11 +627,16 @@ def _rewrite_sandboxed_html(request: Request, response: Response, rewrite) -> Re
 
     if not _wants_content_sandbox(request, response):
         return response
+    return _rewrite_html_body(response, rewrite)
+
+
+def _rewrite_html_body(response: Response, rewrite) -> Response:
+    """Rebuild a buffered response with ``rewrite(body)``, keeping Content-Length right."""
     body = rewrite(response.body)
     if body is response.body:
         return response
     headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
-    return Response(content=body, status_code=200, headers=headers)
+    return Response(content=body, status_code=response.status_code, headers=headers)
 
 
 def _inline_sandboxed_images(request: Request, response: Response, relpath: str) -> Response:
@@ -657,6 +662,30 @@ def _inject_review_picker(request: Request, response: Response) -> Response:
     if not request_grants_files_read(request):
         return response
     return _rewrite_sandboxed_html(request, response, report_review.inject_picker)
+
+
+def _is_owner_panel_document(request: Request, is_app_port: bool) -> bool:
+    """An app page the OWNER is loading into a frame (the dashboard side panel).
+
+    Only these responses get the review picker on an app port: the owner's own
+    credential (never a share link, never an anonymous hit on a public port), a
+    GET navigation into an iframe. Everything else on an app port keeps streaming
+    through byte-identical.
+    """
+    return (
+        is_app_port
+        and request.method == "GET"
+        and request.headers.get("sec-fetch-dest") == "iframe"
+        and request_grants_files_read(request)
+    )
+
+
+def _inject_app_review_picker(response: Response) -> Response:
+    """Append the review picker to an app's HTML document (see _is_owner_panel_document)."""
+    ctype = response.headers.get("content-type", "")
+    if response.status_code != 200 or not ctype.lower().startswith("text/html"):
+        return response
+    return _rewrite_html_body(response, report_review.inject_picker)
 
 
 def _append_share_footer(response: Response) -> Response:
@@ -897,11 +926,16 @@ async def proxy_subdomain(request: Request, path: str):
     # Proxy the request. App ports stream (SSE/chunked/long responses work);
     # the file-server path stays buffered — the share footer and image inlining
     # need the whole body.
+    # The owner's panel view of an app page is buffered (one HTML document, not
+    # a stream) so the review picker can be appended.
+    panel_document = _is_owner_panel_document(request, is_app_port)
     response, reached = await _forward_http(
-        request, f"http://{ip}:{port}/{path}", stream=(port != FILE_PORT)
+        request, f"http://{ip}:{port}/{path}", stream=(port != FILE_PORT and not panel_document)
     )
     if reached and owner_id and port != FILE_PORT:
         ports.record_port_hit(owner_id, port)
+    if reached and panel_document:
+        response = _inject_app_review_picker(response)
     if reached and _share_footer_applies(request, is_published_report, False, path):
         response = _append_share_footer(response)
     return response

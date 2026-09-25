@@ -5,6 +5,16 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.32] - 2026-09-25
+
+### Fixed
+- **The side panel's buttons work on apps, not only on files.** An app on a
+  port (an agent-built site, a dev server) opened in the panel showed no
+  Comment or Edit, and Private and Share were greyed out. Comment and Edit now
+  work on the owner's own view of an app page (edits go to the agent, which
+  knows the source), Private toggles the port, and Share mints a signed 24h
+  link. Visitors never receive the picker.
+
 ## [0.1.31] - 2026-09-24
 
 ### Fixed

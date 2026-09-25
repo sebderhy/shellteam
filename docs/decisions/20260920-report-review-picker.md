@@ -91,3 +91,21 @@ Do not port the editor. Build a ShellTeam-native pointer instead:
   bounds), and `tests/conftest.py` now scrubs `VISITOR_REDIRECT_URL` so a box
   with a landing redirect does not break anonymous shell tests.
 - Ships in v0.1.29.
+
+## Update 2026-09-25: apps on a port
+
+The first revisit trigger fired. Seb opened his own site (an app on a port, served
+at a named route) in the panel and every header button was dead: Comment and
+Edit never appeared, Private and Share were disabled.
+
+- The subdomain proxy now appends the picker to an app page when, and only when,
+  the OWNER's own credential loads it into a frame (`GET`, `Sec-Fetch-Dest:
+  iframe`, files cookie). That one document is buffered instead of streamed;
+  every other app response (top-level visits, share-link visitors, anonymous
+  hits on a public port, assets, APIs, SSE) is untouched.
+- Comment sends the page URL as the pointer. Edit text has no file we can patch
+  deterministically, so it always goes to the agent, which knows the app's
+  source. Private toggles the port (`POST /api/computers/ports`, now origin-gated
+  like publishing a file); Share mints the existing signed 24h port link.
+- An app that sends its own strict CSP blocks the inline picker: the buttons
+  then stay hidden, as before.

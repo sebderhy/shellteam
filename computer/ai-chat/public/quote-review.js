@@ -26,6 +26,9 @@ window.QuoteReview = (() => {
     let pendingRange = null;   // Range captured when the selection pill is shown
     let tray, pill, messages;
 
+    // Short label for a pointer's source: a file's name, or an app page's last
+    // path segment (its host for the site root, e.g. `home.example.com`).
+    const refLabel = (p) => p.replace(/\/+$/, '').split('/').pop();
     const esc = (s) => s.replace(/[&<>"]/g, (c) => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
     ));
@@ -160,7 +163,7 @@ window.QuoteReview = (() => {
                 <div class="qc" data-cid="${q.id}">
                     <div class="qc-quote">
                         <span class="qc-num">${i + 1}</span>
-                        <span class="qc-body">${q.ref ? `<span class="qc-ref" title="${esc(q.ref.path)} › ${esc(q.ref.selector)}">${esc(q.ref.path.split('/').pop())} › ${esc(q.ref.selector)}</span>` : ''}<span class="qc-text">"${esc(q.text)}"</span></span>
+                        <span class="qc-body">${q.ref ? `<span class="qc-ref" title="${esc(q.ref.path)} › ${esc(q.ref.selector)}">${esc(refLabel(q.ref.path))} › ${esc(q.ref.selector)}</span>` : ''}<span class="qc-text">"${esc(q.text)}"</span></span>
                         <button class="qc-x" title="Remove" data-x="${q.id}">&times;</button>
                     </div>
                     <div class="qc-grow" data-rep="${esc(q.comment)}">

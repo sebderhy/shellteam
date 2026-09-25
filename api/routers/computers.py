@@ -82,7 +82,7 @@ class PortVisibilityRequest(BaseModel):
     public: bool
 
 
-@router.post("/ports")
+@router.post("/ports", dependencies=[Depends(require_trusted_origin)])
 async def set_port_visibility(body: PortVisibilityRequest, user: dict = Depends(get_current_user)):
     """Toggle public visibility for a port on the user's container."""
     if body.public:

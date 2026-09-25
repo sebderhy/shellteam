@@ -120,3 +120,19 @@ test("the close button lives outside the scrolling actions row, so nothing can p
   assert.match(dashboard, /\.report-panel-actions \{[^}]*overflow-x: auto/, "the actions row must scroll rather than overflow the header");
   assert.match(dashboard, /@container \(max-width: 560px\)[\s\S]*?\.report-btn-label \{ display: none; \}/, "labels drop to icons in a narrow panel");
 });
+
+// Seb, 2026-09-25: his own site (an app on a port, home.<domain>) showed dead
+// panel buttons. Apps now carry the picker; the pointer is the page URL, so the
+// agent that built the app maps it to the source.
+test("an app page pick points at the page URL, and the tray labels the site root by host", () => {
+  const { QR, els } = loadTray();
+  QR.addFromReport({ path: "https://home.example.com/", selector: "h1", text: "Hi" });
+  assert.equal(QR.assemble(), '> https://home.example.com/ › h1\n> "Hi"');
+  assert.match(els.quoteTray.innerHTML, />home\.example\.com › h1</);
+});
+
+test("the dashboard relays app picks with the URL and hands app text edits to the agent", () => {
+  assert.match(dashboard, /path: relpath \|\| url/);
+  assert.match(dashboard, /if \(!relpath\) \{[\s\S]{0,200}sendToChat\(\{ selector: d\.selector, text: d\.old_text \}/);
+  assert.doesNotMatch(dashboard, /an app on a port never carries the picker/);
+});
