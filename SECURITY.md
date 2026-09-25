@@ -286,7 +286,8 @@ Composio is **opt-in** (enabled only when `COMPOSIO_API_KEY` is set; off
 otherwise). Its managed OAuth routes app tokens through Composio's hosted backend
 (`backend.composio.dev`). For an "own your data" product this must never be
 mandatory — hence off by default, with bring-your-own-MCP as the always-available
-alternative.
+alternative. ShellTeam turns the Composio SDK's own usage telemetry
+(`telemetry.composio.dev`) off, for the whole process.
 
 ## Reporting a vulnerability
 

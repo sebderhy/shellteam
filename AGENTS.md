@@ -208,6 +208,7 @@ gitignored — never commit values). The important ones:
 | `API_PORT` / `AI_CHAT_PORT` | Control plane / cockpit ports (8000 / 3456) |
 | `SHELLTEAM_AI_TOKEN` | HMAC secret for `/internal/ai` (auto-generated) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | LLM keys (set what you use; Antigravity signs in via its own Google OAuth) |
+| `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` / `OPENAI_BASE_URL` | Company LLM gateway; wins over subscriptions (`session.mjs` gatewayFor, `llm_gateway.py`) |
 | `FIREWORKS_API_KEY` | Enables the OpenCode agent (relayed via `/internal/ai/fireworks`) |
 | `ELEVENLABS_API_KEY` | Voice input (speech-to-text) in the cockpit + feedback |
 | `COMPOSIO_API_KEY` | Optional — enables Composio app integrations over MCP (off by default) |

@@ -15,6 +15,8 @@ import {
   HOME,
   API_KEY_FILE,
   OPENAI_API_KEY_FILE,
+  CLAUDE_GATEWAY_FILE,
+  OPENAI_GATEWAY_FILE,
   SUBSCRIPTION_RECOVERY_FILE,
   MODEL_FILE,
   DEFAULT_MODEL,
@@ -133,13 +135,6 @@ export function loadApiKey() {
   return null;
 }
 
-export function saveApiKey(key) {
-  const dir = dirname(API_KEY_FILE);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(API_KEY_FILE, key);
-  clearAuthFile(CREDENTIALS_FILE, "Claude OAuth credentials");
-  clearSubscriptionExpired("claude");
-}
 
 // --- OpenAI API Key ---
 export function loadOpenAIApiKey() {
@@ -149,15 +144,40 @@ export function loadOpenAIApiKey() {
   return resolveProviderKey(fileValue, process.env.OPENAI_API_KEY || null, "OpenAI API key");
 }
 
-export function saveOpenAIApiKey(key) {
-  const dir = dirname(OPENAI_API_KEY_FILE);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(OPENAI_API_KEY_FILE, key);
-  clearAuthFile(CODEX_AUTH_FILE, "Codex OAuth credentials");
-  clearSubscriptionExpired("codex");
-  // The OpenAI-API provider is no longer written into ~/.codex/config.toml — the
-  // cockpit adds it as a launch-time `-c` override when this key file exists
-  // (see agent-layer.mjs codexLayerArgs). Keeps the user's ~/.codex untouched.
+// --- Saving a provider key --------------------------------------------------
+// The provider is the one the user picked (the tab they pasted into), never
+// guessed from the key: a guess once filed a Claude key as the OpenAI key.
+// A key is a FALLBACK: the subscription login is left in place (subscription
+// always wins, see authModeFor) and is the user's own CLI file anyway, which
+// ShellTeam must never delete. The OpenAI provider itself is added at launch
+// as a `-c` override (agent-layer.mjs codexLayerArgs), so ~/.codex is untouched.
+const PROVIDER_KEYS = {
+  claude: { file: API_KEY_FILE, label: "Anthropic", prefix: "sk-ant-" },
+  openai: { file: OPENAI_API_KEY_FILE, label: "OpenAI", prefix: "sk-" },
+};
+
+// Secrets ShellTeam stores are readable by the owner only.
+function writeSecretFile(path, content) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
+export function saveProviderKey(provider, key) {
+  const target = PROVIDER_KEYS[provider];
+  if (!target) throw new Error(`Unknown provider "${provider}" (expected claude or openai)`);
+  const value = String(key ?? "").trim();
+  if (provider === "openai" && value.startsWith(PROVIDER_KEYS.claude.prefix)) {
+    throw new Error("This is an Anthropic key. Paste it on the Claude tab.");
+  }
+  if (!value.startsWith(target.prefix)) {
+    throw new Error(
+      `${target.label} API keys start with ${target.prefix}. This one starts with "${value.slice(0, 7)}". ` +
+      `If it is a token for your company's AI gateway, use "Company gateway" instead.`,
+    );
+  }
+  writeSecretFile(target.file, value);
+  console.log(`[ai-chat] Saved ${target.label} API key (${value.slice(0, 7)}...) as the ${provider} fallback`);
 }
 
 // --- Auth mode: subscription (OAuth) vs API key ---------------------------
@@ -360,6 +380,9 @@ const SUBSCRIPTION_AUTH_ERRORS = {
 };
 
 export function recordSubscriptionAuthFailure(family, detail) {
+  // Only a subscription login can expire: a gateway or key rejecting a request
+  // says nothing about it (a gateway's "invalid bearer token" once would).
+  if (authModeFor(family) !== "subscription") return false;
   const text = Array.isArray(detail) ? detail.filter(Boolean).join("\n") : String(detail || "");
   if (!SUBSCRIPTION_AUTH_ERRORS[family]?.some((pattern) => pattern.test(text))) return false;
   return markSubscriptionExpired(family);
@@ -370,14 +393,126 @@ function claudeApiKey() {
   return resolveProviderKey(loadApiKey(), process.env.ANTHROPIC_API_KEY || null, "Anthropic API key");
 }
 
+// --- Company LLM gateway ------------------------------------------------------
+// Enterprises route coding agents through their own gateway (LiteLLM, Portkey,
+// an internal proxy): a base URL plus a token the company issues. Configured in
+// Settings (a file, which wins) or in .env with the variables the CLIs already
+// read: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN (or ANTHROPIC_API_KEY) for
+// Claude, OPENAI_BASE_URL + OPENAI_API_KEY for Codex. A configured gateway is
+// the family's route, ahead of any subscription: Claude Code itself ranks an
+// env token above its OAuth login, and a company that set a gateway means for
+// its traffic to go there. See docs/decisions/20260925-company-llm-gateway.md.
+const GATEWAYS = {
+  claude: {
+    provider: "claude",
+    file: CLAUDE_GATEWAY_FILE,
+    urlVar: "ANTHROPIC_BASE_URL",
+    tokenVar: "ANTHROPIC_AUTH_TOKEN",
+    // The token vars cleared from the spawn env before the gateway's own is set.
+    tokenVars: ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"],
+    envToken: () => process.env.ANTHROPIC_AUTH_TOKEN
+      ? { token: process.env.ANTHROPIC_AUTH_TOKEN, tokenVar: "ANTHROPIC_AUTH_TOKEN" }
+      : claudeApiKey() ? { token: claudeApiKey(), tokenVar: "ANTHROPIC_API_KEY" } : null,
+  },
+  codex: {
+    provider: "openai",
+    file: OPENAI_GATEWAY_FILE,
+    urlVar: "OPENAI_BASE_URL",
+    tokenVar: "OPENAI_API_KEY",
+    tokenVars: ["OPENAI_API_KEY"],
+    envToken: () => loadOpenAIApiKey() ? { token: loadOpenAIApiKey(), tokenVar: "OPENAI_API_KEY" } : null,
+  },
+};
+const PROVIDER_FAMILY = { claude: "claude", openai: "codex" };
+const _gatewayWarned = new Set();
+
+function warnGatewayOnce(message) {
+  if (_gatewayWarned.has(message)) return;
+  _gatewayWarned.add(message);
+  console.warn(`[ai-chat] ${message}`);
+}
+
+// Tokens travel only over TLS, except to a gateway on this machine.
+function normalizeGatewayUrl(raw) {
+  let url;
+  try {
+    url = new URL(String(raw ?? "").trim());
+  } catch {
+    throw new Error("The gateway address must be a full URL, like https://llm-gateway.example.com");
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
+    throw new Error("The gateway address must start with https:// (http:// is allowed only for localhost)");
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+// The family's gateway: { baseUrl, token, tokenVar, source } or null.
+export function gatewayFor(family) {
+  const cfg = GATEWAYS[family];
+  if (!cfg) return null;
+  const saved = readJsonSafe(cfg.file);
+  if (saved?.baseUrl && saved?.token) {
+    return { baseUrl: saved.baseUrl, token: saved.token, tokenVar: cfg.tokenVar, source: "settings" };
+  }
+  const envUrl = process.env[cfg.urlVar];
+  if (!envUrl) return null;
+  const token = cfg.envToken();
+  if (!token) {
+    // Never let a subscription login travel to a third-party host: without a
+    // token the gateway is ignored and its URL stripped (see getCliEnv).
+    warnGatewayOnce(`${cfg.urlVar} is set but no gateway token is: ignoring the gateway. Set ${cfg.tokenVars.join(" or ")} too.`);
+    return null;
+  }
+  return { baseUrl: envUrl.replace(/\/+$/, ""), ...token, source: "env" };
+}
+
+// What the UI may know about a gateway: where it is and where it was set, never the token.
+export function gatewaySummary(family) {
+  const gw = gatewayFor(family);
+  if (!gw) return null;
+  let host = gw.baseUrl;
+  try { host = new URL(gw.baseUrl).host; } catch { /* shown as written */ }
+  return { baseUrl: gw.baseUrl, host, source: gw.source };
+}
+
+export function saveProviderGateway(provider, { baseUrl, token }) {
+  const family = PROVIDER_FAMILY[provider];
+  if (!family) throw new Error(`Unknown provider "${provider}" (expected claude or openai)`);
+  const url = normalizeGatewayUrl(baseUrl);
+  const value = String(token ?? "").trim();
+  if (!value) throw new Error("Paste the token your company issued for this gateway.");
+  writeSecretFile(GATEWAYS[family].file, JSON.stringify({ baseUrl: url, token: value }, null, 2));
+  console.log(`[ai-chat] Saved ${provider} company gateway ${new URL(url).host} (token ${value.slice(0, 5)}...)`);
+}
+
+export function clearProviderGateway(provider) {
+  const family = PROVIDER_FAMILY[provider];
+  if (!family) throw new Error(`Unknown provider "${provider}" (expected claude or openai)`);
+  clearAuthFile(GATEWAYS[family].file, `${provider} company gateway`);
+}
+
+// Point the spawn env at the family's gateway, or strip every gateway variable
+// so no stale URL can redirect a subscription or API-key login elsewhere.
+function applyGatewayVars(env, family, gateway) {
+  const cfg = GATEWAYS[family];
+  delete env[cfg.urlVar];
+  if (!gateway) return;
+  for (const v of cfg.tokenVars) delete env[v];
+  env[cfg.urlVar] = gateway.baseUrl;
+  env[gateway.tokenVar] = gateway.token;
+}
+
 // Resolve a coding-agent family to how it will bill: "subscription" (OAuth,
 // included in the user's plan), "apikey" (pay-per-token — expensive), "included"
 // (server-side proxy, not user-billed), or "none" (not authenticated yet).
 export function authModeFor(family) {
   switch (family) {
     case "claude":
+      if (gatewayFor("claude")) return "gateway";
       return subscriptionStatusFor("claude") === "connected" ? "subscription" : claudeApiKey() ? keyMode("claude") : "none";
     case "codex":
+      if (gatewayFor("codex")) return "gateway";
       return subscriptionStatusFor("codex") === "connected" ? "subscription" : loadOpenAIApiKey() ? keyMode("codex") : "none";
     case "antigravity":
       // agy authenticates only via Google OAuth — there is no user-API-key path.
@@ -421,8 +556,11 @@ export function getCliEnv(cwd = HOME) {
   // silently override — and out-bill — the user's subscription.
   const claudeMode = authModeFor("claude");
   const codexMode = authModeFor("codex");
+  applyKeyVars(env, ["ANTHROPIC_AUTH_TOKEN"], null);
   applyKeyVars(env, ["ANTHROPIC_API_KEY"], KEY_MODES.has(claudeMode) ? claudeApiKey() : null);
   applyKeyVars(env, ["OPENAI_API_KEY"], KEY_MODES.has(codexMode) ? loadOpenAIApiKey() : null);
+  applyGatewayVars(env, "claude", claudeMode === "gateway" ? gatewayFor("claude") : null);
+  applyGatewayVars(env, "codex", codexMode === "gateway" ? gatewayFor("codex") : null);
   // Google/Antigravity: agy uses its own Google OAuth token; a GEMINI_API_KEY /
   // GOOGLE_API_KEY in the env (often ambient on the box) hijacks that into a
   // degraded API-key backend. No agent we launch needs these keys — always strip.

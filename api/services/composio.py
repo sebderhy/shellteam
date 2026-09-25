@@ -34,8 +34,27 @@ def _get_client():
         # Composio key must leave zero footprint (round-6 audit P2-03).
         from composio import Composio
 
-        _client = Composio(api_key=api_key)
+        _disable_sdk_telemetry()
+        _client = Composio(api_key=api_key, allow_tracking=False)
     return _client
+
+
+def _disable_sdk_telemetry() -> None:
+    """Stop the SDK reporting every call to telemetry.composio.dev.
+
+    ``allow_tracking=False`` only sets a ContextVar in the constructing context,
+    and each SDK call reads it in its OWN context (a request, a worker thread),
+    where the default (True) applies. So the default itself is replaced, for the
+    whole process. The owner's usage is theirs: nothing leaves the box for
+    anyone's analytics (docs/decisions/20260925-company-llm-gateway.md).
+    Pinned by tests/test_composio_telemetry.py against SDK upgrades.
+    """
+    import contextvars
+
+    import composio.core.models.base as sdk_base
+
+    sdk_base.allow_tracking = contextvars.ContextVar("allow_tracking", default=False)
+    log.info("Composio SDK telemetry disabled")
 
 
 GOOGLESUPER_SLUG = "googlesuper"

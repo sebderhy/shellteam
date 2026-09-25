@@ -415,6 +415,27 @@ export function claudeLayerArgs(cwd = HOME) {
   return args;
 }
 
+// Codex's OpenAI-API provider block (as `-c` values), shared by every Codex
+// spawn and the Settings connection test so both reach the same endpoint.
+// Only when Codex runs on a key (else it uses its ChatGPT login, which needs no
+// provider block). Decided from the SPAWN env, the one place that already
+// encodes the auth decision: getCliEnv() puts OPENAI_API_KEY there in apikey or
+// gateway mode (from Settings OR the box's .env) and strips it in subscription
+// mode. Gating on the key file alone left a `.env`-keyed box (every provisioned
+// box, the live demo) in "apikey" mode with Codex still on its default
+// provider: every turn died with 401 "Missing bearer" (2026-09-09). A company
+// gateway (getCliEnv sets OPENAI_BASE_URL only then) replaces the public
+// endpoint; the same key variable carries its token.
+export function codexProviderOverrides(env = process.env) {
+  if (!env?.OPENAI_API_KEY) return [];
+  return [
+    'model_provider="openai-api"',
+    'model_providers.openai-api.name="OpenAI API"',
+    `model_providers.openai-api.base_url=${JSON.stringify(env.OPENAI_BASE_URL || "https://api.openai.com/v1")}`,
+    'model_providers.openai-api.env_key="OPENAI_API_KEY"',
+  ];
+}
+
 /**
  * Codex `-c key=value` overrides that layer ShellTeam's MCP + full shared prompt
  * (+ the OpenAI provider when configured) ON TOP of the user's own config.toml.
@@ -440,22 +461,7 @@ export function codexLayerArgs(cwd = HOME, env = process.env) {
   if (promptPath) {
     overrides.push(`developer_instructions=${JSON.stringify(readFileSync(promptPath, "utf8"))}`);
   }
-  // OpenAI-API provider — only when the user routes Codex through their own OpenAI
-  // key (else Codex uses its ChatGPT/OAuth login, which needs no provider block).
-  // Decided from the SPAWN env, the one place that already encodes the auth
-  // decision: getCliEnv() puts OPENAI_API_KEY there in apikey mode (from the
-  // Settings key file OR the box's .env) and strips it in subscription mode.
-  // Gating on the key file alone left a `.env`-keyed box (every provisioned
-  // box, the live demo) in "apikey" mode with Codex still on its default
-  // provider — every turn died with 401 "Missing bearer" (2026-09-09).
-  if (env && env.OPENAI_API_KEY) {
-    overrides.push(
-      'model_provider="openai-api"',
-      'model_providers.openai-api.name="OpenAI API"',
-      'model_providers.openai-api.base_url="https://api.openai.com/v1"',
-      'model_providers.openai-api.env_key="OPENAI_API_KEY"',
-    );
-  }
+  overrides.push(...codexProviderOverrides(env));
   return overrides.flatMap((o) => ["-c", o]);
 }
 

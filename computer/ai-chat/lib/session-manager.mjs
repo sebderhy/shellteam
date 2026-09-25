@@ -5,7 +5,6 @@ import {
   loadModel,
   getCliEnv,
   loadApiKey,
-  saveApiKey,
   loadOpenAIApiKey,
   recordSubscriptionAuthFailure,
   modelPermitted,

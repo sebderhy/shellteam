@@ -17,7 +17,7 @@ import { WebSocketServer } from "ws";
 import { PORT, HOST, HOME, PUBLIC_DIR, MIME_TYPES, WORKSPACE_LOCK, GUEST_NAME } from "./lib/constants.mjs";
 import { listWorkspaces } from "./lib/workspaces.mjs";
 import { installedAgents } from "./lib/agents/registry.mjs";
-import { enabledModules } from "./lib/agent-layer.mjs";
+import { enabledModules, codexProviderOverrides } from "./lib/agent-layer.mjs";
 import { proxyBrowserHttp, proxyBrowserUpgrade, browserProxyEnabled } from "./lib/browser-proxy.mjs";
 import {
   listSessions,
@@ -30,9 +30,11 @@ import {
   loadModel,
   saveModel,
   loadApiKey,
-  saveApiKey,
   loadOpenAIApiKey,
-  saveOpenAIApiKey,
+  saveProviderKey,
+  saveProviderGateway,
+  clearProviderGateway,
+  gatewaySummary,
   getCliEnv,
   authModeFor,
   modelPermitted,
@@ -209,6 +211,9 @@ function authFlags() {
       antigravity: authModeFor("antigravity"),
       opencode: authModeFor("opencode"),
     },
+    // A company LLM gateway per family ({ host, source: "settings"|"env" }),
+    // never its token. Set when authMode is "gateway".
+    gateways: { claude: gatewaySummary("claude"), codex: gatewaySummary("codex") },
     // Models offered on this box's own key ({ codex: ["gpt-6-luna-max"] },
     // from INCLUDED_MODELS). A family listed here bills "included": the UI asks
     // for the user's own plan first and offers exactly these models "on us".
@@ -478,9 +483,11 @@ const server = createServer((req, res) => {
         if (authModeFor("claude") === "none") {
           return jsonResponse(res, 200, { success: false, error: "No Claude key or OAuth credentials" });
         }
+        // The "haiku" alias, not a pinned ID: a company gateway may serve a
+        // different Haiku, which it maps via ANTHROPIC_DEFAULT_HAIKU_MODEL.
         const proc = spawn("claude", [
           "-p", `Hi, I'm ShellTeam user ${username}, testing that my Claude configuration works. Reply with just: ok`,
-          "--model", "claude-haiku-4-5-20251001", "--max-turns", "1",
+          "--model", "haiku", "--max-turns", "1",
         ], { cwd: HOME, timeout: 20000, env: getCliEnv(), stdio: ["ignore", "pipe", "pipe"] });
         let stdout = "", stderr = "";
         proc.stdout.on("data", (d) => { stdout += d; });
@@ -499,13 +506,15 @@ const server = createServer((req, res) => {
           jsonResponse(res, 200, { success: false, error: err.message });
         });
       } else if (provider === "openai") {
-        if (!loadOpenAIApiKey() && !hasCodexOAuthCredentials()) {
+        if (authModeFor("codex") === "none") {
           return jsonResponse(res, 200, { success: false, error: "No OpenAI key or OAuth credentials" });
         }
+        const env = getCliEnv();
         const proc = spawn("codex", [
           "exec", "--skip-git-repo-check",
+          ...codexProviderOverrides(env).flatMap((o) => ["-c", o]),
           `Hi, I'm ShellTeam user ${username}, testing that my OpenAI configuration works. Reply with just: ok`,
-        ], { cwd: HOME, timeout: 30000, env: getCliEnv(), stdio: ["ignore", "pipe", "pipe"] });
+        ], { cwd: HOME, timeout: 30000, env, stdio: ["ignore", "pipe", "pipe"] });
         let stdout = "", stderr = "";
         proc.stdout.on("data", (d) => { stdout += d; });
         proc.stderr.on("data", (d) => { stderr += d; });
@@ -723,20 +732,23 @@ const server = createServer((req, res) => {
     return;
   }
 
+  if (req.url === "/api/gateway" && req.method === "POST") {
+    readBody(req).then((body) => {
+      const { provider, baseUrl, token, clear } = JSON.parse(body.toString());
+      if (clear) clearProviderGateway(provider);
+      else saveProviderGateway(provider, { baseUrl, token });
+      broadcast(buildStatus());
+      jsonResponse(res, 200, { success: true, provider });
+    }).catch((err) => jsonResponse(res, 400, { error: err.message }));
+    return;
+  }
+
   if (req.url === "/api/key" && req.method === "POST") {
     readBody(req).then((body) => {
-      const { key } = JSON.parse(body.toString());
-      if (key.startsWith("sk-ant-")) {
-        saveApiKey(key);
-        broadcast(buildStatus());
-        jsonResponse(res, 200, { success: true, provider: "claude" });
-      } else if (key.startsWith("sk-")) {
-        saveOpenAIApiKey(key);
-        broadcast(buildStatus());
-        jsonResponse(res, 200, { success: true, provider: "openai" });
-      } else {
-        jsonResponse(res, 400, { error: "Key must start with sk-ant- (Claude) or sk- (OpenAI)" });
-      }
+      const { provider, key } = JSON.parse(body.toString());
+      saveProviderKey(provider, key);
+      broadcast(buildStatus());
+      jsonResponse(res, 200, { success: true, provider });
     }).catch((err) => jsonResponse(res, 400, { error: err.message }));
     return;
   }
@@ -957,17 +969,15 @@ chatWSS.on("connection", (ws, req) => {
       }
 
       case "set_api_key": {
-        if (msg.key && msg.key.startsWith("sk-ant-")) {
-          saveApiKey(msg.key);
-          stopAllAgents();
-          broadcast({ type: "api_key_saved", hasApiKey: true });
-          broadcast(buildStatus({ apiKeySource: "env" }));
-        } else if (msg.key && msg.key.startsWith("sk-")) {
-          saveOpenAIApiKey(msg.key);
-          stopAllAgents();
-          broadcast({ type: "api_key_saved", hasOpenAIKey: true });
-          broadcast(buildStatus());
+        try {
+          saveProviderKey(msg.provider, msg.key);
+        } catch (err) {
+          ws.send(JSON.stringify({ type: "api_key_error", provider: msg.provider, error: err.message }));
+          break;
         }
+        stopAllAgents();
+        broadcast({ type: "api_key_saved", provider: msg.provider });
+        broadcast(buildStatus());
         break;
       }
 

@@ -273,8 +273,10 @@
         .ai-key-toggle:hover { color: var(--text-secondary); text-decoration: underline; }
         .ai-key-setup[hidden] { display: none; }
         .ai-provider-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+        .ai-provider-actions[hidden] { display: none; }
         .ai-divider { text-align: center; color: var(--text-tertiary); font-size: var(--text-xs); margin: 16px 0; }
         .ai-key-row { display: flex; gap: 8px; }
+        .ai-key-row + .ai-key-row { margin-top: 8px; }
         .ai-key-row input {
             flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--border);
             border-radius: var(--radius-md); background: var(--surface-0); color: var(--text-primary);
@@ -1164,7 +1166,7 @@
         }
 
         function usageBilling(mode) {
-            return ({ subscription: 'Subscription', apikey: 'API key billing', included: 'API key (Fireworks)', none: 'Not connected' })[mode] || 'Unknown billing';
+            return ({ subscription: 'Subscription', apikey: 'API key billing', included: 'API key (Fireworks)', gateway: 'Company gateway', none: 'Not connected' })[mode] || 'Unknown billing';
         }
 
         function usageProviderHtml(provider) {
@@ -1219,13 +1221,13 @@
             claude: { label: 'Claude', placeholder: 'sk-ant-...', getUrl: 'console.anthropic.com',
                 href: 'https://console.anthropic.com/settings/keys', oauth: 'Login with Claude',
                 reconnect: 'Reconnect Claude subscription', family: 'claude',
-                apiKeyLabel: 'Anthropic API key',
+                apiKeyLabel: 'Anthropic API key', gatewayEnv: 'ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN',
                 oauthHint: 'Uses your Claude Pro or Max subscription',
                 done: s => s.hasApiKey || s.hasOAuth },
             openai: { label: 'OpenAI', placeholder: 'sk-...', getUrl: 'platform.openai.com',
                 href: 'https://platform.openai.com/api-keys', oauth: 'Login with OpenAI',
                 reconnect: 'Reconnect OpenAI subscription', family: 'codex',
-                apiKeyLabel: 'OpenAI API key',
+                apiKeyLabel: 'OpenAI API key', gatewayEnv: 'OPENAI_BASE_URL and OPENAI_API_KEY',
                 oauthHint: 'Uses your ChatGPT Plus or Pro subscription',
                 done: s => s.hasOpenAIKey || s.hasCodexOAuth },
             antigravity: { label: 'Antigravity', oauth: 'Login with Google', noKey: true,
@@ -1264,6 +1266,15 @@
             const cfg = AI_PROVIDERS[key];
             const mode = providerMode(key);
             const subscription = providerSubscriptionStatus(key);
+            if (mode === 'gateway') {
+                const gw = aiStatus?.gateways?.[cfg.family];
+                return {
+                    tone: 'connected',
+                    title: `Company gateway active`,
+                    detail: `${cfg.label} runs through ${gw?.host || 'your company gateway'}, ahead of any subscription or API key.`
+                        + (gw?.source === 'env' ? ` Set in ShellTeam's .env (${cfg.gatewayEnv}).` : ''),
+                };
+            }
             if (subscription === 'expired') {
                 return {
                     tone: 'attention',
@@ -1346,6 +1357,7 @@
                     const state = describeProviderState(key);
                     const subscription = providerSubscriptionStatus(key);
                     const mode = providerMode(key);
+                    const gateway = mode === 'gateway' ? (aiStatus?.gateways?.[c.family] || {}) : null;
                     const active = key === selectedAIProvider;
                     const pending = key === 'openai' ? `
                         <div class="ai-pending" style="display:none">
@@ -1369,14 +1381,14 @@
                                 <span>${state.detail}</span>
                             </div>
                         </div>
-                        <div class="ai-oauth-start">
+                        <div class="ai-oauth-start"${gateway ? ' hidden' : ''}>
                             <button class="ai-oauth-btn ai-oauth-go">${subscription === 'none' ? c.oauth : c.reconnect}</button>
                             <div class="ai-oauth-hint">${c.oauthHint}</div>
                         </div>
                         ${pending}
-                        ${c.noKey ? '' : `
-                        <button class="ai-key-toggle" type="button" aria-expanded="false">${mode === 'apikey' ? `Change ${c.apiKeyLabel}` : 'Use an API key instead'}</button>
-                        <div class="ai-key-setup" hidden>
+                        ${c.noKey || gateway ? '' : `
+                        <button class="ai-key-toggle" type="button" data-for="key" aria-expanded="false">${mode === 'apikey' ? `Change ${c.apiKeyLabel}` : 'Use an API key instead'}</button>
+                        <div class="ai-key-setup" data-for="key" hidden>
                             <div class="ai-divider">API key billing</div>
                             <div class="ai-key-row">
                                 <input type="password" class="ai-key" placeholder="${c.placeholder}"
@@ -1384,6 +1396,18 @@
                                 <button class="ai-btn ai-save" disabled>Save</button>
                             </div>
                             <div class="ai-hint">Get one at <a href="${c.href}" target="_blank" rel="noopener">${c.getUrl}</a></div>
+                        </div>`}
+                        ${c.noKey || gateway?.source === 'env' ? '' : `
+                        <div><button class="ai-key-toggle" type="button" data-for="gateway" aria-expanded="false">${gateway ? 'Change company gateway' : 'Use a company gateway'}</button></div>
+                        <div class="ai-key-setup" data-for="gateway" hidden>
+                            <div class="ai-divider">Company gateway</div>
+                            <div class="ai-key-row"><input type="url" class="ai-gw-url" placeholder="https://llm-gateway.yourcompany.com" value="${escapeHtml(gateway?.baseUrl || '')}"></div>
+                            <div class="ai-key-row">
+                                <input type="password" class="ai-gw-token" placeholder="Gateway token">
+                                <button class="ai-btn ai-gw-save" type="button">Save</button>
+                                ${gateway ? '<button class="ai-btn ai-gw-remove" type="button">Remove</button>' : ''}
+                            </div>
+                            <div class="ai-hint">For an AI gateway your company runs (LiteLLM, Portkey, an internal proxy). It is used ahead of any subscription. Can also be set in ShellTeam's .env: ${c.gatewayEnv}.</div>
                         </div>`}
                         <div class="ai-provider-actions"${mode === 'none' ? ' hidden' : ''}>
                             <button class="ai-btn ai-test" type="button">Test active connection</button>
@@ -1435,7 +1459,7 @@
                     const key2 = panel.querySelector('.ai-key').value.trim();
                     if (!key2) return;
                     const resp = await apiFetch('/api/computers/ai/key', { method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key2 }) });
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: key, key: key2 }) });
                     if (resp.error) return showErr(resp.error);
                     selectedAIProvider = key;
                     await refreshAIStatus();
@@ -1493,12 +1517,26 @@
                         : `<span class="err">✗ ${resp.error || 'Test failed'}</span>`;
                 });
 
-                panel.querySelector('.ai-key-toggle')?.addEventListener('click', (event) => {
-                    const setup = panel.querySelector('.ai-key-setup');
+                panel.querySelectorAll('.ai-key-toggle').forEach(toggle => toggle.addEventListener('click', () => {
+                    const setup = panel.querySelector(`.ai-key-setup[data-for="${toggle.dataset.for}"]`);
                     setup.hidden = !setup.hidden;
-                    event.currentTarget.setAttribute('aria-expanded', String(!setup.hidden));
-                    if (!setup.hidden) panel.querySelector('.ai-key')?.focus();
-                });
+                    toggle.setAttribute('aria-expanded', String(!setup.hidden));
+                    if (!setup.hidden) setup.querySelector('input')?.focus();
+                }));
+
+                const saveGateway = async (body) => {
+                    const resp = await apiFetch('/api/computers/ai/gateway', { method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: key, ...body }) });
+                    if (resp.error) return showErr(resp.error);
+                    selectedAIProvider = key;
+                    await refreshAIStatus();
+                    renderAIPanel();
+                };
+                panel.querySelector('.ai-gw-save')?.addEventListener('click', () => saveGateway({
+                    baseUrl: panel.querySelector('.ai-gw-url').value.trim(),
+                    token: panel.querySelector('.ai-gw-token').value.trim(),
+                }));
+                panel.querySelector('.ai-gw-remove')?.addEventListener('click', () => saveGateway({ clear: true }));
             });
 
             updateProviderDots();

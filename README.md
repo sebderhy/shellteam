@@ -162,6 +162,7 @@ Key variables:
 | `API_PORT` / `AI_CHAT_PORT` | Control-plane and cockpit ports (default 8000 / 3456). |
 | `SHELLTEAM_AI_TOKEN` | HMAC secret between the control plane and in-box tools (auto-generated). |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | LLM keys (set the ones you use; Antigravity signs in via its own Google OAuth). |
+| `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` / `OPENAI_BASE_URL` | Optional: your company's AI gateway, used ahead of any subscription (also settable in Settings). |
 | `FIREWORKS_API_KEY` | Enables the OpenCode agent (relayed through `/internal/ai`). |
 | `ELEVENLABS_API_KEY` | Voice in the cockpit, both ways: dictating to an agent, and having its replies read out loud. |
 | `COMPOSIO_API_KEY` | Optional — enables Composio's 500+ app integrations over MCP. |

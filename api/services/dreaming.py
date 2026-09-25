@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Iterator
 
 from api.services import knowledge_tree as kt
+from api.services import llm_gateway
 
 log = logging.getLogger("shellteam.dream")
 
@@ -488,6 +489,27 @@ def _codex_argv(model: str | None, run_cwd: Path, response_file: Path) -> list[s
     return argv
 
 
+def _engine_launch(
+    engine: str, model: str | None, home: Path, run_cwd: Path, response_file: Path
+) -> tuple[dict[str, str], list[str]]:
+    """The subprocess env and argv for one extraction. On the owner's
+    subscription every metered key is stripped; when a company gateway is
+    configured the run goes through it instead, exactly like the cockpit's
+    agents (llm_gateway mirrors session.mjs)."""
+    env = dict(os.environ)
+    family = "claude" if engine == "claude" else "codex"
+    gateway = llm_gateway.apply_gateway(env, family, home)
+    if not gateway:
+        for key in _METERED_KEYS:
+            env.pop(key, None)
+    if engine == "claude":
+        return env, _claude_argv(model)
+    argv = _codex_argv(model, run_cwd, response_file)
+    if gateway:
+        argv[2:2] = [a for o in llm_gateway.codex_provider_overrides(gateway.base_url) for a in ("-c", o)]
+    return env, argv
+
+
 def extract_ops(
     home: Path, node: str, sessions: list[Session], run_cwd: Path
 ) -> list[dict]:
@@ -506,11 +528,7 @@ def extract_ops(
     (run_cwd / f"prompt-{_slug(node)}.txt").write_text(prompt)
     response_file = run_cwd / f"response-{_slug(node)}.json"
 
-    env = {k: v for k, v in os.environ.items() if k not in _METERED_KEYS}
-    argv = (
-        _claude_argv(model) if engine == "claude"
-        else _codex_argv(model, run_cwd, response_file)
-    )
+    env, argv = _engine_launch(engine, model, home, run_cwd, response_file)
     proc = subprocess.run(
         argv, input=prompt, capture_output=True, text=True,
         timeout=EXTRACT_TIMEOUT_S, cwd=run_cwd, env=env,

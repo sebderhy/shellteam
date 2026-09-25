@@ -5,6 +5,34 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-09-25
+
+Version 0.1.33 was never published: its tag was created on the wrong commit and deleted within a minute.
+
+### Added
+- **Company AI gateways.** If your company routes coding agents through its own
+  gateway (LiteLLM, Portkey, an internal proxy), ShellTeam now uses it. Set
+  `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` (or `OPENAI_BASE_URL` +
+  `OPENAI_API_KEY`) in `.env`, or enter it in Settings → AI providers → "Use a
+  company gateway". The gateway runs ahead of any subscription, for the
+  cockpit's agents, the connection test and nightly dreaming. A gateway address
+  with no token is ignored, so a personal login never travels there. The model
+  badge reads "Company gateway". Proxy and CA settings for corporate networks
+  are documented in `.env.example`.
+
+### Fixed
+- **An API key is saved under the tab you pasted it on.** A key that did not
+  start with `sk-ant-` pasted on the Claude tab was filed as the OpenAI key,
+  and saving any key deleted that provider's subscription login, silently
+  moving it to per-token billing. The tab now decides the provider, a key that
+  belongs to the other provider is refused with a clear message, and a saved
+  key is only a fallback: your subscription login is never touched.
+- **Composio no longer reports usage to its own servers.** Its SDK sent a
+  metric to telemetry.composio.dev for each call on boxes with a Composio key;
+  that is now off.
+- "Test active connection" no longer shows for a provider that is not
+  connected.
+
 ## [0.1.32] - 2026-09-25
 
 ### Fixed

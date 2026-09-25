@@ -23,6 +23,10 @@ export const PUBLIC_DIR = join(__dirname, "public");
 export const SESSION_FILE = join(HOME, ".claude-chat-session.json");
 export const API_KEY_FILE = join(HOME, ".config", "shellteam", "api-key");
 export const OPENAI_API_KEY_FILE = join(HOME, ".config", "shellteam", "openai-api-key");
+// A company LLM gateway entered in Settings ({ baseUrl, token }); wins over the
+// same gateway set in .env. See lib/session.mjs gatewayFor.
+export const CLAUDE_GATEWAY_FILE = join(HOME, ".config", "shellteam", "claude-gateway.json");
+export const OPENAI_GATEWAY_FILE = join(HOME, ".config", "shellteam", "openai-gateway.json");
 export const SUBSCRIPTION_RECOVERY_FILE = join(HOME, ".config", "shellteam", "subscription-recovery.json");
 export const CREDENTIALS_FILE = join(HOME, ".claude", ".credentials.json");
 export const CODEX_AUTH_FILE = join(HOME, ".codex", "auth.json");

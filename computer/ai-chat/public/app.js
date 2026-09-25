@@ -67,7 +67,7 @@ window.App = {
         installedAgents: null,
         apiKeySource: null,
         // Per-family billing mode from /api/status: { claude, codex, antigravity,
-        // opencode } each "subscription" | "apikey" | "included" | "none". Drives
+        // opencode } each "subscription" | "apikey" | "included" | "gateway" | "none". Drives
         // the billing badge next to the model picker. Null until first status.
         authMode: null,
         // Per-family OAuth health, independent from billing mode. "expired"
@@ -896,7 +896,7 @@ function modelPermittedHere(model) {
 // box key is the operator's courtesy, not something the user connected.
 function familyHasOwnAuth(family) {
     const mode = S.authMode?.[family];
-    return mode === 'subscription' || mode === 'apikey';
+    return mode === 'subscription' || mode === 'apikey' || mode === 'gateway';
 }
 // Where a fresh tab lands for a family: its included model on an included key,
 // else the family's usual default.
@@ -912,7 +912,7 @@ function setupTabForModel(model) {
 }
 
 // --- Billing badge: subscription vs pay-per-token API key --------------------
-// Returns "subscription" | "apikey" | "included" | "none" for a model's family.
+// Returns "subscription" | "apikey" | "included" | "gateway" | "none" for a model's family.
 // authMode is the single source of truth — derived from the same authModeFor()
 // that governs getCliEnv(), so the badge and what actually runs are always aligned.
 // We do NOT use S.apiKeySource as an override here: it's a global that persists
@@ -927,6 +927,7 @@ const BILLING_BADGE = {
     subscription: { label: 'Subscription', cls: 'sub', title: 'Runs on your subscription — no per-token API charges.' },
     apikey:       { label: 'API · metered', cls: 'api', title: 'Billed per token via your API key — far more expensive than a subscription. Connect a subscription in AI settings to switch.' },
     included:     { label: 'Included', cls: 'inc', title: 'Runs on the API key configured on this box, not on your subscription. Nothing to connect.' },
+    gateway:      { label: 'Company gateway', cls: 'inc', title: "Runs through your company's AI gateway, set on this box. Billing and limits are your company's." },
     none:         { label: 'Not connected', cls: 'off', title: 'No credentials for this model yet — open AI settings to connect.' },
 };
 
@@ -980,8 +981,10 @@ function renderSubscriptionWarning() {
     const actions = document.getElementById('subscriptionWarningActions');
     if (!banner || !title || !detail || !actions) return;
 
+    // A family on a company gateway never uses its subscription, so an expired
+    // one is nothing to act on.
     const expired = Object.keys(SUBSCRIPTION_RECOVERY)
-        .filter((family) => subscriptionHealthForFamily(family) === 'expired');
+        .filter((family) => subscriptionHealthForFamily(family) === 'expired' && S.authMode?.[family] !== 'gateway');
     const signature = JSON.stringify(expired.map((family) => [family, S.authMode?.[family] || null]));
     if (signature === subscriptionWarningSignature) return;
     subscriptionWarningSignature = signature;
@@ -1765,15 +1768,14 @@ function resetOAuthUI() {
     localStorage.removeItem('pendingOAuthUrl');
 }
 
+// Setup-screen prefix -> the provider the server files the key under.
+const KEY_PROVIDER = { cc: 'claude', cdx: 'openai' };
+
 function submitProviderKey(provider) {
     const key = $(`${provider}-key-input`).value.trim();
-    if (!key.startsWith('sk-')) {
-        showSetupError('API key should start with sk-');
-        return;
-    }
     $('setupError').style.display = 'none';
     $(`${provider}-key-btn`).disabled = true;
-    S.ws?.send(JSON.stringify({ type: 'set_api_key', key }));
+    S.ws?.send(JSON.stringify({ type: 'set_api_key', provider: KEY_PROVIDER[provider], key }));
 }
 
 function startProviderOAuth(provider) {
@@ -1987,7 +1989,7 @@ const CHAT_TYPES = new Set([
 
 // Global message types (not per-slot)
 const GLOBAL_TYPES = new Set([
-    'status', 'api_key_saved', 'oauth_url', 'oauth_success', 'oauth_error',
+    'status', 'api_key_saved', 'api_key_error', 'oauth_url', 'oauth_success', 'oauth_error',
     'codex_device_code', 'codex_oauth_success', 'codex_oauth_error',
     'antigravity_oauth_url', 'antigravity_oauth_success', 'antigravity_oauth_error',
     'subscription_expired',
@@ -2189,10 +2191,16 @@ function handleMessage(msg) {
             updateSetupDots();
             break;
         case 'api_key_saved':
-            if (msg.hasOpenAIKey) S.hasOpenAIKey = true;
+            if (msg.provider === 'openai') S.hasOpenAIKey = true;
             else S.hasApiKey = true;
             updateAuthUI();
             break;
+        case 'api_key_error': {
+            showSetupError(msg.error);
+            const prefix = Object.keys(KEY_PROVIDER).find(k => KEY_PROVIDER[k] === msg.provider);
+            if (prefix) $(`${prefix}-key-btn`).disabled = false;
+            break;
+        }
         case 'oauth_url':
             handleOAuthUrl(msg.url);
             break;

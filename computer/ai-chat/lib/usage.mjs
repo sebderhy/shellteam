@@ -330,7 +330,8 @@ function baseProvider(id, label, mode) {
     id,
     label,
     billing: mode,
-    status: mode === "none" ? "not_connected" : "checking",
+    status: mode === "none" ? "not_connected" : mode === "gateway" ? "unavailable" : "checking",
+    ...(mode === "gateway" ? { error: "Usage runs through your company gateway, which tracks its own limits." } : {}),
     windows: [],
     credits_remaining: null,
     plan_tier: null,
@@ -385,7 +386,7 @@ export async function collectUsage(reuse = {}) {
 
   const checks = [];
 
-  if (!reused.has("claude") && result.providers.claude.billing !== "none") checks.push((async () => {
+  if (!reused.has("claude") && result.providers.claude.status === "checking") checks.push((async () => {
     const response = await runCommand("claude", ["-p", "/usage", "--output-format", "json", "--no-session-persistence"]);
     if (response.ok) {
       try {
@@ -405,7 +406,7 @@ export async function collectUsage(reuse = {}) {
     }
   })());
 
-  if (!reused.has("codex") && result.providers.codex.billing !== "none") checks.push((async () => {
+  if (!reused.has("codex") && result.providers.codex.status === "checking") checks.push((async () => {
     const provider = result.providers.codex;
     const response = await runCodexRateLimits();
     if (response.ok) {
@@ -427,7 +428,7 @@ export async function collectUsage(reuse = {}) {
     }
   })());
 
-  if (!reused.has("antigravity") && result.providers.antigravity.billing !== "none") checks.push((async () => {
+  if (!reused.has("antigravity") && result.providers.antigravity.status === "checking") checks.push((async () => {
     const provider = result.providers.antigravity;
     const response = await runSlashCommand("agy", [], "/credits", {
       confirmPattern: /credits panel|AI Credits?/i,

@@ -237,7 +237,7 @@ class TestAIProxy:
         with patch("api.routers.computers.containers.get_container_ip",
                    new_callable=AsyncMock, return_value="127.0.0.1"):
             resp = client.post("/api/computers/ai/key", headers=auth_header,
-                               json={"key": "sk-ant-xxx"})
+                               json={"provider": "claude", "key": "sk-ant-xxx"})
         assert resp.status_code == 200
         assert resp.json() == {"success": True, "provider": "claude"}  # no openCodeAvailable added
 
