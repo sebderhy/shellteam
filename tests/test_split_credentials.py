@@ -247,11 +247,12 @@ class TestFrontendIsCredentialBlind:
         from pathlib import Path
         html = (Path(__file__).parent.parent / "frontend" / page).read_text()
         # localStorage get/set are allowed ONLY for the first-run wizard's
-        # done flag and resume step — non-credential UI markers. Anything else
+        # done flag and resume step, and the last-used tab name (SHE-112) —
+        # non-credential UI markers. Anything else
         # must never touch JS-readable storage. removeItem is allowed (the
         # migration scrub and the wizard-step cleanup).
         for args in re.findall(r"localStorage\.(?:setItem|getItem)\(([^)]*)\)", html):
-            assert "WIZARD_DONE_KEY" in args or "WIZARD_STEP_KEY" in args, (
+            assert any(k in args for k in ("WIZARD_DONE_KEY", "WIZARD_STEP_KEY", "LAST_TAB_KEY")), (
                 f"{page} must not store credentials (localStorage call with {args!r})"
             )
         assert "persistToken" not in html

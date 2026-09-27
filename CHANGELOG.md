@@ -5,6 +5,25 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.35] - 2026-09-27
+
+### Fixed
+- **Pasted images reach every agent, not only Claude.** Codex, OpenCode and
+  Antigravity silently dropped a pasted screenshot and got only the text, so
+  they answered that they could not see it. The image is now saved to
+  `~/.shellteam/attachments/` (owner-only, kept 7 days): Codex receives it as
+  an attached image, OpenCode and Antigravity get its path and open it
+  themselves.
+- **ShellTeam reopens on the tab you were using.** On a box whose first tab
+  had been closed, every reload landed on the first tab. The cockpit now opens
+  the conversation you last looked at, on any device, and the dashboard
+  reopens on its last tab (Agents, Files, Terminal, ...) when the address has
+  no `#tab`.
+- **The usage bar under "Subscription" no longer looks stuck loading.** Its
+  moving animation now shows only while a check is running. A provider that
+  reports credits or reset counts instead of a percentage shows a still bar,
+  and a usage check held open by a network proxy gives up after 90 seconds.
+
 ## [0.1.34] - 2026-09-25
 
 Version 0.1.33 was never published: its tag was created on the wrong commit and deleted within a minute.

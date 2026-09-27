@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { splitContent, textWithImagePaths } from "./attachments.mjs";
 import { CodingAgent } from "./coding-agent.mjs";
 import { antigravityLayerArgs } from "./agent-layer.mjs";
 import { cliModelForId } from "./model-catalog.mjs";
@@ -224,9 +225,7 @@ export class AntigravityAgent extends CodingAgent {
 }
 
 function normalizeContent(content) {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-  return String(content);
+  return textWithImagePaths(splitContent(content));
 }
 
 function stripGoogleApiKeys(env) {

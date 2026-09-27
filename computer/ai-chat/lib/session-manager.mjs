@@ -126,6 +126,10 @@ export function markSlotUsed(slotId) {
     return false;
   }
   touchSlot(slotId);
+  // viewedAt is the owner LOOKING at the tab (a tab switch or a send), unlike
+  // lastUsedAt, which agent output also bumps in background tabs. A reopened
+  // cockpit lands on the most recently viewed tab, from any device (SHE-112).
+  slots.get(slotId).viewedAt = Date.now();
   saveTabs();
   return true;
 }
@@ -275,6 +279,7 @@ export function listSlots() {
     isGenerating: s.isGenerating,
     createdAt: s.createdAt || Date.now(),
     lastUsedAt: s.lastUsedAt || Date.now(),
+    viewedAt: s.viewedAt || 0,
     label: deriveLabel(id),
     ...s.config,
   }));
@@ -1159,6 +1164,7 @@ function writeTabsNow() {
     title: s.title || null,
     createdAt: s.createdAt || Date.now(),
     lastUsedAt: s.lastUsedAt || Date.now(),
+    viewedAt: s.viewedAt || 0,
     ...(s.bgTasks?.length ? { bgTasks: s.bgTasks } : {}),
     ...s.config,
   }));
@@ -1226,6 +1232,7 @@ export function restoreSlots() {
     slot.title = s.title || null;
     slot.createdAt = s.createdAt || slot.createdAt || Date.now();
     slot.lastUsedAt = s.lastUsedAt || Date.now();
+    slot.viewedAt = s.viewedAt || 0;
     slot.bgTasks = Array.isArray(s.bgTasks) ? s.bgTasks : [];
 
     // Load history and correct cwd from the session's authoritative record

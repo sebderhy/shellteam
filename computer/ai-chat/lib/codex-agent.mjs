@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { splitContent } from "./attachments.mjs";
 import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { CodingAgent } from "./coding-agent.mjs";
@@ -153,14 +154,15 @@ export class CodexAgent extends CodingAgent {
   }
 
   sendMessage(content) {
-    let text;
-    if (typeof content === "string") {
-      text = content;
-    } else if (Array.isArray(content)) {
-      text = content.filter(b => b.type === "text").map(b => b.text).join("\n");
-    } else {
-      text = String(content);
-    }
+    const { text, images } = splitContent(content);
+    this._send(images.length ? { text, images } : text);
+  }
+
+  // prompt = the text, or { text, images } when images were pasted (saved file
+  // paths, see attachments.mjs). It is queued and retried as one unit, so a
+  // queued or retried turn keeps its images.
+  _send(prompt) {
+    const text = typeof prompt === "string" ? prompt : prompt.text;
 
     // Codex has no stdin to hand a follow-up to: `codex exec` is one turn per
     // process, and a second resume spawned mid-turn dies on the thread's writer
@@ -170,7 +172,7 @@ export class CodexAgent extends CodingAgent {
     // free" a mid-turn message gets with Claude Code. A live process is busy
     // even after turn.completed: it holds the lock until it exits.
     if (this._isGenerating || this._process) {
-      this._queued.push(text);
+      this._queued.push(prompt);
       console.log(`[codex-agent] turn in progress — message queued (${this._queued.length} waiting)`);
       return;
     }
@@ -183,12 +185,12 @@ export class CodexAgent extends CodingAgent {
     }
 
     this._compactTurn = false;
-    this._lastPrompt = text;
+    this._lastPrompt = prompt;
     this._recovery = null;
     this._recoveryUsed = false;
     this._writerRetryPending = false;
     this._writerRetryUsed = false;
-    this._spawnExec(text);
+    this._spawnExec(prompt);
   }
 
   // Runs the oldest queued message once nothing holds the thread: no live or
@@ -199,7 +201,7 @@ export class CodexAgent extends CodingAgent {
     if (this._isGenerating || this._process || this._dying) return;
     const next = this._queued.shift();
     console.log(`[codex-agent] turn settled — running the queued message (${this._queued.length} still waiting)`);
-    this.sendMessage(next);
+    this._send(next);
   }
 
   interrupt() {
@@ -244,6 +246,7 @@ export class CodexAgent extends CodingAgent {
   // --- Internal ---
 
   _spawnExec(prompt) {
+    const { text, images } = typeof prompt === "string" ? { text: prompt, images: [] } : prompt;
     // A process signalled by interrupt()/stop() may still be winding down —
     // and it holds this thread's writer lock, so a resume spawned now dies
     // with "already has an active writer" (SHE-102). Queue the spawn; the
@@ -288,6 +291,8 @@ export class CodexAgent extends CodingAgent {
       ...codexLayerArgs(this._cwd, this._env), // ShellTeam's additive -c overrides (MCP, doc-fallback, provider)
       ...configArgsForId(this._model),
       "-m", cliModelForId(this._model),
+      // `=` form: --image takes several values and would swallow the `-` below.
+      ...images.map((path) => `--image=${path}`),
       // The prompt goes over STDIN (`-` sentinel), never argv: a prompt starting
       // with `-` (e.g. a bullet list) is otherwise parsed as a flag — clap dies
       // with `unexpected argument '- ' found`, code=2 (SHE-67) — and argv also
@@ -324,7 +329,7 @@ export class CodexAgent extends CodingAgent {
     this._process.stdin.on("error", (err) => {
       console.error(`[codex-agent] stdin write failed: ${err.message}`);
     });
-    this._process.stdin.end(prompt);
+    this._process.stdin.end(text);
 
     this._isFirstTurn = false;
     this._isGenerating = true;

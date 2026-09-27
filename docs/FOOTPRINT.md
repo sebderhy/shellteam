@@ -33,6 +33,7 @@ already covers — the edits are unnecessary). Pinned by
 | **Agent launch-layer** (skills, hooks, MCP, persona) | `~/.shellteam/agent-layer/` | `uninstall.sh` |
 | Knowledge layer (your accumulated memory, incl. the per-folder `tree/`) | `~/.shellteam/knowledge/` | `uninstall.sh --purge` |
 | Dream run artifacts (audit trail: prompts, deltas, reports) | `~/.shellteam/dream/` | `uninstall.sh --purge` |
+| Images pasted into the chat for Codex, OpenCode and Antigravity (kept 7 days) | `~/.shellteam/attachments/` | `uninstall.sh --purge` |
 | Steel browser (opt-in: part of `--full`) | Docker container `shellteam-steel` | `uninstall.sh` |
 
 ## Tier 2 — the agent layer (additive; **never your dotfiles**)

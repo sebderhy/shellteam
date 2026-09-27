@@ -987,6 +987,7 @@ chatWSS.on("connection", (ws, req) => {
         // Echo the content back on refusal — a message typed into a tab that
         // was just closed elsewhere must never be silently lost.
         if (!requireSlot(slot, "send", { content: msg.content })) break;
+        markSlotUsed(slot);
         let content = msg.content;
 
         // Build display text for history

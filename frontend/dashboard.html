@@ -934,6 +934,10 @@
             }
         }
 
+        // Reopening the box without a #tab (a bookmark, the home-screen icon)
+        // lands on the tab last used on this device (SHE-112).
+        const LAST_TAB_KEY = 'shellteam_last_tab';
+
         function switchTab(tab, { refreshSettings = true } = {}) {
             document.querySelectorAll('.tab').forEach(el => {
                 const selected = el.dataset.tab === tab;
@@ -952,6 +956,7 @@
                 if (refreshSettings && aiStatus !== null) refreshAIStatus().then(renderAIPanel);
             }
             history.replaceState(null, '', `#${tab}`);
+            localStorage.setItem(LAST_TAB_KEY, tab);
         }
 
         // ─── Laptop import (Environment Mirror) ─────────────────────────────
@@ -1910,13 +1915,18 @@
             refreshDreamEngine();
             await knowledgeProbe;
             await reportsProbe;
-            const hash = (location.hash || '').slice(1);
             // Module-aware deep links: a hash is honored only if its tab is
             // actually visible, so #knowledge works with the dreaming module
             // and a disabled Browser/Knowledge hash can't activate hidden UI.
-            const tabEl = document.querySelector(`.tab[data-tab="${CSS.escape(hash)}"]`);
-            if (tabEl && tabEl.style.display !== 'none') switchTab(hash);
+            const visibleTab = (name) => {
+                const tabEl = name && document.querySelector(`.tab[data-tab="${CSS.escape(name)}"]`);
+                return !!tabEl && tabEl.style.display !== 'none';
+            };
+            const hash = (location.hash || '').slice(1);
+            const lastTab = localStorage.getItem(LAST_TAB_KEY);
+            if (visibleTab(hash)) switchTab(hash);
             else if (!providerConfigured(aiStatus)) switchTab('settings');
+            else if (visibleTab(lastTab)) switchTab(lastTab);
             else switchTab('agents');
             wizardMaybeShow();
         })();

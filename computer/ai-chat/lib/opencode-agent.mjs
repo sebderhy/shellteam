@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { splitContent, textWithImagePaths } from "./attachments.mjs";
 import { CodingAgent } from "./coding-agent.mjs";
 
 // Idle watchdog: max silence between events before treating the process as
@@ -60,12 +61,7 @@ export class OpenCodeAgent extends CodingAgent {
   start() { this._isActive = true; }
 
   sendMessage(content) {
-    const text = typeof content === "string"
-      ? content
-      : Array.isArray(content)
-        ? content.filter(b => b.type === "text").map(b => b.text).join("\n")
-        : String(content);
-    this._spawnRun(text);
+    this._spawnRun(textWithImagePaths(splitContent(content)));
   }
 
   interrupt() {

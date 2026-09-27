@@ -120,6 +120,7 @@ const E = App.el;
 
 const QUOTA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const QUOTA_UNAVAILABLE_RETRY_MS = 60 * 60 * 1000;
+const QUOTA_FETCH_TIMEOUT_MS = 90 * 1000; // server-side probes are bounded well under this
 let quotaPollTimer = null;
 
 // --- Session Tabs ---
@@ -129,6 +130,15 @@ let quotaPollTimer = null;
 const MAX_SESSION_TABS = 20;
 const sessionSlots = [];
 let activeSlotId = 0;
+
+// The tab a freshly opened cockpit lands on (SHE-112): the one the owner last
+// looked at on ANY device (the server stamps viewedAt on every tab switch and
+// send), else this device's own last tab. null = keep the default.
+function startSlotId(serverSlots, savedId) {
+    const viewed = serverSlots.filter(s => s.viewedAt > 0);
+    if (viewed.length) return viewed.reduce((a, b) => (b.viewedAt > a.viewedAt ? b : a)).id;
+    return serverSlots.some(s => s.id === savedId) ? savedId : null;
+}
 let nextSlotId = 1;
 // The header's workspace display (full path), kept by setWorkspaceDisplay.
 // Declared before the first makeSlot() call below — defaultSlotConfig reads it
@@ -1051,7 +1061,7 @@ function quotaSummary() {
             value: S.quotaLoading ? 'Checking…' : 'Not checked',
             detail: S.quotaError || 'Checking provider limits…',
             percent: null,
-            tone: S.quotaError ? 'unavailable' : 'indeterminate',
+            tone: 'unavailable',
             action: 'refresh',
         };
     }
@@ -1096,7 +1106,7 @@ function quotaSummary() {
             value: `${provider.credits_remaining} left`,
             detail: provider.plan_tier ? `${provider.plan_tier} plan` : 'Provider-reported balance',
             percent: null,
-            tone: 'indeterminate',
+            tone: 'unavailable',
             action: 'refresh',
         };
     }
@@ -1111,7 +1121,7 @@ function quotaSummary() {
             value: `${Number.isFinite(count) ? count : provider.resets_available} resets`,
             detail: provider.plan_tier ? `${provider.plan_tier} plan` : 'No percentage reported',
             percent: null,
-            tone: 'indeterminate',
+            tone: 'unavailable',
             action: 'refresh',
         };
     }
@@ -1124,7 +1134,7 @@ function quotaSummary() {
         value: S.quotaLoading ? 'Checking…' : 'Not reported',
         detail: provider.error || 'Click to check again',
         percent: null,
-        tone: S.quotaLoading ? 'indeterminate' : 'unavailable',
+        tone: 'unavailable',
         action: 'refresh',
     };
 }
@@ -1170,7 +1180,12 @@ function renderQuotaMeter() {
     meter.title = desc;
     meter.setAttribute('aria-label', desc);
 
-    track.className = `quota-meter-track${summary.tone === 'indeterminate' ? ' indeterminate' : ''}`;
+    // The scanning bar means ONE thing: a check is in flight. A finished check
+    // with no percentage (credits, a reset count, an error) is a static stub;
+    // animating those read as "loading forever" on boxes whose provider never
+    // reports a percentage.
+    const scanning = S.quotaLoading && summary.percent === null;
+    track.className = `quota-meter-track${scanning ? ' indeterminate' : ''}`;
     fill.className = `quota-meter-fill${summary.tone === 'warn' ? ' warn' : summary.tone === 'critical' ? ' critical' : summary.tone === 'unavailable' ? ' unavailable' : ''}`;
     fill.style.width = summary.percent === null ? '' : `${summary.percent}%`;
 
@@ -1286,9 +1301,12 @@ async function refreshSubscriptionQuota({ force = false } = {}) {
     let request;
     request = (async () => {
         try {
-            const response = await fetch('/api/usage', force
-                ? { headers: { 'X-Shellteam-Refresh': '1' } }
-                : undefined);
+            // Bounded: a proxy that holds the request open must end in the
+            // error state, not an endless "Checking…".
+            const response = await fetch('/api/usage', {
+                signal: AbortSignal.timeout(QUOTA_FETCH_TIMEOUT_MS),
+                ...(force ? { headers: { 'X-Shellteam-Refresh': '1' } } : {}),
+            });
             const usage = await response.json();
             if (!response.ok || usage.error) throw new Error('usage unavailable');
             S.providerUsage = usage;
@@ -2347,6 +2365,12 @@ function handleStatusMessage(msg) {
     // Sync slots from server
     if (msg.slots && msg.slots.length > 0) {
         const firstSnapshot = !_slotsSyncedThisConnection;
+        // Decided BEFORE the fallback switches below: they write activeSlotId to
+        // localStorage, which used to erase the saved tab on every load of a box
+        // whose tab 0 was closed, so the cockpit always reopened on the first tab.
+        const restoreId = firstSnapshot && _connectCount <= 1
+            ? startSlotId(msg.slots, parseInt(localStorage.getItem('activeSlotId'), 10))
+            : null;
         for (const serverSlot of msg.slots) {
             let local = sessionSlots.find(s => s.id === serverSlot.id);
             if (!local) {
@@ -2419,7 +2443,7 @@ function handleStatusMessage(msg) {
             if (pristine && sessionSlots.length > 1) {
                 const wasActive = activeSlotId === 0;
                 sessionSlots.splice(i, 1);
-                if (wasActive) { activeSlotId = -1; switchSessionTab(sessionSlots[0].id); }
+                if (wasActive) { activeSlotId = -1; switchSessionTab(restoreId ?? sessionSlots[0].id); }
             }
         }
 
@@ -2445,17 +2469,14 @@ function handleStatusMessage(msg) {
                     continue;
                 }
                 sessionSlots.splice(sessionSlots.indexOf(local), 1);
-                if (local.id === activeSlotId) { activeSlotId = -1; switchSessionTab(msg.slots[0].id); }
+                if (local.id === activeSlotId) { activeSlotId = -1; switchSessionTab(restoreId ?? msg.slots[0].id); }
             }
         }
 
         _slotsSyncedThisConnection = true;
-        if (_connectCount <= 1) {
-            const savedActive = parseInt(localStorage.getItem('activeSlotId') || '0');
-            if (savedActive !== activeSlotId && sessionSlots.some(s => s.id === savedActive)) {
-                activeSlotId = -1;
-                switchSessionTab(savedActive);
-            }
+        if (restoreId !== null && restoreId !== activeSlotId && sessionSlots.some(s => s.id === restoreId)) {
+            activeSlotId = -1;
+            switchSessionTab(restoreId);
         }
         const activeSlot = sessionSlots.find(s => s.id === activeSlotId);
         // Source of truth for the active session: the synced active slot, not the

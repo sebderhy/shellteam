@@ -166,7 +166,8 @@ class TestQa10HashRouting:
             "hash allowlist — it must check the tab element's visibility so "
             "module tabs (knowledge, browser) are honored exactly when enabled."
         )
-        assert 'tab[data-tab="${CSS.escape(hash)}"]' in self.html
+        assert 'tab[data-tab="${CSS.escape(name)}"]' in self.html
+        assert "if (visibleTab(hash)) switchTab(hash);" in self.html
         assert "style.display !== 'none'" in self.html
 
     def test_initial_tab_waits_for_the_knowledge_probe(self):
