@@ -5,6 +5,14 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.37] - 2026-09-30
+
+### Security
+- **urllib3 2.8.0.** Three urllib3 advisories were published on release day
+  (CVE-2026-97687, CVE-2026-97688, CVE-2026-97689); the pinned 2.7.0 is
+  affected. v0.1.36's dependency audit caught it after publishing, so this
+  release is v0.1.36 plus the patched dependency.
+
 ## [0.1.36] - 2026-09-30
 
 ### Added
