@@ -29,7 +29,7 @@ describe("agent registry — hermeticity", () => {
 describe("agent registry — model routing", () => {
   it("routes Claude model families", () => {
     assert.equal(pickAgent("claude-opus-5").id, "claude");
-    assert.equal(pickAgent("claude-sonnet-5").id, "claude");
+    assert.equal(pickAgent("claude-sonnet-5-5").id, "claude");
     assert.equal(pickAgent("claude-haiku-4-5-20251001").id, "claude");
     assert.equal(pickAgent("sonnet-test").id, "claude");
     assert.equal(pickAgent("opus-test").id, "claude");
@@ -38,8 +38,8 @@ describe("agent registry — model routing", () => {
 
   it("routes Codex model families", () => {
     assert.equal(pickAgent("gpt-6-astra-max").id, "codex");
-    assert.equal(pickAgent("gpt-6-sol-ultra").id, "codex");
-    assert.equal(pickAgent("gpt-6-sol-max").id, "codex");
+    assert.equal(pickAgent("gpt-6.1-sol-ultra").id, "codex");
+    assert.equal(pickAgent("gpt-6.1-sol-max").id, "codex");
     assert.equal(pickAgent("gpt-6-luna-max").id, "codex");
     assert.equal(pickAgent("o1-preview").id, "codex");
     assert.equal(pickAgent("o3-mini").id, "codex");
@@ -105,8 +105,8 @@ describe("agent registry — terminal spawn", () => {
       { cmd: "codex", args: ["--dangerously-bypass-approvals-and-sandbox", ...codexLayerArgs(), "-c", 'model_reasoning_effort="max"', "-m", "gpt-6-astra"] },
     );
     assert.deepEqual(
-      terminalSpawn("gpt-6-sol-ultra"),
-      { cmd: "codex", args: ["--dangerously-bypass-approvals-and-sandbox", ...codexLayerArgs(), "-c", 'model_reasoning_effort="ultra"', "-m", "gpt-6-sol"] },
+      terminalSpawn("gpt-6.1-sol-ultra"),
+      { cmd: "codex", args: ["--dangerously-bypass-approvals-and-sandbox", ...codexLayerArgs(), "-c", 'model_reasoning_effort="ultra"', "-m", "gpt-6.1-sol"] },
     );
     assert.deepEqual(
       terminalSpawn("gpt-6-luna-max"),

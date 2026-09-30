@@ -5,6 +5,24 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-09-30
+
+### Added
+- **Claude Sonnet 5.5** (`claude-sonnet-5-5`) replaces Sonnet 5: 1M context,
+  $2/$10 per million tokens, Anthropic's "best combination of speed and
+  intelligence". Update Claude Code to 2.1.285 or later (`claude update`);
+  2.1.280 answers but warns that it does not know the model.
+- **GPT-6.1 Sol** (`gpt-6.1-sol`, max and ultra) replaces GPT-6 Sol and is the
+  new Codex default: same price and 1.05M context, "near-Astra performance".
+  It needs Codex 0.159 or later (`npm install -g @openai/codex@latest`): older
+  versions are refused on a ChatGPT login.
+
+### Changed
+- **A retired model moves to its successor, not to the family flagship.** A tab
+  left on Sonnet 5 opens on Sonnet 5.5 (it used to jump to Opus 5.5), and GPT-6
+  Sol tabs move to GPT-6.1 Sol at the same effort. `INCLUDED_MODELS` entries
+  naming a retired model keep offering its successor, with a warning in the log.
+
 ## [0.1.35] - 2026-09-27
 
 ### Fixed

@@ -41,7 +41,7 @@ export const CODEX_HISTORY_DIR = join(HOME, ".config", "shellteam", "codex-histo
 export const BROKER_STATE_FILE = join(HOME, ".config", "shellteam", "delegation-broker.json");
 export const MAX_HISTORY = 500;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
-export const DEFAULT_CODEX_MODEL = "gpt-6-sol-max";
+export const DEFAULT_CODEX_MODEL = "gpt-6.1-sol-max";
 export const DEFAULT_ANTIGRAVITY_MODEL = "gemini-3.1-pro";
 // Back-compat alias — the generic "default model" is the Claude default.
 export const DEFAULT_MODEL = DEFAULT_CLAUDE_MODEL;

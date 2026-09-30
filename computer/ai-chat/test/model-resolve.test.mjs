@@ -20,12 +20,22 @@ test("orphaned Claude model resolves to the Claude default", () => {
 test("known models pass through untouched (by id and by cli form)", () => {
   // catalog id
   assert.equal(resolveModelId("claude-fable-5-1"), "claude-fable-5-1");
-  assert.equal(resolveModelId("claude-sonnet-5"), "claude-sonnet-5");
+  assert.equal(resolveModelId("claude-sonnet-5-5"), "claude-sonnet-5-5");
   // the current default is itself a known model
   assert.equal(resolveModelId(DEFAULT_CLAUDE_MODEL), DEFAULT_CLAUDE_MODEL);
-  // cli-form id (catalog id is gpt-6-sol-max) is still a known model
-  assert.equal(isKnownModel("gpt-6-sol"), true);
-  assert.equal(resolveModelId("gpt-6-sol"), "gpt-6-sol");
+  // cli-form id (catalog id is gpt-6.1-sol-max) is still a known model
+  assert.equal(isKnownModel("gpt-6.1-sol"), true);
+  assert.equal(resolveModelId("gpt-6.1-sol"), "gpt-6.1-sol");
+});
+
+test("a retired model moves to the model that replaced it, not the family flagship", () => {
+  // Sonnet 5 -> Sonnet 5.5 (not Opus 5.5, the Claude default): a fast-tier tab
+  // stays fast-tier. GPT-6 Sol -> GPT-6.1 Sol at the SAME effort.
+  assert.equal(isKnownModel("claude-sonnet-5"), false);
+  assert.equal(resolveModelId("claude-sonnet-5"), "claude-sonnet-5-5");
+  assert.equal(resolveModelId("gpt-6-sol-ultra"), "gpt-6.1-sol-ultra");
+  assert.equal(resolveModelId("gpt-6-sol-max"), "gpt-6.1-sol-max");
+  assert.equal(resolveModelId("gpt-6-sol"), "gpt-6.1-sol-max", "cli-form id of a retired model");
 });
 
 test("orphans resolve within their own family, not always Claude", () => {

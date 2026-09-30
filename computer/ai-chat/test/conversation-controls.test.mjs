@@ -50,7 +50,7 @@ const CHEAP = {
 };
 // A second same-family model, for "switching model within a family keeps the session".
 const SAME_FAMILY_ALT = {
-  claude: "claude-sonnet-5",
+  claude: "claude-sonnet-5-5",
   codex: "gpt-5.6-terra",
   antigravity: "gemini-3.1-pro",
   opencode: "deepseek-v4-pro",

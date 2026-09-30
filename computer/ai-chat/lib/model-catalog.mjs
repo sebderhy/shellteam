@@ -45,8 +45,8 @@ export function agentIdForModel(model) {
 
 /**
  * True when the catalog still offers this exact model — matched by `id` OR by
- * `cli` (a saved tab may hold the cli-form id, e.g. "gpt-6-sol" whose catalog
- * id is "gpt-6-sol-max"; that is still a known model, not an orphan).
+ * `cli` (a saved tab may hold the cli-form id, e.g. "gpt-6.1-sol" whose catalog
+ * id is "gpt-6.1-sol-max"; that is still a known model, not an orphan).
  */
 export function isKnownModel(model) {
   return agents().some((a) => (a.models || []).some((m) => m.id === model || m.cli === model));
@@ -69,16 +69,32 @@ const _FAMILY_DEFAULTS = {
  * Ids the catalog does not know are dropped LOUDLY (a typo must not widen the
  * allowlist to "anything"). Parsed once per process, like the catalog itself.
  */
+/** The catalog model whose `replaces` lists this retired id, or null. */
+function successorOf(model) {
+  for (const a of agents()) {
+    const m = (a.models || []).find((x) => (x.replaces || []).includes(model));
+    if (m) return m.id;
+  }
+  return null;
+}
+
 let _included = null;
 
 export function includedModelsByFamily(env = process.env) {
   if (_included) return _included;
   const byFamily = {};
   const raw = (env.INCLUDED_MODELS || "").split(",").map((s) => s.trim()).filter(Boolean);
-  for (const id of raw) {
+  for (const named of raw) {
+    let id = named;
     if (!isKnownModel(id)) {
-      console.error(`[model-catalog] INCLUDED_MODELS names "${id}", which is not in config/models.json — ignored`);
-      continue;
+      // A box updated past a model swap keeps offering the successor instead
+      // of silently offering nothing (the demo box names gpt-6-sol-max).
+      id = successorOf(named);
+      if (!id) {
+        console.error(`[model-catalog] INCLUDED_MODELS names "${named}", which is not in config/models.json — ignored`);
+        continue;
+      }
+      console.warn(`[model-catalog] INCLUDED_MODELS names retired "${named}" — using its successor "${id}"; update .env`);
     }
     (byFamily[agentIdForModel(id)] ||= []).push(id);
   }
@@ -99,6 +115,10 @@ export function resetIncludedModelsCache() { _included = null; }
  */
 export function resolveModelId(model) {
   if (!model || isKnownModel(model)) return model;
+  // A retired id moves to the model that replaced it, so a Sonnet 5 tab lands
+  // on Sonnet 5.5, not on the family's flagship.
+  const successor = successorOf(model);
+  if (successor) return successor;
   const family = agentIdForModel(model);
   const fallback = family === "opencode" ? opencodeDefaultModel() : _FAMILY_DEFAULTS[family];
   return fallback || DEFAULT_CLAUDE_MODEL;
@@ -134,8 +154,8 @@ export function configArgsForId(model) {
 /**
  * The model's context window in tokens, from the catalog's `limit.context`
  * (the single source of truth the browser meter also reads). Matches a catalog
- * model by id OR by its `cli` value, so a stale/cli-form id (e.g. "gpt-6-sol"
- * from a saved tab, whose catalog id is "gpt-6-sol-max") still resolves to
+ * model by id OR by its `cli` value, so a stale/cli-form id (e.g. "gpt-6.1-sol"
+ * from a saved tab, whose catalog id is "gpt-6.1-sol-max") still resolves to
  * the real 400k window instead of silently falling back. Falls back to 1M for
  * long-context "[1m]" variants and 200k otherwise — matching
  * `contextWindowForModel` in public/app.js so the meter and the auto-compact

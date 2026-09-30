@@ -23,7 +23,7 @@ const { familyOfSession } = await import("../lib/history.mjs");
 const { CODEX_HISTORY_DIR, HOME } = await import("../lib/constants.mjs");
 
 const CLAUDE_A = "claude-opus-5";
-const CLAUDE_B = "claude-sonnet-5";
+const CLAUDE_B = "claude-sonnet-5-5";
 const CODEX = "gpt-5.5";
 
 function mockAgentFactory(spawns) {

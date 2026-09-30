@@ -14,7 +14,7 @@
     "limit.context = the model's context window in tokens; the cockpit's context-budget meter",
     "(renderContextMeter in public/app.js) shows usage against it. Claude values are the 1M window",
     "Claude Code runs on a subscription (Haiku 4.5 stays 200K); the GPT-6 family is 1.05M",
-    "(developers.openai.com/api/docs/models/gpt-6-sol, 2026-09-22); Gemini 3.1 Pro is 2M,",
+    "(developers.openai.com/api/docs/models/gpt-6.1-sol, 2026-09-30); Gemini 3.1 Pro is 2M,",
     "3.6 Flash ~1M. Verified against vendor docs + `agy models` 2026-07-23."
   ],
   "agents": [
@@ -28,7 +28,13 @@
         "Fable-level on most work at 40% less than Opus 5 (platform.claude.com/docs/en/models/opus-5-5).",
         "It needs Claude Code >= 2.1.280 \u2014 an older CLI answers every turn with a 400 that",
         "names the required version (`claude update` fixes it); Fable 5.1, Sonnet 5 and Haiku 4.5",
-        "keep working on older CLIs. Verified 2026-09-22 on Claude Code 2.1.280 over a subscription."
+        "keep working on older CLIs. Verified 2026-09-22 on Claude Code 2.1.280 over a subscription.",
+        "Sonnet 5.5 (released 2026-09-28, 1M context, 128K output, $2/$10 per 1M tokens, 'the best",
+        "combination of speed and intelligence') replaced Sonnet 5 the day it shipped",
+        "(platform.claude.com/docs/en/models/overview). Claude Code 2.1.280 flags it",
+        "`unrecognized_model` but answers; 2.1.285 knows it. Verified 2026-09-30 on 2.1.285 over a",
+        "subscription. `replaces` moves a tab still pinned to a retired id onto its successor",
+        "(resolveModelId in computer/ai-chat/lib/model-catalog.mjs) instead of the family default."
       ],
       "match": {
         "prefixes": [
@@ -50,8 +56,9 @@
           "limit": { "context": 1000000 }
         },
         {
-          "id": "claude-sonnet-5",
-          "name": "Sonnet 5",
+          "id": "claude-sonnet-5-5",
+          "name": "Sonnet 5.5",
+          "replaces": ["claude-sonnet-5"],
           "limit": { "context": 1000000 }
         },
         {
@@ -76,7 +83,7 @@
       "$modelsComment": [
         "GPT-6 family only. Astra (released 2026-09-03, $10/$50 per 1M tokens) is the",
         "flagship; Sol (released 2026-09-22, $2/$10, 'balanced model for interactive and",
-        "agentic coding') is the family DEFAULT (DEFAULT_CODEX_MODEL in constants.mjs);",
+        "agentic coding') was the family default until GPT-6.1 Sol (below);",
         "Luna (released 2026-09-22, $0.10/$0.50) is the cheap tier. All three: 1.05M",
         "context, 128K output, efforts none..max per developers.openai.com/api/docs/models/.",
         "The GPT-5.6 family was retired the day Sol and Luna shipped: each GPT-6 model",
@@ -90,7 +97,14 @@
         "on a ChatGPT login ('not supported when using Codex with a ChatGPT account') and",
         "the CLI warned it had no metadata for them; on 0.156.0 both answer. Verified",
         "2026-09-22 on codex-cli 0.156.0 against a ChatGPT login: sol max, sol ultra,",
-        "luna max, astra max all answer; sol and luna also answer on a plain API key."
+        "luna max, astra max all answer; sol and luna also answer on a plain API key.",
+        "",
+        "GPT-6.1 Sol (released 2026-09-29, same $2/$10 and 1.05M/128K as GPT-6 Sol, 'near-Astra",
+        "performance at reduced cost', developers.openai.com/api/docs/models/gpt-6.1-sol) replaced",
+        "GPT-6 Sol the day it shipped and is the family default. It needs Codex CLI >= 0.159: on",
+        "0.156.0 a ChatGPT login refuses it ('not supported when using Codex with a ChatGPT",
+        "account'). `ultra` is Codex's own mode, not an API effort, and answers on 6.1 Sol too.",
+        "Verified 2026-09-30 on codex-cli 0.159.2 against a ChatGPT login: sol max and sol ultra."
       ],
       "models": [
         {
@@ -104,9 +118,10 @@
           "cost": { "input": 10.0, "output": 50.0 }
         },
         {
-          "id": "gpt-6-sol-ultra",
-          "name": "GPT-6 Sol (ultra)",
-          "cli": "gpt-6-sol",
+          "id": "gpt-6.1-sol-ultra",
+          "name": "GPT-6.1 Sol (ultra)",
+          "cli": "gpt-6.1-sol",
+          "replaces": ["gpt-6-sol-ultra"],
           "config": [
             "model_reasoning_effort=\"ultra\""
           ],
@@ -114,9 +129,10 @@
           "cost": { "input": 2.0, "output": 10.0 }
         },
         {
-          "id": "gpt-6-sol-max",
-          "name": "GPT-6 Sol (max)",
-          "cli": "gpt-6-sol",
+          "id": "gpt-6.1-sol-max",
+          "name": "GPT-6.1 Sol (max)",
+          "cli": "gpt-6.1-sol",
+          "replaces": ["gpt-6-sol-max", "gpt-6-sol"],
           "config": [
             "model_reasoning_effort=\"max\""
           ],

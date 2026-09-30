@@ -420,9 +420,9 @@ async function testModelChange() {
   const c = await openWs();
   await c.waitStatus();
 
-  c.send({ type: "set_model", model: "claude-sonnet-5", slot: 0 });
+  c.send({ type: "set_model", model: "claude-sonnet-5-5", slot: 0 });
   const changed = await c.waitFor(m => m.type === "model_changed");
-  if (changed.model === "claude-sonnet-5") pass("Model changed to sonnet");
+  if (changed.model === "claude-sonnet-5-5") pass("Model changed to sonnet");
   else fail("Model change", `got ${changed.model}`);
 
   c.send({ type: "set_model", model: TEST_MODEL, slot: 0 });
@@ -877,7 +877,7 @@ async function testTabWithDifferentConfig() {
   await switchToHaiku(c, 0);
 
   // Create tab with different model
-  c.send({ type: "create_tab", slot: 30, model: "claude-sonnet-5", cwd: "/home/user" });
+  c.send({ type: "create_tab", slot: 30, model: "claude-sonnet-5-5", cwd: "/home/user" });
 
   // Send on both — they should use different models
   c.send({ type: "send", content: "Reply with: slot0_haiku", slot: 0 });

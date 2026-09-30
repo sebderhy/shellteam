@@ -58,6 +58,13 @@ describe("includedModelsByFamily", () => {
       claude: ["claude-haiku-4-5-20251001"],
     });
   });
+
+  it("keeps offering the successor of a retired id instead of nothing", () => {
+    // The demo box's .env named gpt-6-sol-max when GPT-6.1 Sol replaced it: a
+    // plain drop would have left visitors with no model on the box's key.
+    process.env.INCLUDED_MODELS = "gpt-6-sol-max";
+    assert.deepEqual(includedModelsByFamily(), { codex: ["gpt-6.1-sol-max"] });
+  });
 });
 
 describe("authModeFor with an included key", () => {
@@ -88,9 +95,9 @@ describe("modelPermitted", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
     process.env.INCLUDED_MODELS = "gpt-6-luna-max";
     assert.deepEqual(modelPermitted("gpt-6-luna-max"), { ok: true });
-    const verdict = modelPermitted("gpt-6-sol-max");
+    const verdict = modelPermitted("gpt-6.1-sol-max");
     assert.equal(verdict.ok, false);
-    assert.match(verdict.reason, /gpt-6-sol-max is not included/);
+    assert.match(verdict.reason, /gpt-6.1-sol-max is not included/);
     assert.match(verdict.reason, /Connect your own plan/);
     // Other families are untouched.
     assert.deepEqual(modelPermitted("claude-opus-5"), { ok: true });
@@ -98,7 +105,7 @@ describe("modelPermitted", () => {
 
   it("permits everything when the family is not on an included key", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
-    assert.deepEqual(modelPermitted("gpt-6-sol-max"), { ok: true });
+    assert.deepEqual(modelPermitted("gpt-6.1-sol-max"), { ok: true });
   });
 
   it("leaves OpenCode alone: its proxy bills 'included' but is not this allowlist", () => {
@@ -111,9 +118,9 @@ describe("modelPermitted", () => {
   it("coerces persisted state that predates INCLUDED_MODELS (golden image saved on Sol)", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
     process.env.INCLUDED_MODELS = "gpt-6-luna-max";
-    saveModel("gpt-6-sol-max");
+    saveModel("gpt-6.1-sol-max");
     assert.equal(loadModel(), "gpt-6-luna-max");
-    assert.equal(permittedModelOr("gpt-6-sol-max", "test"), "gpt-6-luna-max");
+    assert.equal(permittedModelOr("gpt-6.1-sol-max", "test"), "gpt-6-luna-max");
     assert.equal(permittedModelOr("claude-opus-5", "test"), "claude-opus-5");
   });
 });
@@ -131,7 +138,7 @@ describe("wiring pins", () => {
     assert.match(app, /return familyHasAuth\(family\) && modelPermittedHere\(model\);/);
     assert.match(app, /\.filter\(m => modelPermittedHere\(m\.id\)\)/);
     assert.match(app, /return own \|\| !hasIncludedFamily\(\) \|\| includedFallbackChosen\(\);/);
-    assert.match(app, /preferredModelFor\('codex', 'gpt-6-sol-max'\)/);
+    assert.match(app, /preferredModelFor\('codex', 'gpt-6.1-sol-max'\)/);
     assert.match(app, /function continueWithIncluded\(model\) \{\s*\n\s*localStorage\.setItem\(INCLUDED_CHOSEN_KEY, '1'\);/);
     assert.match(html, /<div class="setup-included hidden" id="setupIncluded"><\/div>/);
   });
