@@ -51,13 +51,6 @@ export const BROKER_SLOT_POOLS = {
   guest: [1100, 1101],
 };
 
-export const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-export const OAUTH_AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
-export const OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
-export const OAUTH_REDIRECT_URI = "https://platform.claude.com/oauth/code/callback";
-export const OAUTH_SCOPES =
-  "org:create_api_key user:profile user:inference user:mcp_servers user:sessions:claude_code";
-
 export const MIME_TYPES = {
   ".html": "text/html",
   ".js": "application/javascript",

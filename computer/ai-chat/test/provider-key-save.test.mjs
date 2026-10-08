@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 
 const tempHome = mkdtempSync(join(tmpdir(), "provider-key-save-test-"));
 process.env.HOME = tempHome;
+const { installFakeClaude } = await import("./helpers/fake-claude.mjs");
+installFakeClaude(tempHome);
 for (const key of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]) delete process.env[key];
 
 const { authModeFor, saveProviderKey } = await import("../lib/session.mjs");

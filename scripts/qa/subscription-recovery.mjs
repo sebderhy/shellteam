@@ -20,6 +20,11 @@ const HOME = mkdtempSync(join(tmpdir(), "subscription-recovery-home-"));
 const CREDENTIALS = join(HOME, ".claude", ".credentials.json");
 const SCENARIO_TIMEOUT_MS = 30_000;
 
+// The cockpit asks the Claude Code binary for the login state; a fake one judges
+// the fixture file the way the binary does (logged in when it holds a token).
+const { installFakeClaude } = await import(join(AI_CHAT, "test", "helpers", "fake-claude.mjs"));
+installFakeClaude(HOME);
+
 mkdirSync(dirname(CREDENTIALS), { recursive: true });
 
 function writeClaudeOAuth(value) {

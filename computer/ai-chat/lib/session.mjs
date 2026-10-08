@@ -6,10 +6,11 @@ import {
   chmodSync,
   unlinkSync,
   renameSync,
+  statSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
-import { randomBytes, createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
 import { spawn as ptySpawn } from "node-pty";
 import {
   HOME,
@@ -24,11 +25,6 @@ import {
   CODEX_AUTH_FILE,
   ANTIGRAVITY_AUTH_FILE,
   CLAUDE_CONFIG_FILE,
-  OAUTH_CLIENT_ID,
-  OAUTH_AUTHORIZE_URL,
-  OAUTH_TOKEN_URL,
-  OAUTH_REDIRECT_URI,
-  OAUTH_SCOPES,
 } from "./constants.mjs";
 import { agentIdFor } from "./agents/registry.mjs";
 import { agentIdForModel, includedModelsByFamily, resolveModelId } from "./model-catalog.mjs";
@@ -36,11 +32,11 @@ import { opencodeConfigPath } from "./agent-layer.mjs";
 // clearAllHistory removed — history is now managed by SessionManager
 
 // --- State ---
-let pendingOAuth = null;
+let pendingClaudeAuth = null; // { pty, url, done }
 let pendingCodexAuth = null; // { process, userCode, verificationUri }
 let pendingAntigravityAuth = null; // { pty, url, done }
 
-export function getPendingOAuth() { return pendingOAuth; }
+export function getPendingOAuth() { return pendingClaudeAuth?.url ? { url: pendingClaudeAuth.url } : null; }
 
 // --- Model ---
 export function loadModel() {
@@ -235,19 +231,48 @@ function tokenUsable(token, explicitExpiry = null) {
   return expiry === null || expiry > Date.now() + EXPIRY_SKEW_MS;
 }
 
+// Claude sign-in state comes from the Claude Code binary itself (`claude auth
+// status --json`); this process never opens ~/.claude/.credentials.json. Anthropic
+// does not let a third party handle Claude.ai credentials, so the binary logs in,
+// stores and refreshes them, and we only watch the file's stat to know when to ask
+// it again.
+let claudeStatusCache = null; // { fingerprint, status }
+
+// A key or gateway in the environment would make the binary report that instead
+// of the stored login, so every auth call runs without them.
+const CLAUDE_AUTH_ENV_STRIP = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"];
+
+function claudeAuthEnv() {
+  const env = { ...process.env, HOME };
+  for (const name of CLAUDE_AUTH_ENV_STRIP) delete env[name];
+  return env;
+}
+
+function readClaudeLoginStatus() {
+  const res = spawnSync("claude", ["auth", "status", "--json"], { env: claudeAuthEnv(), encoding: "utf8", timeout: 15000 });
+  if (res.error) {
+    console.error(`[ai-chat] claude auth status could not run: ${res.error.message}`);
+    return "none";
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(res.stdout);
+  } catch {
+    console.error(`[ai-chat] claude auth status gave unreadable output (exit ${res.status}): ${String(res.stdout).slice(0, 200)} ${String(res.stderr).slice(0, 200)}`);
+    return "none";
+  }
+  // The credential file exists (the caller checked), so a binary that says "not
+  // logged in" means the login is dead, not that none was ever made.
+  return parsed.loggedIn === true && parsed.authMethod === "claude.ai" ? "connected" : "expired";
+}
+
 function classifyClaudeSubscription() {
-  const oauth = readJsonSafe(CREDENTIALS_FILE)?.claudeAiOauth;
-  if (!oauth || typeof oauth !== "object") return "none";
-  const access = tokenUsable(oauth.accessToken, oauth.expiresAt);
-  const refresh = tokenUsable(oauth.refreshToken, oauth.refreshTokenExpiresAt);
-  if (access || refresh) return "connected";
-  const evidence = nonEmpty(oauth.subscriptionType)
-    || (Array.isArray(oauth.scopes) && oauth.scopes.length > 0)
-    || nonEmpty(oauth.accessToken)
-    || nonEmpty(oauth.refreshToken)
-    || (expiryMs(oauth.expiresAt) ?? 0) > 0
-    || (expiryMs(oauth.refreshTokenExpiresAt) ?? 0) > 0;
-  return evidence ? "expired" : "none";
+  const fingerprint = credentialFingerprint("claude");
+  if (!fingerprint) return "none";
+  if (claudeStatusCache?.fingerprint === fingerprint) return claudeStatusCache.status;
+  const status = readClaudeLoginStatus();
+  claudeStatusCache = { fingerprint, status };
+  return status;
 }
 
 function classifyCodexSubscription() {
@@ -295,6 +320,11 @@ function credentialPathFor(family) {
 function credentialFingerprint(family) {
   const path = credentialPathFor(family);
   if (!path || !existsSync(path)) return null;
+  if (family === "claude") {
+    // stat, never content: it changes on every login and every token refresh.
+    const { mtimeNs, size } = statSync(path, { bigint: true });
+    return `${mtimeNs}:${size}`;
+  }
   try {
     return createHash("sha256").update(readFileSync(path)).digest("hex");
   } catch (err) {
@@ -578,91 +608,134 @@ export function getCliEnv(cwd = HOME) {
   return env;
 }
 
-// --- OAuth ---
-export function startOAuth() {
-  const verifier = randomBytes(32).toString("base64url");
-  const challenge = createHash("sha256").update(verifier).digest("base64url");
-  const state = randomBytes(16).toString("hex");
+// --- Claude sign-in ---
+// Same shape as the Antigravity flow below: Claude Code owns the whole login, we
+// drive the real binary over a PTY. `claude auth login --claudeai` prints the
+// authorize URL, waits at "Paste code here if prompted >", exchanges the pasted
+// code itself and writes its own credentials. Nothing here talks to Anthropic's
+// OAuth endpoints or touches the credential file's contents.
+const CLAUDE_URL_TIMEOUT_MS = 20000;
+const CLAUDE_LOGIN_TIMEOUT_MS = 25000; // under the 30s /internal/ai proxy timeout
 
-  const params = new URLSearchParams({
-    client_id: OAUTH_CLIENT_ID,
-    redirect_uri: OAUTH_REDIRECT_URI,
-    response_type: "code",
-    scope: OAUTH_SCOPES,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    state,
+// Resolve through onUrl once the binary has printed its authorize URL; onError
+// if it dies, or stays silent, before that.
+export function startClaudeAuth(onUrl, onError) {
+  if (pendingClaudeAuth?.url) {
+    onUrl?.(pendingClaudeAuth.url);
+    return;
+  }
+  if (pendingClaudeAuth) return; // a spawn is already in flight
+
+  let pty;
+  try {
+    // Wide cols so the long authorize URL is not wrapped mid-token.
+    pty = ptySpawn("claude", ["auth", "login", "--claudeai"], { name: "xterm-256color", cols: 1000, rows: 40, env: claudeAuthEnv() });
+  } catch (err) {
+    const detail = err?.code === "ENOENT" || /ENOENT|not found/i.test(err?.message || "")
+      ? "the Claude Code CLI (claude) is not installed"
+      : err?.message || String(err);
+    console.error(`[ai-chat] Claude sign-in: could not start: ${detail}`);
+    onError?.(`Could not start Claude sign-in: ${detail}.`);
+    return;
+  }
+  pendingClaudeAuth = { pty, url: null, done: false };
+  let buf = "", urlSent = false, timedOut = false;
+
+  const urlTimer = setTimeout(() => {
+    if (urlSent || pendingClaudeAuth?.pty !== pty) return;
+    timedOut = true;
+    console.warn(`[ai-chat] Claude sign-in: no authorize URL after ${CLAUDE_URL_TIMEOUT_MS / 1000}s, aborting`);
+    try { pty.kill(); } catch { /* already gone */ } // onExit clears the slot
+    onError?.("Timed out waiting for the Claude sign-in URL");
+  }, CLAUDE_URL_TIMEOUT_MS);
+
+  pty.onData((d) => {
+    if (urlSent) return;
+    buf += stripAnsi(d);
+    // The URL is complete once the prompt after it is up.
+    if (!/Paste code here/.test(buf)) return;
+    const m = buf.match(/https:\/\/claude\.(?:com|ai)\/\S*oauth\/authorize\?\S+/);
+    if (!m || !/state=/.test(m[0])) return;
+    urlSent = true;
+    clearTimeout(urlTimer);
+    pendingClaudeAuth.url = m[0];
+    console.log(`[ai-chat] Claude sign-in: authorize URL ready (${m[0].length} chars)`);
+    onUrl?.(m[0]);
   });
 
-  const url = `${OAUTH_AUTHORIZE_URL}?${params}`;
-  pendingOAuth = { verifier, state, url };
-  return url;
+  pty.onExit(({ exitCode }) => {
+    clearTimeout(urlTimer);
+    if (pendingClaudeAuth?.pty === pty && !pendingClaudeAuth.done) {
+      console.warn(`[ai-chat] Claude sign-in: claude exited before completion (code ${exitCode})`);
+      pendingClaudeAuth = null;
+      if (!urlSent && !timedOut) onError?.(`Claude sign-in process exited early (code ${exitCode})`);
+    }
+  });
 }
 
-export async function completeOAuth(codeWithState) {
-  if (!pendingOAuth) throw new Error("No pending OAuth flow");
+// Paste the code into the live binary; resolve when it reports a finished login,
+// reject with its own "Login failed" line or on a timeout.
+export async function completeClaudeAuth(codeWithState) {
+  const pending = pendingClaudeAuth;
+  if (!pending?.pty) throw new Error("No Claude sign-in in progress. Start it again from Settings.");
+  const { pty } = pending;
+  pending.done = true;
 
-  const hashIdx = codeWithState.lastIndexOf("#");
-  let code, state;
-  if (hashIdx > 0) {
-    code = codeWithState.slice(0, hashIdx);
-    state = codeWithState.slice(hashIdx + 1);
-  } else {
-    code = codeWithState;
-    state = null;
-  }
-
-  if (state && state !== pendingOAuth.state) {
-    throw new Error("State mismatch — please try again");
-  }
-
-  const body = {
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: OAUTH_REDIRECT_URI,
-    client_id: OAUTH_CLIENT_ID,
-    code_verifier: pendingOAuth.verifier,
-    state: pendingOAuth.state,
-  };
-
-  const resp = await fetch(OAUTH_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+  let failure = null, exitCode = null;
+  pty.onData((d) => {
+    const m = stripAnsi(d).match(/Login failed:[^\r\n]*/);
+    if (m) failure = m[0].trim();
   });
+  pty.onExit((e) => { exitCode = e.exitCode; });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Token exchange failed (${resp.status}): ${text}`);
+  const before = credentialFingerprint("claude");
+  pty.write(`${codeWithState.trim()}\r`);
+
+  const deadline = Date.now() + CLAUDE_LOGIN_TIMEOUT_MS;
+  while (Date.now() < deadline && exitCode === null && !failure) {
+    if (credentialFingerprint("claude") !== before) {
+      // Credentials landed; give the binary a moment to exit on its own.
+      await new Promise((r) => setTimeout(r, 1500));
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 300));
   }
+  try { pty.kill(); } catch { /* already gone */ }
+  pendingClaudeAuth = null;
 
-  const tokens = await resp.json();
-
-  const claudeDir = join(HOME, ".claude");
-  mkdirSync(claudeDir, { recursive: true });
-  writeFileSync(
-    CREDENTIALS_FILE,
-    JSON.stringify(
-      {
-        claudeAiOauth: {
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
-          expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
-          scopes: (tokens.scope || OAUTH_SCOPES).split(" "),
-        },
-      },
-      null,
-      2
-    )
-  );
-  chmodSync(CREDENTIALS_FILE, 0o600);
+  claudeStatusCache = null;
+  const loggedIn = !failure && (exitCode === 0 || credentialFingerprint("claude") !== before)
+    && classifyClaudeSubscription() === "connected";
+  if (!loggedIn) {
+    const msg = failure
+      ? failure.replace(/^Login failed:\s*/, "")
+      : "Sign-in didn't complete. Double-check the code and try again.";
+    console.error(`[ai-chat] Claude sign-in failed: ${msg}`);
+    throw new Error(msg);
+  }
   clearAuthFile(API_KEY_FILE, "Claude API key");
   clearSubscriptionExpired("claude");
-
   ensureOnboardingComplete();
+  console.log("[ai-chat] Claude sign-in succeeded");
+}
 
-  pendingOAuth = null;
-  console.log("[ai-chat] OAuth credentials saved");
+export function cancelClaudeAuth() {
+  if (!pendingClaudeAuth?.pty) return;
+  pendingClaudeAuth.done = true;
+  try { pendingClaudeAuth.pty.kill(); } catch { /* already gone */ }
+  pendingClaudeAuth = null;
+}
+
+// Sign out through the binary, which removes its own credentials.
+export function signOutClaude() {
+  const res = spawnSync("claude", ["auth", "logout"], { env: claudeAuthEnv(), encoding: "utf8", timeout: 15000 });
+  claudeStatusCache = null;
+  if (res.error || res.status !== 0) {
+    const detail = res.error?.message || `${res.stdout}${res.stderr}`.trim() || `exit ${res.status}`;
+    console.error(`[ai-chat] claude auth logout failed: ${detail}`);
+    throw new Error(`Could not sign out of Claude: ${detail}`);
+  }
+  console.log("[ai-chat] Claude signed out");
 }
 
 export function hasOAuthCredentials() {
@@ -982,7 +1055,7 @@ export function ensureOnboardingComplete() {
 // --- Reset ---
 export function resetSession(killCLI) {
   killCLI();
-  pendingOAuth = null;
+  cancelClaudeAuth();
   cancelCodexAuth();
   cancelAntigravityAuth();
 }

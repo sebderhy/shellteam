@@ -494,6 +494,11 @@ window.Chat = {
             marker.className = 'compact-marker';
             marker.textContent = 'Context compacted — earlier messages were summarized';
             App.el.messages.appendChild(marker);
+            // Mid-turn compaction: the open assistant bubble sits above the
+            // marker, so what the agent does next must start a new one below
+            // it (toolBlocks stay: results of earlier calls can still arrive).
+            this.currentAssistantEl = null;
+            this.currentTextEl = null;
             setStatus('idle', 'Idle');
             scrollToBottom();
         } else if (msg.event === 'handoff') {

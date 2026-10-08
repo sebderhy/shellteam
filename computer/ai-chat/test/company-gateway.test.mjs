@@ -16,6 +16,8 @@ import { tmpdir } from "node:os";
 
 const tempHome = mkdtempSync(join(tmpdir(), "company-gateway-test-"));
 process.env.HOME = tempHome;
+const { installFakeClaude } = await import("./helpers/fake-claude.mjs");
+installFakeClaude(tempHome);
 const GATEWAY_VARS = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_KEY"];
 for (const v of GATEWAY_VARS) delete process.env[v];
 

@@ -19,6 +19,8 @@ import { tmpdir } from "node:os";
 // hermeticity) BEFORE importing session.mjs.
 const tempHome = mkdtempSync(join(tmpdir(), "authmode-test-"));
 process.env.HOME = tempHome;
+const { installFakeClaude } = await import("./test/helpers/fake-claude.mjs");
+installFakeClaude(tempHome);
 for (const k of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]) delete process.env[k];
 
 const { authModeFor, getCliEnv } = await import("./lib/session.mjs");

@@ -5,6 +5,25 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.38] - 2026-10-08
+
+### Changed
+- **Claude sign-in is done by the Claude Code binary.** The cockpit used to run
+  Claude's OAuth exchange itself and read `~/.claude/.credentials.json`;
+  Anthropic's terms say sign-in must complete through its own flow. Now
+  Settings drives `claude auth login --claudeai` (you still open the link and
+  paste the code), the state comes from `claude auth status --json`, and
+  sign-out is `claude auth logout`. ShellTeam never reads or writes the
+  credential file's contents. Your own API key stays available as before.
+
+### Fixed
+- **"Context compacted" sits where the compaction happened.** After a compaction
+  in the middle of a turn, the agent's next actions were drawn above the marker,
+  so the marker looked like it came last. It now closes the open bubble.
+- **The `@` file picker reaches deep files.** The list stopped after 500
+  entries, filled level by level, so files below the second level of a busy
+  folder never appeared. It now holds 10,000 entries up to 8 levels deep.
+
 ## [0.1.37] - 2026-09-30
 
 ### Security

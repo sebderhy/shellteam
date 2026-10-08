@@ -617,8 +617,10 @@ export function listFiles(baseDir) {
   const root = baseDir || HOME;
   const EXCLUDE = new Set([".git", "node_modules", ".cache", "__pycache__", ".claude",
     ".local", ".config", ".npm", ".nvm", ".codex", ".steel"]);
-  const MAX_DEPTH = 5;
-  const MAX_FILES = 500;
+  const MAX_DEPTH = 8;
+  // The @ picker filters this list client-side, so it must reach deep files:
+  // 500 was used up by levels 1-2 of a busy folder and hid everything below.
+  const MAX_FILES = 10000;
   const results = [];
 
   // Breadth-first so shallow entries (and sibling directories) are listed before

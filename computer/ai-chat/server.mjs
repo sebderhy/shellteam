@@ -40,8 +40,9 @@ import {
   modelPermitted,
   subscriptionStatusFor,
   recordSubscriptionAuthFailure,
-  startOAuth,
-  completeOAuth,
+  startClaudeAuth,
+  completeClaudeAuth,
+  signOutClaude,
   hasOAuthCredentials,
   hasCodexOAuthCredentials,
   startCodexDeviceAuth,
@@ -618,19 +619,37 @@ const server = createServer((req, res) => {
   }
 
   if (req.url === "/api/oauth/start" && req.method === "POST") {
-    const url = startOAuth();
-    jsonResponse(res, 200, { url });
+    const pending = getPendingOAuth();
+    if (pending) { jsonResponse(res, 200, { url: pending.url }); return; }
+    let done = false;
+    const reply = (status, payload) => { if (!done) { done = true; jsonResponse(res, status, payload); } };
+    startClaudeAuth(
+      (url) => reply(200, { url }),
+      (error) => reply(504, { error }),
+    );
     return;
   }
 
   if (req.url === "/api/oauth/complete" && req.method === "POST") {
     readBody(req).then(async (body) => {
       const { code } = JSON.parse(body.toString());
-      await completeOAuth(code);
+      await completeClaudeAuth(code);
       stopAllAgents();
       broadcast(buildStatus());
       jsonResponse(res, 200, { success: true });
     }).catch((err) => jsonResponse(res, 400, { error: err.message }));
+    return;
+  }
+
+  if (req.url === "/api/oauth/logout" && req.method === "POST") {
+    try {
+      signOutClaude();
+      stopAllAgents();
+      broadcast(buildStatus());
+      jsonResponse(res, 200, { success: true });
+    } catch (err) {
+      jsonResponse(res, 500, { error: err.message });
+    }
     return;
   }
 
@@ -830,7 +849,7 @@ chatWSS.on("connection", (ws, req) => {
 
   // Send status + pending OAuth state
   const status = buildStatus({
-    pendingOAuth: getPendingOAuth() ? { url: getPendingOAuth().url } : null,
+    pendingOAuth: getPendingOAuth(),
     pendingCodexAuth: getPendingCodexAuth(),
     pendingAntigravityAuth: getPendingAntigravityAuth(),
   });
@@ -874,14 +893,21 @@ chatWSS.on("connection", (ws, req) => {
 
       // --- Auth ---
       case "start_oauth": {
-        const url = startOAuth();
-        ws.send(JSON.stringify({ type: "oauth_url", url }));
+        const pending = getPendingOAuth();
+        if (pending) {
+          ws.send(JSON.stringify({ type: "oauth_url", url: pending.url }));
+          break;
+        }
+        startClaudeAuth(
+          (url) => { ws.send(JSON.stringify({ type: "oauth_url", url })); },
+          (error) => { ws.send(JSON.stringify({ type: "oauth_error", error })); },
+        );
         break;
       }
 
       case "complete_oauth": {
         try {
-          await completeOAuth(msg.code);
+          await completeClaudeAuth(msg.code);
           stopAllAgents();
           broadcast({ type: "oauth_success" });
           broadcast(buildStatus({ apiKeySource: "oauth" }));
