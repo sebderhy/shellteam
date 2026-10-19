@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, existsSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -255,4 +255,46 @@ test("SHE-76: Codex export sanitizes every function_call name to ^[a-zA-Z0-9_-]+
   }
   // call_id pairing is preserved (that's what Codex uses to match output).
   assert.deepEqual(calls.map((c) => c.payload.call_id).sort(), ["c1", "c2"]);
+});
+
+test("SHE-118: OpenCode export writes real tool parts with their results, never '[called X(...)]' text", async () => {
+  // A fake `opencode import` keeps a copy of the document it was handed.
+  const bin = mkdtempSync(join(tmpdir(), "csf-oc-bin-"));
+  const captured = join(bin, "doc.json");
+  writeFileSync(join(bin, "opencode"), `#!/bin/sh\ncp "$2" "${captured}"\n`);
+  chmodSync(join(bin, "opencode"), 0o755);
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${bin}:${savedPath}`;
+  try {
+    const csf = makeCsf([
+      { type: "message", role: "user", parts: [{ type: "text", text: "write the file" }] },
+      { type: "message", role: "assistant", parts: [
+        { type: "text", text: "Writing it." },
+        { type: "tool_call", id: "t1", name: "Write", input: { file_path: "/x/a.py", content: "print(1)" } },
+        { type: "tool_call", id: "t2", name: "mcp__browser__browser_navigate", input: { url: "https://e.x" } },
+      ] },
+      { type: "tool_result", callId: "t1", output: "File created", isError: false },
+      { type: "tool_result", callId: "t2", output: "net::ERR", isError: true },
+    ], bin);
+    await exportSession("opencode", csf, { model: "glm-5p3" });
+    const doc = JSON.parse(readFileSync(captured, "utf8"));
+    const all = JSON.stringify(doc);
+    assert.ok(!all.includes("[called "), "no tool call flattened into text — the model copies that format");
+    assert.ok(!all.includes("[tool result]"), "results ride on their tool part, not a fake user message");
+
+    assert.deepEqual(doc.messages.map((m) => m.info.role), ["user", "assistant"]);
+    const parts = doc.messages[1].parts;
+    assert.deepEqual(parts.map((p) => p.type), ["text", "tool", "tool"]);
+    assert.equal(parts[1].tool, "write", "built-in tools use OpenCode's own names");
+    assert.equal(parts[1].callID, "t1");
+    assert.deepEqual(parts[1].state.input, { file_path: "/x/a.py", content: "print(1)" });
+    assert.equal(parts[1].state.status, "completed");
+    assert.equal(parts[1].state.output, "File created");
+    assert.equal(parts[2].tool, "mcp__browser__browser_navigate", "unknown names are kept");
+    assert.equal(parts[2].state.status, "error");
+    assert.equal(parts[2].state.error, "net::ERR");
+    for (const p of parts) assert.equal(p.messageID, doc.messages[1].info.id);
+  } finally {
+    process.env.PATH = savedPath;
+  }
 });

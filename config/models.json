@@ -202,9 +202,15 @@
         "right landing spot for someone with no Claude/Codex subscription. K3 stays",
         "one click away as the premium pick. glm-5p3-flash is the budget tier at a",
         "tenth of GLM 5.3's input price.",
-        "K3 reasons on every request and its completion budget must cover the",
-        "reasoning trace as well as the answer, hence a larger limit.output than the",
-        "others — half Moonshot's 131072 default, which caps a runaway turn near $1.",
+        "Every model runs at its maximum (verified 2026-10-18): options.reasoningEffort",
+        "goes upstream as reasoning_effort, and limit.output is the 131072-token ceiling",
+        "each accepts, which the reasoning trace counts against. GLM 5.3's default",
+        "already reasons like max, but Kimi K3's default thinks briefly and got a test",
+        "problem wrong 2 of 4 times where max got 4 of 4. OpenCode clamps every reply to",
+        "32000 tokens unless OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX is raised, so the",
+        "cockpit sets it from these limits (opencodeOutputTokenMax in model-catalog.mjs).",
+        "DeepSeek V4 Pro was dropped the same day: Fireworks stopped serving it",
+        "serverless (NOT_FOUND) and neither successor is serverless.",
         "",
         "The list is a short menu of models worth picking, not an archive: GLM 5.2",
         "was dropped the day 5.3 shipped here (as 5.1 was for 5.2, and K2.6 for K3),",
@@ -219,7 +225,10 @@
           "upstream": "accounts/fireworks/models/glm-5p3",
           "limit": {
             "context": 1048576,
-            "output": 32768
+            "output": 131072
+          },
+          "options": {
+            "reasoningEffort": "max"
           },
           "cost": {
             "input": 1.4,
@@ -232,24 +241,14 @@
           "upstream": "accounts/fireworks/models/kimi-k3",
           "limit": {
             "context": 1048576,
-            "output": 65536
+            "output": 131072
+          },
+          "options": {
+            "reasoningEffort": "max"
           },
           "cost": {
             "input": 3.0,
             "output": 15.0
-          }
-        },
-        {
-          "id": "deepseek-v4-pro",
-          "name": "DeepSeek V4 Pro",
-          "upstream": "accounts/fireworks/models/deepseek-v4-pro",
-          "limit": {
-            "context": 1048576,
-            "output": 32768
-          },
-          "cost": {
-            "input": 1.74,
-            "output": 3.48
           }
         },
         {
@@ -258,7 +257,10 @@
           "upstream": "accounts/fireworks/models/glm-5p3-flash",
           "limit": {
             "context": 1048576,
-            "output": 32768
+            "output": 131072
+          },
+          "options": {
+            "reasoningEffort": "max"
           },
           "cost": {
             "input": 0.15,

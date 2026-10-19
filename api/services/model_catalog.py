@@ -63,8 +63,9 @@ def fireworks_allowlist() -> set[str]:
 def opencode_provider_models() -> dict:
     """The ``provider.fireworks.models`` block for OpenCode's config, keyed by short id.
 
-    Shape matches what ``@ai-sdk/openai-compatible`` expects: ``{id, name, limit, cost?}``.
-    ``cost`` is optional (omitted where we have no verified pricing).
+    Shape matches what ``@ai-sdk/openai-compatible`` expects: ``{id, name, limit, cost?, options?}``.
+    ``cost`` is optional (omitted where we have no verified pricing). ``options`` are
+    request options OpenCode sends upstream (``reasoningEffort`` -> ``reasoning_effort``).
     """
     models: dict = {}
     for m in opencode_agent().get("models", []):
@@ -73,5 +74,7 @@ def opencode_provider_models() -> dict:
             entry["limit"] = m["limit"]
         if m.get("cost"):
             entry["cost"] = m["cost"]
+        if m.get("options"):
+            entry["options"] = m["options"]
         models[m["id"]] = entry
     return models

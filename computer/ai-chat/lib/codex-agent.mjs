@@ -130,7 +130,6 @@ export class CodexAgent extends CodingAgent {
     this._recoveryUsed = false;     // one auto-recovery per user message
     this._dying = null;             // interrupted/stopped process still winding down
     this._pendingSpawn = null;      // prompt queued until _dying exits (SHE-102)
-    this._queued = [];              // messages sent mid-turn, run after it exits (SHE-107)
     this._writerRetryPending = false; // delayed retry armed after a writer conflict
     this._writerRetryUsed = false;  // one writer-conflict retry per user message
 
@@ -143,8 +142,6 @@ export class CodexAgent extends CodingAgent {
   }
 
   get streamingText() { return this._streamingText; }
-  // Messages waiting behind a turn keep the slot "working" for the UI.
-  get isGenerating() { return this._isGenerating || this._queued.length > 0; }
   get isBroken() { return false; }
   get isDead() { return false; }
 
@@ -164,18 +161,9 @@ export class CodexAgent extends CodingAgent {
   _send(prompt) {
     const text = typeof prompt === "string" ? prompt : prompt.text;
 
-    // Codex has no stdin to hand a follow-up to: `codex exec` is one turn per
-    // process, and a second resume spawned mid-turn dies on the thread's writer
-    // lock ("already has an active writer", SHE-107) while the first process
-    // runs on orphaned. Hold the message until the running turn's process has
-    // exited, then run it as its own turn — the same "queued until the agent is
-    // free" a mid-turn message gets with Claude Code. A live process is busy
-    // even after turn.completed: it holds the lock until it exits.
-    if (this._isGenerating || this._process) {
-      this._queued.push(prompt);
-      console.log(`[codex-agent] turn in progress — message queued (${this._queued.length} waiting)`);
-      return;
-    }
+    // A live process holds the thread's writer lock even after turn.completed
+    // (SHE-107): see _queueIfBusy in coding-agent.mjs.
+    if (this._queueIfBusy(prompt)) return;
 
     if (text.trim() === "/compact") {
       this._compactTurn = true;
@@ -193,15 +181,11 @@ export class CodexAgent extends CodingAgent {
     this._spawnExec(prompt);
   }
 
-  // Runs the oldest queued message once nothing holds the thread: no live or
-  // winding-down process, no turn underway (a writer retry or overflow
-  // recovery keeps the turn "generating" until it is settled).
+  // A winding-down process still holds the writer lock: its close runs the
+  // _pendingSpawn first (SHE-102), then drains the queue.
   _drainQueue() {
-    if (!this._queued.length || !this._isActive) return;
-    if (this._isGenerating || this._process || this._dying) return;
-    const next = this._queued.shift();
-    console.log(`[codex-agent] turn settled — running the queued message (${this._queued.length} still waiting)`);
-    this._send(next);
+    if (this._dying) return;
+    super._drainQueue();
   }
 
   interrupt() {

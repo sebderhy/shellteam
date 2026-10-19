@@ -180,25 +180,33 @@ async function exportToOpenCode(csf, { model = opencodeDefaultModel() } = {}) {
   const sesId = opencodeId("ses", seq++);
   const now = Date.now();
 
+  // Tool calls become real OpenCode tool parts, each carrying its result. They
+  // used to be flattened into assistant text ("[called Write({...})]") and the
+  // model copied that format: GLM 5.3 "called" TodoWrite and Write by typing
+  // them out, and no file was written (SHE-118).
+  const results = new Map();
+  for (const ev of events) if (ev.type === "tool_result") results.set(ev.callId, ev);
+
   const messages = [];
   let parentId = null; // OpenCode requires each message to chain to the prior one
-  const add = (role, text) => {
-    const msg = ocMessage(role, sesId, seq++, model, [{ text }], parentId);
+  const add = (role, parts) => {
+    const msg = ocMessage(role, sesId, seq++, model, parts, parentId);
     parentId = msg.info.id;
     messages.push(msg);
   };
   for (const ev of events) {
-    if (ev.type === "tool_result" || ev.type === "compaction") {
-      // Fold tool results / compaction into a plain user text message — the
-      // export→import path is lossy on tool state; text carries the claim.
-      add("user", ev.type === "compaction"
-        ? `[Conversation compacted earlier; summary:] ${ev.summary || ""}`
-        : `[tool result] ${ev.output}`);
+    if (ev.type === "tool_result") continue; // attached to its call below
+    if (ev.type === "compaction") {
+      add("user", [{ type: "text", text: `[Conversation compacted earlier; summary:] ${ev.summary || ""}` }]);
     } else if (ev.role === "user") {
-      add("user", userText(ev));
+      add("user", [{ type: "text", text: userText(ev) }]);
     } else {
-      const text = geminiAssistantText(ev); // same text-flattening rules
-      if (text) add("assistant", text);
+      const parts = [];
+      for (const p of ev.parts || []) {
+        if (p.type === "text" && p.text) parts.push({ type: "text", text: p.text });
+        else if (p.type === "tool_call") parts.push(opencodeToolPart(p, results.get(p.id)));
+      }
+      if (parts.length) add("assistant", parts);
     }
   }
 
@@ -234,8 +242,27 @@ function ocMessage(role, sesId, seq, model, parts, parentId = null) {
   if (parentId) info.parentID = parentId;
   return {
     info,
-    parts: parts.map((p) => ({ id: opencodeId("prt", seq), sessionID: sesId, messageID: msgId, type: "text", text: p.text })),
+    parts: parts.map((p) => ({ id: opencodeId("prt", seq), sessionID: sesId, messageID: msgId, ...p })),
   };
+}
+
+// The other agents' names for OpenCode's built-in tools (the inverse of
+// opencode-agent.mjs TOOL_NAME_MAP), so the history shows the tools this model
+// actually has. Any other name (MCP tools, agent-specific ones) is kept.
+const OPENCODE_TOOL_NAMES = {
+  Bash: "bash", Edit: "edit", Read: "read", Write: "write", Grep: "grep", Glob: "glob",
+  WebFetch: "webfetch", WebSearch: "websearch", Task: "task", TodoWrite: "todowrite", Skill: "skill",
+};
+
+function opencodeToolPart(call, result) {
+  const now = Date.now();
+  const input = call.input || {};
+  const output = result?.output ?? "";
+  const tool = OPENCODE_TOOL_NAMES[call.name] || call.name;
+  const state = result?.isError
+    ? { status: "error", input, error: output, time: { start: now, end: now } }
+    : { status: "completed", input, output, title: tool, metadata: {}, time: { start: now, end: now } };
+  return { type: "tool", tool, callID: call.id, state };
 }
 
 // --- shared text helpers ---
@@ -244,12 +271,3 @@ function userText(ev) {
   return (ev.parts || []).map((p) => p.text || "").join("\n");
 }
 
-/** Assistant text with tool calls flattened to a readable note (Gemini/OpenCode). */
-function geminiAssistantText(ev) {
-  const bits = [];
-  for (const p of ev.parts || []) {
-    if (p.type === "text" && p.text) bits.push(p.text);
-    else if (p.type === "tool_call") bits.push(`[called ${p.name}(${JSON.stringify(p.input || {})})]`);
-  }
-  return bits.join("\n");
-}

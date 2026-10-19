@@ -1,5 +1,35 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+
+// Process group of `pid` (field 5 of /proc/<pid>/stat), or null once it exited.
+function processGroupOf(pid) {
+  let stat;
+  try { stat = readFileSync(`/proc/${pid}/stat`, "utf8"); } catch { return null; }
+  return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[2]);
+}
+
+// Process groups of every live descendant of `pid`. Tools a CLI starts in
+// their own session (OpenCode's bash tool calls setsid) leave the CLI's group,
+// so signalling that group alone orphans them (SHE-119).
+function descendantGroups(pid) {
+  const groups = new Set();
+  const stack = [pid];
+  while (stack.length) {
+    const parent = stack.pop();
+    let tasks;
+    try { tasks = readdirSync(`/proc/${parent}/task`); } catch { continue; }  // exited
+    for (const task of tasks) {
+      let children;
+      try { children = readFileSync(`/proc/${parent}/task/${task}/children`, "utf8"); } catch { continue; }
+      for (const child of children.split(" ").filter(Boolean).map(Number)) {
+        stack.push(child);
+        const group = processGroupOf(child);
+        if (group) groups.add(group);
+      }
+    }
+  }
+  return groups;
+}
 
 /**
  * Abstract base class for coding agents.
@@ -39,6 +69,7 @@ export class CodingAgent extends EventEmitter {
     this._isActive = false;
     this._killTimer = null;     // pending graceful-signal → SIGKILL escalation
     this._interrupted = false;  // Stop pressed: subclasses drop further output
+    this._queued = [];          // messages sent mid-turn, run once it settles
   }
 
   /** Start the agent process/query. */
@@ -61,9 +92,40 @@ export class CodingAgent extends EventEmitter {
     throw new Error("stop() must be implemented by subclass");
   }
 
-  get isGenerating() { return this._isGenerating; }
+  // Messages waiting behind a turn keep the slot "working" for the UI.
+  get isGenerating() { return this._isGenerating || this._queued.length > 0; }
   get sessionId() { return this._sessionId; }
   get isActive() { return this._isActive; }
+
+  // --- Mid-turn messages for one-process-per-turn CLIs (Codex, OpenCode,
+  // Antigravity) ---
+  //
+  // These CLIs have no stdin to hand a follow-up to: each turn is its own
+  // process resuming the session. A second process spawned mid-turn runs
+  // concurrently on the same session — Codex dies on the thread's writer lock
+  // (SHE-107); OpenCode and Antigravity let both processes answer into one
+  // conversation, and Stop only reaches the newer one (SHE-118). So a message
+  // sent while a turn runs waits until that turn's process has exited, then
+  // runs as its own turn: the "queued until the agent is free" a mid-turn
+  // message gets with Claude Code. Subclasses implement _send(prompt), call
+  // _queueIfBusy() at its top, and _drainQueue() once a process has closed.
+
+  /** True while a turn or its process still owns the session. */
+  _isBusy() { return this._isGenerating || !!this._process; }
+
+  _queueIfBusy(prompt) {
+    if (!this._isBusy()) return false;
+    this._queued.push(prompt);
+    console.log(`[${this.constructor.name}] turn in progress — message queued (${this._queued.length} waiting)`);
+    return true;
+  }
+
+  _drainQueue() {
+    if (!this._queued.length || !this._isActive || this._isBusy()) return;
+    const next = this._queued.shift();
+    console.log(`[${this.constructor.name}] turn settled — running the queued message (${this._queued.length} still waiting)`);
+    this._send(next);
+  }
 
   /**
    * Normalize a child-process exit for classification. CLIs that trap
@@ -125,11 +187,23 @@ export class CodingAgent extends EventEmitter {
       console.error(`[agent] refusing to signal process group ${proc.pid} — not a spawned child`);
       return;
     }
+    // Collect the escaped groups first: once the CLI dies its tools are
+    // reparented and can no longer be found from its pid.
+    const ownGroup = processGroupOf(process.pid);
+    const escaped = [...descendantGroups(proc.pid)]
+      .filter((g) => g > 1 && g !== proc.pid && g !== ownGroup);
     try {
       process.kill(-proc.pid, signal);   // negative pid = process group
     } catch (err) {
-      if (err?.code === "ESRCH") return;  // already gone
-      try { proc.kill(signal); } catch { /* already dead */ }
+      if (err?.code !== "ESRCH") {
+        try { proc.kill(signal); } catch { /* already dead */ }
+      }
+    }
+    for (const group of escaped) {
+      console.log(`[agent] ${signal} to tool process group ${group} (left the CLI's group)`);
+      try { process.kill(-group, signal); } catch (err) {
+        if (err?.code !== "ESRCH") console.warn(`[agent] could not signal group ${group}: ${err.message}`);
+      }
     }
   }
 

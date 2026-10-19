@@ -53,7 +53,7 @@ const SAME_FAMILY_ALT = {
   claude: "claude-sonnet-5-5",
   codex: "gpt-5.6-terra",
   antigravity: "gemini-3.1-pro",
-  opencode: "deepseek-v4-pro",
+  opencode: "kimi-k3",
 };
 // Gemini was retired in favour of Google's Antigravity CLI (`agy`) on 2026-07-03;
 // the `antigravity` family carries the Gemini models now. Like Codex/OpenCode its

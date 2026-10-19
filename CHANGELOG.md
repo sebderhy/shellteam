@@ -5,6 +5,39 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.39] - 2026-10-19
+
+### Changed
+- **OpenCode models run at their maximum settings.** Every reply can now use
+  up to 131K tokens instead of OpenCode's hidden 32K cap, which a model
+  thinking hard could use up before doing anything. Every model is also asked
+  for max reasoning: Kimi K3's default thought only briefly and got a test
+  problem wrong half the time.
+- **DeepSeek V4 Pro is gone from the OpenCode menu.** Fireworks no longer
+  serves it, so picking it failed. Tabs that used it switch to GLM 5.3.
+
+### Fixed
+- **A message sent while OpenCode or Antigravity is working waits its turn.**
+  It used to start a second agent process on the same conversation: both
+  answered into it, and Stop only reached the newer one. It now runs once the
+  current turn ends, as Codex already did.
+- **OpenCode no longer goes silent when a model thinks to its limit.** GLM 5.3
+  could spend its whole 32K-token output budget planning, then stop without
+  writing anything, and the chat showed nothing. You now see what happened, and
+  the agent is asked once to act on its plan step by step.
+- **Switching a conversation to OpenCode keeps tool calls as tool calls.** The
+  handoff wrote earlier tool calls into the history as text like
+  `[called Write({...})]`, and the model copied that format: it "called" tools
+  by typing them out, and nothing actually ran.
+- **A long command run by OpenCode shows while it runs.** OpenCode reports a
+  tool call only once it finishes, so a 20-minute benchmark left the chat blank,
+  and after 15 minutes the cockpit took the silence for a frozen agent, killed
+  the turn and resent your message. Running commands now appear right away and
+  count as activity.
+- **Stop ends every command the agent started.** OpenCode runs commands in their
+  own process session, so Stop (and the frozen-agent restart) left them running
+  in the background.
+
 ## [0.1.38] - 2026-10-08
 
 ### Changed

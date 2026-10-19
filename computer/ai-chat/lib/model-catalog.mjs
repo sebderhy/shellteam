@@ -174,6 +174,18 @@ export function opencodeAgent() {
   return agents().find((a) => a.id === "opencode") || null;
 }
 
+/**
+ * OpenCode clamps every reply to 32000 tokens unless OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX
+ * says otherwise, which overrides the catalog's `limit.output` (a reasoning model then runs
+ * out of room mid-thought). The largest catalog limit lifts the clamp; each model's own
+ * `limit.output` still applies below it. Null when the catalog has no output limits.
+ */
+export function opencodeOutputTokenMax() {
+  const limits = (opencodeAgent()?.models || []).map((m) => m.limit?.output || 0);
+  const max = Math.max(0, ...limits);
+  return max || null;
+}
+
 /** Short id of OpenCode's default model (e.g. "glm-5p3"). */
 export function opencodeDefaultModel() {
   const a = opencodeAgent();

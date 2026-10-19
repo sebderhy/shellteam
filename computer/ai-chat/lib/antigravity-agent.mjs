@@ -55,10 +55,16 @@ export class AntigravityAgent extends CodingAgent {
   }
 
   sendMessage(content) {
-    this._spawnTurn(normalizeContent(content));
+    this._send(normalizeContent(content));
+  }
+
+  _send(prompt) {
+    if (this._queueIfBusy(prompt)) return;
+    this._spawnTurn(prompt);
   }
 
   interrupt() {
+    this._queued = [];  // a queued follow-up would resurrect the cancelled turn
     if (this._process) {
       console.log("[antigravity] interrupt — SIGTERM");
       this._process.kill("SIGTERM");
@@ -74,6 +80,7 @@ export class AntigravityAgent extends CodingAgent {
   stop() {
     console.log(`[antigravity] stop() — pid=${this._process?.pid || "none"}`);
     this._clearTimeout();
+    this._queued = [];
     if (this._process) { this._process.kill("SIGTERM"); this._process = null; }
     this._isActive = false;
     this._isGenerating = false;
@@ -132,7 +139,10 @@ export class AntigravityAgent extends CodingAgent {
       this._finishError(this._processErrorMessage("Antigravity", err, null));
     });
 
-    this._process.on("close", (code, signal) => this._onClose(code, signal));
+    this._process.on("close", (code, signal) => {
+      this._onClose(code, signal);
+      this._drainQueue();
+    });
 
     this._timeout = setTimeout(() => {
       console.error(`[antigravity] turn timeout after ${TURN_TIMEOUT_MS / 1000}s — killing`);

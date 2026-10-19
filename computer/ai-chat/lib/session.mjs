@@ -27,7 +27,7 @@ import {
   CLAUDE_CONFIG_FILE,
 } from "./constants.mjs";
 import { agentIdFor } from "./agents/registry.mjs";
-import { agentIdForModel, includedModelsByFamily, resolveModelId } from "./model-catalog.mjs";
+import { agentIdForModel, includedModelsByFamily, opencodeOutputTokenMax, resolveModelId } from "./model-catalog.mjs";
 import { opencodeConfigPath } from "./agent-layer.mjs";
 // clearAllHistory removed — history is now managed by SessionManager
 
@@ -602,8 +602,12 @@ export function getCliEnv(cwd = HOME) {
   // replaces it. No-op if the layer hasn't been built yet. cwd-aware so the
   // dreaming module can add the folder's knowledge to `instructions`.
   const ocConfig = opencodeConfigPath(cwd);
+  // The output clamp rides with that config: it only lifts OpenCode's 32000-token
+  // default to the limits the catalog's own models declare.
   if (ocConfig) {
     env.OPENCODE_CONFIG = ocConfig;
+    const outputMax = opencodeOutputTokenMax();
+    if (outputMax) env.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX = String(outputMax);
   }
   return env;
 }
