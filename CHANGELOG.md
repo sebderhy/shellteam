@@ -5,6 +5,23 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.40] - 2026-10-20
+
+### Security
+- **certifi 2026.10.19.** Picks up the advisory published against 2026.6.17
+  (GHSA-6q48-6c7w-9gw2).
+
+### Fixed
+- **You can tell which tab you're on while several are working.** A working
+  tab's amber highlight hid the active-tab style, so two working tabs looked
+  identical. The one you're viewing now has a solid amber ring and a stronger
+  fill.
+- **A running OpenCode command stays visible when its database is busy.** The
+  live view of running commands reads OpenCode's database, and a read that
+  landed during one of OpenCode's own writes stopped it for the rest of the
+  turn, so a long command went invisible again. It now just tries again on
+  the next check.
+
 ## [0.1.39] - 2026-10-19
 
 ### Changed

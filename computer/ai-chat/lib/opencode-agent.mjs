@@ -18,6 +18,8 @@ const WATCHDOG_IDLE_MS = 15 * 60 * 1000;  // 15 min
 // killed the turn mid-benchmark (SHE-119). OpenCode records the call as
 // "running" in its database the moment it starts; the cockpit polls that.
 const TOOL_POLL_MS = 3000;
+// SQLITE_BUSY and SQLITE_LOCKED: another connection holds the lock right now.
+const SQLITE_LOCK_CODES = new Set([5, 6]);
 const RUNNING_TOOLS_SQL = `SELECT id, data FROM part
   WHERE session_id = ? AND time_created >= ?
     AND json_extract(data, '$.type') = 'tool'
@@ -83,6 +85,7 @@ export class OpenCodeAgent extends CodingAgent {
     this._toolPollMs = TOOL_POLL_MS;
     this._watchdogIdleMs = WATCHDOG_IDLE_MS;
     this._shownTools = new Set();  // part ids already sent as tool_start
+    this._dbLockLogged = false;    // the busy-database warning, once per turn
   }
 
   get streamingText() { return this._streamingText; }
@@ -177,6 +180,7 @@ export class OpenCodeAgent extends CodingAgent {
     this._msgCount = 0;
     this._recentMsgs = [];
     this._shownTools.clear();
+    this._dbLockLogged = false;
     this._startToolPoll();
 
     let buffer = "";
@@ -303,12 +307,24 @@ export class OpenCodeAgent extends CodingAgent {
       this._stopToolPoll();
       return;
     }
-    const db = new DatabaseSync(dbPath, { readOnly: true });
     let rows;
     try {
-      rows = db.prepare(RUNNING_TOOLS_SQL).all(this._sessionIdCaptured, this._startTime);
-    } finally {
-      db.close();
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        rows = db.prepare(RUNNING_TOOLS_SQL).all(this._sessionIdCaptured, this._startTime);
+      } finally {
+        db.close();
+      }
+    } catch (err) {
+      // OpenCode writes to this database all the time, so a read can hit its
+      // lock. That is momentary: skip this tick. Stopping here hid the running
+      // tool for the rest of the turn and let the watchdog kill it (SHE-119).
+      if (!SQLITE_LOCK_CODES.has(err.errcode)) throw err;
+      if (!this._dbLockLogged) {
+        console.warn(`[opencode-agent] OpenCode's database is busy (${err.message}), retrying on the next poll`);
+        this._dbLockLogged = true;
+      }
+      return;
     }
     if (rows.length === 0) return;
     this._resetWatchdog();

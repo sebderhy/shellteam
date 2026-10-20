@@ -53,3 +53,13 @@ test("SHE-89/91: a working tab is a tinted pill so the dot binds to its own tab"
     `working tab must be tinted, got: ${rule[1].trim()}`,
   );
 });
+
+test("the tab you're viewing stands out among working tabs", () => {
+  // The working tint overrode .active, so with two tabs working both looked
+  // identical and you could not tell which one you were on.
+  const rule = STYLES.match(/\.session-tab\.generating\.active,[^{]*\{([\s\S]*?)\}/);
+  assert.ok(rule, ".session-tab.generating.active rule exists");
+  assert.ok(/background:\s*var\(--accent-active-bg\)/.test(rule[1]), `stronger fill, got: ${rule[1].trim()}`);
+  assert.ok(/box-shadow:[^;]*var\(--accent\)\s*;/.test(rule[1]), `solid accent ring, got: ${rule[1].trim()}`);
+  assert.ok(STYLES.indexOf(rule[0]) > STYLES.indexOf(".session-tab.generating:hover"), "declared after the working rules so it wins");
+});

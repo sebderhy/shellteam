@@ -14,6 +14,7 @@
     --accent-hover: #fbbf24;
     --accent-bg: rgba(245, 158, 11, 0.08);
     --accent-border: rgba(245, 158, 11, 0.15);
+    --accent-active-bg: rgba(245, 158, 11, 0.24);
     --border: rgba(255, 255, 255, 0.1);
     --green: #22c55e;
     --red: #ef4444;
@@ -109,6 +110,14 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
     color: var(--text);
 }
 .session-tab.generating:hover { background: var(--accent-border); }
+/* The working tint above hides .active, so with several tabs working you could
+   not tell which one you were on. The tab you're viewing keeps the pill but
+   gets a solid ring and a stronger fill. */
+.session-tab.generating.active,
+.session-tab.generating.active:hover {
+    background: var(--accent-active-bg);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+}
 .session-tab.generating::before {
     content: ''; width: 6px; height: 6px; border-radius: 50%;
     background: var(--accent); flex-shrink: 0; margin-left: 8px;

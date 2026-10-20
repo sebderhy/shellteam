@@ -38,6 +38,11 @@ db.exec("CREATE TABLE IF NOT EXISTS part (id TEXT PRIMARY KEY, message_id TEXT, 
 const tool = { type: "tool", tool: "bash", callID: "call_1",
   state: { status: "running", input: { command: "python3 bench.py" } } };
 out({ type: "step_start", part: { type: "step-start" } });
+// FAKE_LOCK_MS: hold the write lock that long, as OpenCode's own writes do.
+if (process.env.FAKE_LOCK_MS) {
+  db.exec("BEGIN EXCLUSIVE");
+  setTimeout(() => db.exec("COMMIT"), Number(process.env.FAKE_LOCK_MS));
+}
 db.prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)").run("prt_bash1", "msg_1", "ses_fake", Date.now(), Date.now(), JSON.stringify(tool));
 const child = spawn("setsid", ["sleep", "60"], { stdio: "ignore" });
 fs.writeFileSync(process.env.FAKE_TOOL_PID, String(child.pid));
@@ -53,14 +58,15 @@ setTimeout(() => {
   chmodSync(bin, 0o755);
 }
 
-function setup(toolMs) {
+function setup(toolMs, lockMs = 0) {
   const dir = mkdtempSync(join(tmpdir(), "she119-"));
   fakeOpencode(dir);
   const pidFile = join(dir, "tool.pid");
   const agent = new OpenCodeAgent({
     model: "glm-5p3", cwd: dir,
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, XDG_DATA_HOME: join(dir, "data"),
-      FAKE_TOOL_PID: pidFile, FAKE_TOOL_MS: String(toolMs) },
+      FAKE_TOOL_PID: pidFile, FAKE_TOOL_MS: String(toolMs),
+      ...(lockMs ? { FAKE_LOCK_MS: String(lockMs) } : {}) },
   });
   agent._toolPollMs = 100;
   agent.start();
@@ -80,7 +86,7 @@ const waitFor = async (cond, ms = 5000) => {
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 test("a running tool call is shown while it runs, and its completion is not shown twice", async () => {
-  const { agent, events, cleanup } = setup(1200);
+  const { agent, events, cleanup } = setup(3000);
   try {
     agent.sendMessage("run the benchmark");
     await waitFor(() => events.some((e) => e.t === "tool_start"));
@@ -93,12 +99,29 @@ test("a running tool call is shown while it runs, and its completion is not show
   } finally { cleanup(); }
 });
 
-test("a long silent tool call does not trip the idle watchdog", async () => {
-  const { agent, events, cleanup } = setup(1500);
-  agent._watchdogIdleMs = 500;  // three times shorter than the tool's silence
+test("a busy OpenCode database delays the running card, it does not hide it", async () => {
+  // OpenCode writes to its database constantly; a poll that hit its lock used
+  // to stop polling for the whole turn, so the tool stayed invisible again.
+  const { agent, events, cleanup } = setup(3000, 800);
   try {
     agent.sendMessage("run the benchmark");
-    await waitFor(() => events.some((e) => e.t === "turn_done"));
+    await waitFor(() => events.some((e) => e.t === "tool_start" || e.t === "tool_result"), 10000);
+    assert.equal(events.some((e) => e.t === "tool_result"), false, "shown before it finished, once the lock was released");
+    await waitFor(() => events.some((e) => e.t === "turn_done"), 10000);
+  } finally { cleanup(); }
+});
+
+test("a long silent tool call does not trip the idle watchdog", async () => {
+  const { agent, events, cleanup } = setup(3000);
+  try {
+    agent.sendMessage("run the benchmark");
+    // Shorten the watchdog only once the tool is running: armed earlier, a slow
+    // start of the fake CLI under a loaded machine tripped it before the tool
+    // existed (a real silence, so the right call, but not this test's subject).
+    await waitFor(() => events.some((e) => e.t === "tool_start"));
+    agent._watchdogIdleMs = 1000;  // a third of the tool's silence
+    agent._resetWatchdog();
+    await waitFor(() => events.some((e) => e.t === "turn_done"), 10000);
     const done = events.find((e) => e.t === "turn_done");
     assert.notEqual(done.subtype, "watchdog_timeout");
     assert.equal(events.find((e) => e.t === "tool_result").content, "bench done");
