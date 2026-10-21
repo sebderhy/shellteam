@@ -540,7 +540,7 @@ const ReportPanel = {
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({
                 source: 'shellteam-cockpit', kind: 'report-open',
-                url: abs, title: title || decodeURIComponent(abs.split('/').pop() || new URL(abs).hostname),
+                url: abs, title: title || this.describe(abs).name,
             }, '*');
         } else {
             window.open(abs, '_blank', 'noopener');
@@ -564,7 +564,68 @@ const ReportPanel = {
         }
         if (autoOpen) this.show(links[links.length - 1].href);
     },
+
+    // A report's file name and where it lives (its folder, or an app's host).
+    describe(url) {
+        const u = new URL(url);
+        const segs = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+        const name = segs.pop() || u.hostname;
+        return { name, where: segs.length ? segs.join('/') : u.host };
+    },
+
+    // Every report and app linked in a rendered conversation, each once, oldest
+    // first; a report linked again counts at its latest mention.
+    listIn(container) {
+        const seen = new Map();
+        for (const a of container.querySelectorAll('a[href]')) {
+            if (!this.isBoxReport(a.href)) continue;
+            const url = new URL(a.href, location.href).href;
+            seen.delete(url);
+            seen.set(url, { url, ...this.describe(url) });
+        }
+        return [...seen.values()];
+    },
 };
+
+// --- Reports in this conversation ---
+// The side panel is closed most of the time, so the way back to a report the
+// agent linked earlier lives in the header: a count button (Alt+R) listing this
+// tab's reports, newest first. Derived from the rendered messages, so it follows
+// tab switches and history replay, and works for every agent.
+function renderReportsMenu() {
+    const menu = document.getElementById('reportsMenu');
+    const reports = ReportPanel.listIn(E.messages).reverse();
+    menu.innerHTML = '<div class="info-title">Reports in this conversation</div>' + reports.map(r => `
+        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-url="${escHtml(r.url)}" title="${escHtml(r.url)}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span class="reports-item"><span class="reports-item-name">${escHtml(r.name)}</span><span class="reports-item-where">${escHtml(r.where)}</span></span>
+        </button>`).join('');
+}
+
+function refreshReportsButton() {
+    const n = ReportPanel.listIn(E.messages).length;
+    document.getElementById('reportsGroup').hidden = n === 0;
+    document.getElementById('reportsCount').textContent = String(n);
+    document.getElementById('aiMenuReportsItem').hidden = n === 0;
+    document.getElementById('aiMenuReportsCount').textContent = String(n);
+    if (n === 0 && Menus.isOpen('reportsMenu')) Menus.hide(false);
+}
+
+document.getElementById('reportsMenu')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-url]');
+    if (!row) return;
+    Menus.hide();
+    ReportPanel.show(row.dataset.url);
+});
+
+// Recount whenever the conversation's DOM changes (streamed replies, tab
+// switches, history replay, a cleared chat). Throttled: a streaming reply
+// mutates the DOM many times a second.
+let reportsRefreshTimer = null;
+if (E.messages) new MutationObserver(() => {
+    if (reportsRefreshTimer) return;
+    reportsRefreshTimer = setTimeout(() => { reportsRefreshTimer = null; refreshReportsButton(); }, 200);
+}).observe(E.messages, { childList: true, subtree: true });
 
 function setStatus(state, label) {
     E.statusDot.className = 'status-dot ' + state;
@@ -4181,6 +4242,7 @@ const SHORTCUTS = [
     { group: 'Conversations', rows: [
         ['Alt+1 … Alt+9', 'Jump to that conversation tab'],
         ['Alt+↑ / Alt+↓', 'Previous / next tab'],
+        ['Alt+R', 'Reports this conversation linked: pick one to open it in the side panel'],
         ['Double-click', 'On a tab: rename it (Enter saves, Esc cancels)'],
       ] },
     { group: 'Composing', rows: [
@@ -4248,6 +4310,11 @@ document.addEventListener('keydown', (e) => {
     if (digit) {
         const slot = sessionSlots[Number(digit[1]) - 1];
         if (slot) { e.preventDefault(); switchSessionTab(slot.id); }
+        return;
+    }
+    if (e.code === 'KeyR' && !document.getElementById('reportsGroup').hidden) {
+        e.preventDefault();
+        Menus.toggle('reportsMenu');
         return;
     }
     if (e.code === 'KeyA' && S.ttsAvailable === true) {

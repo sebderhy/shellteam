@@ -81,6 +81,14 @@
                             <span class="actions-value" id="aiMenuCwd"></span>
                             <svg class="actions-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                         </button>
+                        <!-- Phones only: the header has no room for the Reports
+                             button, so its list opens from here. -->
+                        <button class="actions-item ai-menu-reports" type="button" role="menuitem" tabindex="-1" id="aiMenuReportsItem" data-key="p" onclick="Menus.toggle('reportsMenu')" hidden>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+                            <span class="actions-label">Re<span class="actions-mn">p</span>orts</span>
+                            <span class="actions-value" id="aiMenuReportsCount"></span>
+                            <svg class="actions-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
                         <div class="actions-sep" role="separator"></div>
                         <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="n" onclick="newSession()">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -104,6 +112,17 @@
                             <span class="actions-label"><span class="actions-mn">C</span>ompact</span>
                         </button>
                     </div>
+                </div>
+
+                <!-- Every report and app this conversation linked, newest first.
+                     Hidden until the first one; rows rendered by
+                     renderReportsMenu() on open (Alt+R). -->
+                <div class="hdr-group" id="reportsGroup" hidden>
+                    <button class="btn-bar btn-reports" id="btnReports" type="button" onclick="Menus.toggle('reportsMenu')" title="Reports in this conversation (Alt+R)" aria-haspopup="menu" aria-controls="reportsMenu" aria-expanded="false">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+                        <span class="btn-reports-count" id="reportsCount">0</span>
+                    </button>
+                    <div class="actions-menu reports-menu" id="reportsMenu" role="menu" aria-label="Reports in this conversation" aria-hidden="true"></div>
                 </div>
 
                 <div class="hdr-group">

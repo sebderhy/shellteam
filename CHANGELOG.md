@@ -5,6 +5,21 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.41] - 2026-10-21
+
+### Added
+- **Every report from a conversation, one click away.** The side panel opens
+  on its own only when a reply links a report, so an earlier one meant
+  scrolling back to find its link. A tab that has linked reports or apps now
+  shows a count button in its header (Alt+R): it lists them newest first, and
+  picking one opens it in the panel. On phones the list lives in the AI menu.
+  Works with every agent.
+- **One-line install.** `curl -fsSL https://shellteam.sh/install | bash`
+  clones the repo into `~/shellteam` and runs `./install.sh` (flags go after
+  `bash -s --`), keeping the first-run questions interactive. The script's
+  download is how installs are counted; nothing else is sent. `git clone` +
+  `./install.sh` still works exactly as before.
+
 ## [0.1.40] - 2026-10-20
 
 ### Security

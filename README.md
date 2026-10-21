@@ -54,6 +54,15 @@ directly: install packages, manage services, run servers, edit anything.
 On a fresh Ubuntu/Debian VPS, as your normal (non-root) user:
 
 ```bash
+curl -fsSL https://shellteam.sh/install | bash
+```
+
+That clones this repo into `~/shellteam` and runs its `./install.sh`; pass flags
+with `| bash -s -- --full`. [Read the script first](https://shellteam.sh/install)
+if you like: it is short. Its download is the only way we count installs;
+nothing else is sent. Prefer to do it by hand:
+
+```bash
 git clone https://github.com/sebderhy/shellteam && cd shellteam
 ./install.sh            # pure core (the default; --minimal is an explicit alias)
 ```

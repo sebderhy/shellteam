@@ -484,6 +484,19 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 }
 .actions-item:hover .actions-mn { text-decoration-color: var(--accent-hover); }
 
+/* --- Reports in this conversation (header button + menu) --- */
+.btn-reports { gap: 5px; padding: 5px 9px; }
+.btn-reports > svg { color: var(--accent); }
+.btn-reports-count { font-variant-numeric: tabular-nums; }
+.reports-menu { min-width: 260px; max-width: 360px; max-height: 60vh; overflow-y: auto; padding-bottom: 4px; }
+.reports-menu .actions-item { border-radius: 0; }
+.reports-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reports-item-name, .reports-item-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reports-item-name { color: var(--text); }
+.reports-item-where { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+/* The AI menu's Reports row is the phone's way in (see the ≤480px block). */
+.ai-menu-reports { display: none; }
+
 /* --- Info panel --- */
 .info-panel { min-width: 280px; max-width: 340px; padding: 4px 0 8px; cursor: default; }
 .info-title {
@@ -1468,6 +1481,12 @@ kbd { font-family: var(--mono); }
         max-height: 70vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     }
     .actions-item { padding: 14px; min-height: 48px; }
+    /* No room in the header for the Reports button: the AI menu carries a
+       Reports row instead. The group stays (its menu is a fixed bottom sheet
+       here) but takes no space, not even a flex gap. */
+    #btnReports { display: none; }
+    #reportsGroup { position: absolute; }
+    .ai-menu-reports:not([hidden]) { display: flex; }
     .info-row { padding: 10px 16px; font-size: 14px; }
     /* Back to chat still visible on mobile terminal mode */
     .app.terminal-mode .btn-back-to-chat { display: inline-flex !important; }

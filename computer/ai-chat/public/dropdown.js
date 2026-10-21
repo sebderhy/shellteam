@@ -26,6 +26,7 @@ window.Menus = {
         if (id === 'infoPanel' && typeof renderInfoPanel === 'function') renderInfoPanel();
         if (id === 'quotaPanel' && typeof renderQuotaPanel === 'function') renderQuotaPanel();
         if (id === 'aiMenu' && typeof renderAIMenuValues === 'function') renderAIMenuValues();
+        if (id === 'reportsMenu' && typeof renderReportsMenu === 'function') renderReportsMenu();
         const menu = document.getElementById(id);
         menu?.classList.add('visible');
         menu?.setAttribute('aria-hidden', 'false');
