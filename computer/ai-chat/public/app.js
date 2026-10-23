@@ -2124,6 +2124,13 @@ function handleMessage(msg) {
             if (slot) { slot.isGenerating = false; slot.pendingSend = false; }
             setGenerating(false);
             setStatus('idle', 'Idle');
+            if (slot && isTurnAnswer(msg)) {
+                // Answered while you watch: read. Answered while the page is
+                // hidden: unread until you come back to it.
+                if (document.hidden) slot.liveUnread = true;
+                else S.ws?.send(JSON.stringify({ type: 'touch_slot', slot: activeSlotId }));
+            }
+            renderSessionTabs();
         }
         return;
     }
@@ -2448,6 +2455,7 @@ function handleStatusMessage(msg) {
                 local.sessionId = serverSlot.sessionId;
                 local.isGenerating = serverSlot.isGenerating;
                 local.totalCost = serverSlot.totalCost || 0;
+                syncReadState(local, serverSlot);
                 if (serverSlot.model) local.config.model = serverSlot.model;
                 if (serverSlot.cwd) local.config.cwd = serverSlot.cwd;
                 sessionSlots.push(local);
@@ -2467,6 +2475,7 @@ function handleStatusMessage(msg) {
                 // keeps a stale pendingSend from outliving the turn.
                 if (serverSlot.isGenerating) local.pendingSend = false;
                 local.totalCost = serverSlot.totalCost || local.totalCost;
+                syncReadState(local, serverSlot);
                 if (_connectCount <= 1 && serverSlot.label) local.label = serverSlot.label;
                 // Config (model/cwd): the ACTIVE slot only syncs on the first
                 // connection — mid-edit, a broadcast racing a local set_model
@@ -2599,6 +2608,7 @@ function accumulateForSlot(slotId, msg) {
     if (msg.type === 'turn_done') {
         slot.isGenerating = false;
         slot.pendingSend = false;
+        if (isTurnAnswer(msg)) slot.liveUnread = true;
         renderSessionTabs();
     } else if (msg.type === 'text_delta' || msg.type === 'init') {
         if (!slot.isGenerating || slot.pendingSend) {
@@ -3541,21 +3551,146 @@ function renderSessionTabs() {
         // pendingSend so the tab you just sent to lights up immediately, not only
         // once its first token lands (SHE-89).
         const generating = (slot.isGenerating || slot.pendingSend) ? ' generating' : '';
+        const unread = slotUnread(slot) ? ' unread' : '';
         const label = escHtml(slotDisplayLabel(slot));
         const close = showClose
             ? `<button class="session-tab-close" type="button" tabindex="-1" aria-hidden="true" onclick="closeSessionTab(${slot.id})" title="Close ${label}">&times;</button>`
             : '';
         const tip = escHtml(slotMetaSummary(slot)) + ' — double-click to rename';
         const selected = slot.id === activeSlotId;
-        const tabLabel = `${label}${showClose ? ', press Delete to close' : ''}`;
-        html += `<div class="session-tab${active}${generating}" data-slot="${slot.id}" draggable="true" title="${tip}" role="presentation">
+        const tabLabel = `${label}${unread ? ', unread' : ''}${showClose ? ', press Delete to close' : ''}`;
+        html += `<div class="session-tab${active}${generating}${unread}" data-slot="${slot.id}" draggable="true" title="${tip}" role="presentation">
             <button class="session-tab-open" type="button" role="tab" aria-selected="${selected}" aria-controls="messages" aria-label="${tabLabel}" tabindex="${selected ? 0 : -1}" onclick="switchSessionTab(${slot.id})" onkeydown="handleSessionTabKey(event, ${slot.id})"><span class="session-tab-label" ondblclick="event.stopPropagation(); beginRenameTab(${slot.id})">${label}</span></button>${close}
         </div>`;
     }
     container.innerHTML = html;
     setupTabDragReorder();
     renderSessionDrawer();
+    updateUnreadCount();
 }
+
+// --- Unread tabs --------------------------------------------------------------
+// A tab whose agent finished a turn you haven't looked at is unread, like a
+// Slack channel: bold title and a dot, a count in the browser tab's title, and
+// right-click (or Alt+U) to mark it unread again. The server keeps answeredAt /
+// viewedAt / markedUnread so every device agrees; liveUnread covers a turn that
+// just ended here, so the browser's clock is never compared with the server's.
+
+// A turn you stopped yourself, or a watchdog self-restart, is not an answer.
+function isTurnAnswer(msg) {
+    return !['interrupted', 'stopped', 'watchdog_timeout'].includes(msg.subtype);
+}
+
+function slotUnread(slot) {
+    if (slot.isGenerating || slot.pendingSend) return false;   // still working, nothing to read yet
+    if (slot.id === activeSlotId && !document.hidden && !slot.markedUnread) return false;
+    return !!(slot.markedUnread || slot.liveUnread || (slot.answeredAt || 0) > (slot.viewedAt || 0));
+}
+
+function syncReadState(local, serverSlot) {
+    local.answeredAt = serverSlot.answeredAt || 0;
+    local.viewedAt = serverSlot.viewedAt || 0;
+    local.markedUnread = !!serverSlot.markedUnread;
+    if (local.viewedAt >= local.answeredAt) local.liveUnread = false;  // read on another device
+}
+
+// Local mirror of the server's markSlotUsed.
+function markSlotRead(slot) {
+    slot.liveUnread = false;
+    slot.markedUnread = false;
+    slot.viewedAt = Math.max(slot.viewedAt || 0, slot.answeredAt || 0);
+}
+
+function setTabUnread(slotId, unread) {
+    const slot = sessionSlots.find(s => s.id === slotId);
+    if (!slot) return;
+    if (unread) slot.markedUnread = true;
+    else markSlotRead(slot);
+    S.ws?.send(JSON.stringify({ type: 'mark_unread', slot: slotId, unread }));
+    renderSessionTabs();
+}
+
+// Back on the page: the answer that landed on the active tab while it was
+// hidden is read now. A tab you marked unread stays unread until you leave it.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    const slot = sessionSlots.find(s => s.id === activeSlotId);
+    if (slot && !slot.markedUnread && (slot.liveUnread || (slot.answeredAt || 0) > (slot.viewedAt || 0))) {
+        markSlotRead(slot);
+        S.ws?.send(JSON.stringify({ type: 'touch_slot', slot: activeSlotId }));
+    }
+    renderSessionTabs();
+});
+
+// "(2) ShellTeam" in the browser tab. Inside the dashboard the title is the
+// parent page's, so it is asked to set it.
+let _unreadCount = -1;
+function updateUnreadCount() {
+    const n = sessionSlots.filter(slotUnread).length;
+    if (n === _unreadCount) return;
+    _unreadCount = n;
+    if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ source: 'shellteam-cockpit', kind: 'unread-count', count: n }, '*');
+    } else {
+        document.title = (n ? `(${n}) ` : '') + document.title.replace(/^\(\d+\) /, '');
+    }
+}
+
+// Right-click a tab (or long-press it on a phone): read state, rename, close.
+let _tabMenu = null;
+function closeTabMenu() {
+    _tabMenu?.remove();
+    _tabMenu = null;
+}
+function openTabMenu(slotId, x, y) {
+    closeTabMenu();
+    const slot = sessionSlots.find(s => s.id === slotId);
+    if (!slot) return;
+    const unread = slot.markedUnread || slotUnread(slot);
+    const items = [
+        [unread ? 'Mark as read' : 'Mark as unread', () => setTabUnread(slotId, !unread)],
+        ['Rename', () => beginRenameTab(slotId)],
+    ];
+    if (sessionSlots.length > 1) items.push(['Close', () => closeSessionTab(slotId)]);
+    const menu = document.createElement('div');
+    menu.className = 'actions-menu visible tab-context-menu';
+    menu.setAttribute('role', 'menu');
+    for (const [label, run] of items) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'actions-item';
+        item.setAttribute('role', 'menuitem');
+        item.textContent = label;
+        item.onclick = () => { closeTabMenu(); run(); };
+        menu.appendChild(item);
+    }
+    document.body.appendChild(menu);
+    const box = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(x, innerWidth - box.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y, innerHeight - box.height - 8))}px`;
+    _tabMenu = menu;
+    menu.querySelector('button').focus();
+}
+document.addEventListener('contextmenu', (e) => {
+    const tab = e.target.closest?.('.session-tab, .drawer-item');
+    if (!tab) return;
+    e.preventDefault();
+    openTabMenu(Number(tab.dataset.slot), e.clientX, e.clientY);
+});
+document.addEventListener('pointerdown', (e) => {
+    if (_tabMenu && !_tabMenu.contains(e.target)) closeTabMenu();
+}, true);
+// Capture phase: Esc here must only close the menu, never also stop a running turn.
+document.addEventListener('keydown', (e) => {
+    if (!_tabMenu) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTabMenu(); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const items = [..._tabMenu.querySelectorAll('button')];
+        const at = items.indexOf(document.activeElement);
+        items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    }
+}, true);
 
 function focusSessionTab(slotId) {
     requestAnimationFrame(() => document.querySelector(
@@ -3675,7 +3810,17 @@ function slotMetaSummary(slot) {
 function renderSessionDrawer() {
     const active = sessionSlots.find(s => s.id === activeSlotId);
     const sw = document.getElementById('convSwitcherLabel');
-    if (sw) sw.textContent = active ? slotDisplayLabel(active) : 'Chat';
+    if (sw) {
+        sw.textContent = active ? slotDisplayLabel(active) : 'Chat';
+        // Phones show one tab at a time: flag that ANOTHER one has an answer waiting.
+        const waiting = sessionSlots.filter(s => s.id !== activeSlotId && slotUnread(s)).length;
+        const badge = document.getElementById('convSwitcherBadge');
+        if (badge) {
+            badge.hidden = waiting === 0;
+            badge.textContent = waiting;
+            badge.title = `${waiting} other conversation${waiting === 1 ? '' : 's'} with an unread answer`;
+        }
+    }
     const cwdEl = document.getElementById('sessionDrawerCwd');
     if (cwdEl) cwdEl.textContent = (active && active.config && active.config.cwd) || currentCwd();
 
@@ -3691,7 +3836,7 @@ function renderSessionDrawer() {
         const close = showClose
             ? `<button class="drawer-item-close" type="button" onclick="closeSessionTab(${slot.id}); renderSessionDrawer();" aria-label="Close ${label}">&times;</button>`
             : '';
-        return `<div class="drawer-item${isActive ? ' active' : ''}" data-slot="${slot.id}" role="listitem">
+        return `<div class="drawer-item${isActive ? ' active' : ''}${slotUnread(slot) ? ' unread' : ''}" data-slot="${slot.id}" role="listitem">
             <button class="drawer-item-open" type="button" onclick="switchSessionTab(${slot.id}); closeSessionDrawer();"${isActive ? ' aria-current="true"' : ''} aria-label="Open ${label}">
                 <span class="drawer-item-dot${gen}" aria-hidden="true"></span>
                 <span class="drawer-item-main">
@@ -3846,6 +3991,7 @@ function switchSessionTab(id) {
     localStorage.setItem('activeSlotId', String(id));
     S.ws?.send(JSON.stringify({ type: 'touch_slot', slot: id }));
     const target = sessionSlots.find(s => s.id === id);
+    if (target) markSlotRead(target);
 
     Chat.clearMessages();
 
@@ -4243,6 +4389,7 @@ const SHORTCUTS = [
         ['Alt+1 … Alt+9', 'Jump to that conversation tab'],
         ['Alt+↑ / Alt+↓', 'Previous / next tab'],
         ['Alt+R', 'Reports this conversation linked: pick one to open it in the side panel'],
+        ['Alt+U', 'Mark this tab unread (again to mark it read). Right-click any tab for the same'],
         ['Double-click', 'On a tab: rename it (Enter saves, Esc cancels)'],
       ] },
     { group: 'Composing', rows: [
@@ -4315,6 +4462,12 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyR' && !document.getElementById('reportsGroup').hidden) {
         e.preventDefault();
         Menus.toggle('reportsMenu');
+        return;
+    }
+    if (e.code === 'KeyU') {
+        e.preventDefault();
+        const slot = sessionSlots.find(s => s.id === activeSlotId);
+        if (slot) setTabUnread(slot.id, !slot.markedUnread);
         return;
     }
     if (e.code === 'KeyA' && S.ttsAvailable === true) {

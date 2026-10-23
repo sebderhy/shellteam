@@ -98,6 +98,8 @@ import {
   refreshSlotFromDisk,
   pruneStaleSlots,
   markSlotUsed,
+  isSlotUnread,
+  setSlotUnread,
   clampToWorkspaceLock,
 } from "./lib/session-manager.mjs";
 import * as TerminalBridge from "./lib/terminal-bridge.mjs";
@@ -1060,13 +1062,22 @@ chatWSS.on("connection", (ws, req) => {
         break;
       }
 
+      case "mark_unread": {
+        if (setSlotUnread(msg.slot, msg.unread !== false)) broadcast(buildStatus());
+        else console.warn(`[ai-chat] mark_unread ignored: unknown slot ${msg.slot}`);
+        break;
+      }
+
       case "touch_slot": {
         const slot = msg.slot ?? 0;
         // markSlotUsed refuses unknown slots — a touch is a view action (tab
         // switch) and must never create one (SHE-78: switching to a tab another
         // device just closed resurrected it). The guard also keeps getHistory's
         // ensureSlot side effect from firing on a ghost id.
+        const wasUnread = isSlotUnread(slot);
         if (!markSlotUsed(slot)) break;
+        // Reading a tab on one device clears its unread mark on the others.
+        if (wasUnread) broadcast(buildStatus());
         // A client that just materialized a slot mid-connection (opened on
         // another device / by an agent) missed the history streamed at connect.
         // Reply to just this client so its background tab shows the full thread.

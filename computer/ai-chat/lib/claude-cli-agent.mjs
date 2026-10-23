@@ -100,6 +100,11 @@ export class ClaudeCliAgent extends CodingAgent {
     };
 
     const line = JSON.stringify(msg) + "\n";
+    // A fresh process reads its first message only after loading the session
+    // (seconds for a long one) and prints nothing until then. A Stop in that
+    // window kills it with the message unrecorded. A warm process reads stdin
+    // at once, so only a process that has printed nothing yet is in doubt.
+    if (this._msgCount === 0) this._turnHeard = false;
     console.log(`[claude-cli] Writing to stdin: ${line.slice(0, 120)}...`);
     this._process.stdin.write(line);
   }
@@ -152,12 +157,17 @@ export class ClaudeCliAgent extends CodingAgent {
       console.log("[claude-cli] Sending SIGINT");
       this._process.kill("SIGINT");
     }
-    if (this._isGenerating) {
+    // _isGenerating only turns on with the CLI's first output, but a message
+    // still waiting to be read is a turn in progress too: without a turn_done
+    // for it, the tab stayed "working" forever and the message vanished.
+    if (this._isGenerating || this._turnHeard === false) {
+      const done = this._interruptedTurnDone();
       this._isGenerating = false;
+      this._turnHeard = undefined;  // reported here; the close handler must not repeat it
       this._streamingText = "";
       this._turnDoneEmitted = true; // prevent close handler from emitting a duplicate
       this._clearWatchdog();
-      this.emit("turn_done", { subtype: "interrupted" });
+      this.emit("turn_done", done);
     }
   }
 
@@ -203,6 +213,7 @@ export class ClaudeCliAgent extends CodingAgent {
     this._startTime = Date.now();
     this._lastEventAt = Date.now();
     this._msgCount = 0;
+    this._turnHeard = undefined;
 
     this._process = spawn("claude", args, {
       cwd: this._cwd,
@@ -266,8 +277,10 @@ export class ClaudeCliAgent extends CodingAgent {
       // _isGenerating via `result`, so an idle-timeout kill must NOT emit a
       // spurious turn_done. (Gating on _isGenerating, not the per-turn flag,
       // which no longer persists across turns.)
-      if (this._isActive && this._isGenerating) {
+      const unread = this._turnHeard === false;
+      if (this._isActive && (this._isGenerating || unread)) {
         this._isGenerating = false;
+        this._turnHeard = undefined;
         this._streamingText = "";
         // The Claude CLI traps SIGTERM and exits 143 with signal=null, so
         // classify on the normalized signal or every deliberate kill reads as
@@ -278,6 +291,7 @@ export class ClaudeCliAgent extends CodingAgent {
           is_error: isError,
           errors: isError ? [`CLI exited code=${code} signal=${signal}`] : undefined,
           subtype: effSignal === "SIGINT" ? "interrupted" : effSignal === "SIGTERM" ? "stopped" : undefined,
+          undelivered: unread || undefined,
         });
       }
     }
@@ -388,6 +402,7 @@ export class ClaudeCliAgent extends CodingAgent {
       return;
     }
     this._msgCount++;
+    this._turnHeard = true;
     this._lastEventAt = Date.now();
     const summary = `#${this._msgCount} (${Date.now() - this._startTime}ms): type=${msg.type}, subtype=${msg.subtype || "-"}`;
     if (this._msgCount <= 5 || this._msgCount % 50 === 0) {

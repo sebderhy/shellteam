@@ -17,6 +17,15 @@
 #     dashboard Settings card displays. Failures exit non-zero so the oneshot
 #     unit goes visibly red — never a silent skip.
 #
+# Managed boxes (ShellTeam Cloud: a relay token in .env, which a self-hosted
+# box never has) also get, on every tick:
+#   - the coding-agent CLIs upgraded to latest, into ~/.local (the owner has no
+#     sudo after setup, and the cockpit's PATH puts ~/.local/bin first). New
+#     models need new CLIs; a customer must not wait for someone to log in.
+#     Self-hosted boxes never get this: their CLIs are the owner's own.
+#   - the outcome reported to the relay, so a failed or rolled-back update
+#     pages the operator instead of leaving the box quietly behind.
+#
 # Overrides (tests / unusual layouts): SHELLTEAM_REPO, SHELLTEAM_ENV_FILE,
 # SHELLTEAM_STATE_DIR, SHELLTEAM_UPDATE_INSTALL (command run instead of
 # install.sh), SHELLTEAM_UPDATE_HEALTH_URL (curl'd instead of /health).
@@ -40,11 +49,43 @@ STATE_FILE="$STATE_DIR/update-state.json"
 log()  { echo "[self-update] $*"; }
 env_val() { grep "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true; }
 
-FROM=""; TO=""
+FROM=""; TO=""; AGENTS=""
+RELAY_URL="$(env_val SHELLTEAM_RELAY_URL)"; RELAY_TOKEN="$(env_val SHELLTEAM_RELAY_TOKEN)"
+is_managed() { [ -n "$RELAY_URL" ] && [ -n "$RELAY_TOKEN" ]; }
+
+# Tell the operator how tonight's update went. Never fails the update itself,
+# but a report that can't be sent is logged loudly.
+report() { # <status> <detail>
+    is_managed || return 0
+    local body
+    body="$(printf '{"status":"%s","detail":"%s","from":"%s","to":"%s","agents":"%s"}' "$1" "$2" "$FROM" "$TO" "$AGENTS")"
+    curl -fsS --max-time 20 -X POST "$RELAY_URL/update-status" \
+        -H "Authorization: Bearer $RELAY_TOKEN" -H "Content-Type: application/json" \
+        -d "$body" >/dev/null \
+        || log "WARNING: could not report this update to $RELAY_URL/update-status" >&2
+}
+
 write_state() { # <status> <detail> — detail must stay quote-free
     mkdir -p "$STATE_DIR"
     printf '{"status":"%s","detail":"%s","from":"%s","to":"%s","checked_at":"%s","epoch":%s}\n' \
         "$1" "$2" "$FROM" "$TO" "$(date -u +%FT%TZ)" "$(date +%s)" > "$STATE_FILE"
+    report "$1" "$2"
+}
+
+# The agent CLIs a managed box runs, kept at latest (see the header).
+AGENT_PACKAGES="@anthropic-ai/claude-code @openai/codex opencode-ai"
+cli_version() { "$HOME/.local/bin/$1" --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1; }
+upgrade_agents() {
+    local out pkgs=""
+    for p in $AGENT_PACKAGES; do pkgs="$pkgs $p@latest"; done
+    # shellcheck disable=SC2086 # word-splitting the package list is the point
+    if out="$(npm install -g --prefix "$HOME/.local" $pkgs 2>&1)"; then
+        AGENTS="claude $(cli_version claude), codex $(cli_version codex), opencode $(cli_version opencode)"
+        log "agent CLIs at latest: $AGENTS"
+    else
+        AGENTS="upgrade failed: $(printf '%s' "$out" | tail -1 | tr -d '\\"')"
+        log "ERROR: agent CLI $AGENTS" >&2
+    fi
 }
 fail() {
     log "ERROR: $1" >&2
@@ -67,6 +108,8 @@ case "$MODE" in
         fi ;;
     *) fail "invalid AUTO_UPDATE=$MODE (expected off, daily or weekly)" ;;
 esac
+
+if is_managed; then upgrade_agents; fi
 
 cd "$REPO"
 [ -d .git ] || fail "$REPO is not a git checkout"

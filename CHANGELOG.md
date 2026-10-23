@@ -5,6 +5,32 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.42] - 2026-10-23
+
+### Added
+- **Unread tabs, like Slack.** A tab whose agent finished a turn you haven't
+  looked at yet gets a bold title and a green dot, and the browser tab reads
+  "(2) ShellTeam". Opening the tab reads it, on every device. Right-click a
+  tab (long-press on a phone) to mark it unread again, rename or close it;
+  Alt+U marks the current tab unread. On phones, the conversation switcher
+  shows how many other tabs have an answer waiting.
+- **Managed boxes keep their coding agents current.** On a ShellTeam Cloud
+  box, the nightly update now also upgrades Claude Code, Codex and OpenCode to
+  their latest versions, so a new model works the day it ships, and reports
+  the outcome to us: a failed or rolled-back update, or a box that stops
+  reporting, alerts the operator. Self-hosted boxes are unchanged: their
+  agent CLIs stay the owner's own, and nothing is sent.
+
+### Fixed
+- **A message stopped before the agent read it is no longer lost silently.**
+  Resuming a long Claude conversation takes a few seconds, and a Stop (or Esc)
+  in that window ended the agent before it had read the message: the tab kept
+  looking busy, nothing said the message was gone, and the agent never saw it.
+  Every agent now reports whether it had received the message. If it hadn't,
+  the chat says so in red, says the message isn't part of the conversation,
+  and offers Send again. The notice no longer claims "your message was sent"
+  when it wasn't.
+
 ## [0.1.41] - 2026-10-21
 
 ### Added

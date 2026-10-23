@@ -105,6 +105,7 @@ export class OpenCodeAgent extends CodingAgent {
   }
 
   interrupt() {
+    const dropped = this._queued.length > 0;
     // Drop any stdout that arrives while opencode winds down, so a late event
     // can't re-open the turn after Stop; kill the whole process group, not just
     // the parent, so its tool subprocesses die too (SHE-90 follow-up).
@@ -117,7 +118,7 @@ export class OpenCodeAgent extends CodingAgent {
       this._turnResultEmitted = true;
       this._isGenerating = false;
       this._streamingText = "";
-      this.emit("turn_done", { subtype: "interrupted" });
+      this.emit("turn_done", this._interruptedTurnDone(dropped));
     }
   }
 
@@ -153,6 +154,7 @@ export class OpenCodeAgent extends CodingAgent {
     if (this._killTimer) { clearTimeout(this._killTimer); this._killTimer = null; }
     console.log(`[opencode-agent] spawn: opencode ${args.slice(0, 6).join(" ")}... (${this._isResuming ? "resume" : "fresh"})`);
 
+    this._turnHeard = false;
     this._process = spawn("opencode", args, {
       cwd: this._cwd,
       env: this._env,
@@ -185,6 +187,7 @@ export class OpenCodeAgent extends CodingAgent {
 
     let buffer = "";
     this._process.stdout.on("data", (chunk) => {
+      this._turnHeard = true;
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop();

@@ -479,7 +479,7 @@ window.Chat = {
         // Safety net: remove lingering tool spinners
         for (const s of App.el.messages.querySelectorAll('.tool-spinner')) s.remove();
         if (interrupted) {
-            this.addInterruptedNotice(msg.subtype);
+            this.addInterruptedNotice(msg.subtype, msg.undelivered);
         }
         setStatus('idle', 'Idle');
     },
@@ -785,7 +785,11 @@ window.Chat = {
         return last ? last.textContent : '';
     },
 
-    addInterruptedNotice(subtype) {
+    // undelivered: true = the Stop landed before the agent took the message, so
+    // it is NOT in the conversation; false = the agent has it; undefined = the
+    // agent can't tell. Never claim "sent" when it wasn't: a user who reads
+    // "sent" waits for an answer to a message the agent never saw.
+    addInterruptedNotice(subtype, undelivered) {
         // A single interruption can surface as a short cascade of turn_done events
         // (interrupt() + the CLI's partial-flush on SIGINT). Collapse them: if the
         // most recent message is already an interrupted notice, don't stack another.
@@ -794,16 +798,26 @@ window.Chat = {
         const lastUserText = this._lastUserMessageText();
         const div = document.createElement('div');
         div.className = 'msg-interrupted';
-        const label = subtype === 'stopped' ? 'stopped' : 'interrupted';
+        if (undelivered) div.classList.add('undelivered');
+        const label = subtype === 'stopped' ? 'Stopped' : 'Interrupted';
         const content = document.createElement('div');
         content.className = 'content';
-        content.textContent = `⚠ Response ${label} — your message was sent, but the agent was stopped before replying.`;
+        content.textContent = undelivered
+            ? `⚠ ${label} before the agent received your message. It is not part of the conversation.`
+            : undelivered === false
+                ? `⚠ ${label}. The agent has your message but didn't reply.`
+                : `⚠ ${label} before the agent replied.`;
         div.appendChild(content);
         if (lastUserText) {
             const retry = document.createElement('button');
             retry.className = 'retry-btn';
-            retry.textContent = 'Retry';
-            retry.onclick = () => this.prefillComposer(lastUserText);
+            if (undelivered) {
+                retry.textContent = 'Send again';
+                retry.onclick = () => { this.prefillComposer(lastUserText); handleSend(); };
+            } else {
+                retry.textContent = 'Retry';
+                retry.onclick = () => this.prefillComposer(lastUserText);
+            }
             div.appendChild(retry);
         }
         App.el.messages.appendChild(div);

@@ -99,9 +99,10 @@ def box(tmp_path):
     return clone
 
 
-def _run_update(clone: Path, tmp_path: Path, *, mode="daily", install_cmd="true"):
+def _run_update(clone: Path, tmp_path: Path, *, mode="daily", install_cmd="true",
+                extra_env_lines="", path_prefix=None, home=None):
     env_file = tmp_path / "box.env"
-    env_file.write_text(f"AUTO_UPDATE={mode}\n")
+    env_file.write_text(f"AUTO_UPDATE={mode}\n{extra_env_lines}")
     health = tmp_path / "health"
     health.write_text("ok")
     state_dir = tmp_path / "update-state"
@@ -115,6 +116,8 @@ def _run_update(clone: Path, tmp_path: Path, *, mode="daily", install_cmd="true"
             "SHELLTEAM_STATE_DIR": str(state_dir),
             "SHELLTEAM_UPDATE_INSTALL": install_cmd,
             "SHELLTEAM_UPDATE_HEALTH_URL": f"file://{health}",
+            **({"PATH": f"{path_prefix}:{os.environ['PATH']}"} if path_prefix else {}),
+            **({"HOME": str(home)} if home else {}),
         },
     )
     state_file = state_dir / "update-state.json"
@@ -205,6 +208,63 @@ class TestSelfUpdateScript:
         assert _git(box, "rev-parse", "HEAD") == prev  # back where it started
         assert (box / "VERSION").read_text() == "0.1.0\n"
         assert state["status"] == "rolled-back"
+
+    # --- Managed boxes (ShellTeam Cloud) ------------------------------------
+    # A box we host carries a relay token; its nightly tick also upgrades the
+    # agent CLIs (a new model needs a new CLI, and nobody logs in to customer
+    # boxes) and reports every outcome so a failure pages the operator.
+
+    @pytest.fixture
+    def managed(self, tmp_path):
+        """Fake npm + curl on PATH that record their calls; real curl for the rest."""
+        bin_dir = tmp_path / "fakebin"
+        bin_dir.mkdir()
+        home = tmp_path / "home"
+        home.mkdir()
+        calls = tmp_path / "calls"
+        real_curl = subprocess.run(["bash", "-c", "command -v curl"], capture_output=True, text=True).stdout.strip()
+        (bin_dir / "npm").write_text(
+            f'#!/bin/bash\necho "npm $*" >> "{calls}"\n'
+            'prefix=""; while [ $# -gt 0 ]; do [ "$1" = --prefix ] && prefix="$2"; shift; done\n'
+            'mkdir -p "$prefix/bin"\n'
+            'for b in claude codex opencode; do printf "#!/bin/sh\\necho 9.9.9\\n" > "$prefix/bin/$b"; chmod +x "$prefix/bin/$b"; done\n'
+        )
+        (bin_dir / "curl").write_text(
+            '#!/bin/bash\n'
+            f'case "$*" in *update-status*) echo "curl $*" >> "{calls}"; exit 0 ;; esac\n'
+            f'exec {real_curl} "$@"\n'
+        )
+        for f in bin_dir.iterdir():
+            f.chmod(0o755)
+        relay = "SHELLTEAM_RELAY_URL=https://relay.example/relay\nSHELLTEAM_RELAY_TOKEN=strelay_test\n"
+        return {"path_prefix": str(bin_dir), "home": home, "calls": calls, "relay": relay}
+
+    def test_managed_box_upgrades_agent_clis_into_local_and_reports(self, box, tmp_path, managed):
+        result, state = _run_update(box, tmp_path, extra_env_lines=managed["relay"],
+                                    path_prefix=managed["path_prefix"], home=managed["home"])
+        assert result.returncode == 0, result.stderr
+        calls = managed["calls"].read_text()
+        assert f"--prefix {managed['home']}/.local" in calls, "no sudo on a managed box: CLIs go to ~/.local"
+        for pkg in ("@anthropic-ai/claude-code@latest", "@openai/codex@latest", "opencode-ai@latest"):
+            assert pkg in calls
+        report = [line for line in calls.splitlines() if line.startswith("curl")]
+        assert len(report) == 1 and "https://relay.example/relay/update-status" in report[0]
+        assert "Bearer strelay_test" in report[0]
+        assert '"status":"ok"' in report[0] and "v0.2.0" in report[0]
+        assert "claude 9.9.9" in report[0], "the report says which agent versions the box runs"
+
+    def test_self_hosted_box_never_touches_agent_clis_or_reports(self, box, tmp_path, managed):
+        result, _ = _run_update(box, tmp_path, path_prefix=managed["path_prefix"], home=managed["home"])
+        assert result.returncode == 0, result.stderr
+        assert not managed["calls"].exists(), "a self-hosted box's CLIs are the owner's own; nothing is sent"
+
+    def test_managed_box_reports_a_rollback(self, box, tmp_path, managed):
+        stamp = tmp_path / "first-run-failed"
+        install = f'bash -c \'if [ ! -e "{stamp}" ]; then touch "{stamp}"; exit 1; fi\''
+        result, state = _run_update(box, tmp_path, install_cmd=install, extra_env_lines=managed["relay"],
+                                    path_prefix=managed["path_prefix"], home=managed["home"])
+        assert result.returncode != 0
+        assert '"status":"rolled-back"' in managed["calls"].read_text()
 
     def test_script_syntax(self):
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)

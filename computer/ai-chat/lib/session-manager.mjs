@@ -129,7 +129,28 @@ export function markSlotUsed(slotId) {
   // viewedAt is the owner LOOKING at the tab (a tab switch or a send), unlike
   // lastUsedAt, which agent output also bumps in background tabs. A reopened
   // cockpit lands on the most recently viewed tab, from any device (SHE-112).
-  slots.get(slotId).viewedAt = Date.now();
+  const viewed = slots.get(slotId);
+  viewed.viewedAt = Date.now();
+  viewed.markedUnread = false;  // opening a tab reads it, like Slack
+  saveTabs();
+  return true;
+}
+
+/**
+ * Unread = the agent finished a turn the owner hasn't looked at since, or the
+ * owner marked the tab unread. Kept server-side so every device agrees.
+ */
+export function isSlotUnread(slotId) {
+  const s = slots.get(slotId);
+  return !!s && (s.markedUnread || (s.answeredAt || 0) > (s.viewedAt || 0));
+}
+
+/** Right-click → Mark as unread / Mark as read. Returns false for an unknown slot. */
+export function setSlotUnread(slotId, unread) {
+  const s = slots.get(slotId);
+  if (!s) return false;
+  s.markedUnread = !!unread;
+  if (!unread) s.viewedAt = Math.max(Date.now(), s.answeredAt || 0);
   saveTabs();
   return true;
 }
@@ -280,6 +301,8 @@ export function listSlots() {
     createdAt: s.createdAt || Date.now(),
     lastUsedAt: s.lastUsedAt || Date.now(),
     viewedAt: s.viewedAt || 0,
+    answeredAt: s.answeredAt || 0,
+    markedUnread: !!s.markedUnread,
     label: deriveLabel(id),
     ...s.config,
   }));
@@ -1018,9 +1041,14 @@ function wireAgentEvents(slotId, agent) {
     if (data.cost !== undefined) slot.totalCost = data.cost;
     // Clear lastSentContent on normal completion (not watchdog) so stale messages aren't resent
     if (data.subtype !== "watchdog_timeout") slot.lastSentContent = null;
+    if (!["interrupted", "stopped", "watchdog_timeout"].includes(data.subtype)) {
+      slot.answeredAt = Date.now();
+      saveTabs();
+    }
     addToHistory(slotId, { type: "turn_done", cost: data.cost, usage: data.usage,
       context_window: data.context_window,
-      is_error: data.is_error, errors: data.errors, subtype: data.subtype });
+      is_error: data.is_error, errors: data.errors, subtype: data.subtype,
+      undelivered: data.undelivered });
     slotBroadcast(slotId, "turn_done", data);
     if (data.is_error) recordAuthFailure(data.errors);
 
@@ -1165,6 +1193,8 @@ function writeTabsNow() {
     createdAt: s.createdAt || Date.now(),
     lastUsedAt: s.lastUsedAt || Date.now(),
     viewedAt: s.viewedAt || 0,
+    answeredAt: s.answeredAt || 0,
+    markedUnread: !!s.markedUnread,
     ...(s.bgTasks?.length ? { bgTasks: s.bgTasks } : {}),
     ...s.config,
   }));
@@ -1233,6 +1263,8 @@ export function restoreSlots() {
     slot.createdAt = s.createdAt || slot.createdAt || Date.now();
     slot.lastUsedAt = s.lastUsedAt || Date.now();
     slot.viewedAt = s.viewedAt || 0;
+    slot.answeredAt = s.answeredAt || 0;
+    slot.markedUnread = !!s.markedUnread;
     slot.bgTasks = Array.isArray(s.bgTasks) ? s.bgTasks : [];
 
     // Load history and correct cwd from the session's authoritative record

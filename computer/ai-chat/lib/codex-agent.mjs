@@ -190,6 +190,7 @@ export class CodexAgent extends CodingAgent {
 
   interrupt() {
     this._recovery = null;
+    const dropped = !!this._pendingSpawn || this._queued.length > 0;
     // A queued spawn, queued follow-ups or an armed writer retry would
     // resurrect the turn the user just cancelled — drop them.
     this._pendingSpawn = null;
@@ -208,7 +209,7 @@ export class CodexAgent extends CodingAgent {
       this._turnResultEmitted = true;
       this._isGenerating = false;
       this._streamingText = "";
-      this.emit("turn_done", { subtype: "interrupted" });
+      this.emit("turn_done", this._interruptedTurnDone(dropped));
     }
   }
 
@@ -290,6 +291,7 @@ export class CodexAgent extends CodingAgent {
     if (this._killTimer) { clearTimeout(this._killTimer); this._killTimer = null; }
     console.log(`[codex-agent] spawn: codex ${args.join(" ").slice(0, 120)}... (${this._isResuming ? "resume" : "fresh"})`);
 
+    this._turnHeard = false;
     this._process = spawn("codex", args, {
       cwd: this._cwd,
       env: this._env,
@@ -327,6 +329,7 @@ export class CodexAgent extends CodingAgent {
 
     let buffer = "";
     this._process.stdout.on("data", (chunk) => {
+      this._turnHeard = true;
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop();

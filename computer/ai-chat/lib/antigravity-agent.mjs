@@ -64,6 +64,7 @@ export class AntigravityAgent extends CodingAgent {
   }
 
   interrupt() {
+    const dropped = this._queued.length > 0;
     this._queued = [];  // a queued follow-up would resurrect the cancelled turn
     if (this._process) {
       console.log("[antigravity] interrupt — SIGTERM");
@@ -73,7 +74,7 @@ export class AntigravityAgent extends CodingAgent {
       this._isGenerating = false;
       this._turnDone = true;
       this._clearTimeout();
-      this.emit("turn_done", { subtype: "interrupted" });
+      this.emit("turn_done", this._interruptedTurnDone(dropped));
     }
   }
 

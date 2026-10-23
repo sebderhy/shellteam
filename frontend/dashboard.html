@@ -2167,6 +2167,7 @@
             openBtn.addEventListener('click', () => { if (url) window.open(url, '_blank', 'noopener'); });
             closeBtn.addEventListener('click', closeReport);
 
+            const BASE_TITLE = document.title;
             window.addEventListener('message', (e) => {
                 const d = e.data;
                 if (d && d.source === 'shellteam-report' && e.source === frame.contentWindow) return onReportMessage(d);
@@ -2175,6 +2176,8 @@
                 if (d.kind === 'report-open' && d.url) openReport(d.url, d.title);
                 else if (d.kind === 'report-close') closeReport();
                 else if (d.kind === 'provider-settings') openAIProviderSettings(d.provider);
+                // Unread conversation tabs, Slack-style: "(2) ShellTeam" in the browser tab.
+                else if (d.kind === 'unread-count') document.title = (d.count > 0 ? `(${d.count}) ` : '') + BASE_TITLE;
             });
         })();
 

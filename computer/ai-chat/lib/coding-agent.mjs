@@ -70,6 +70,9 @@ export class CodingAgent extends EventEmitter {
     this._killTimer = null;     // pending graceful-signal → SIGKILL escalation
     this._interrupted = false;  // Stop pressed: subclasses drop further output
     this._queued = [];          // messages sent mid-turn, run once it settles
+    // Has the CLI said anything since its process got this turn's message?
+    // undefined = the adapter can't tell (a CLI that prints only at the end).
+    this._turnHeard = undefined;
   }
 
   /** Start the agent process/query. */
@@ -118,6 +121,18 @@ export class CodingAgent extends EventEmitter {
     this._queued.push(prompt);
     console.log(`[${this.constructor.name}] turn in progress — message queued (${this._queued.length} waiting)`);
     return true;
+  }
+
+  /**
+   * The turn_done for a Stop. A Stop that lands before the CLI acknowledged the
+   * message kills it before the message was recorded, so it is NOT part of the
+   * conversation (the agent never saw it); `undelivered` lets the chat say so
+   * instead of implying it was received. `dropped` = queued or pending messages
+   * the Stop discarded, which never reached the CLI either.
+   */
+  _interruptedTurnDone(dropped = false) {
+    const undelivered = dropped ? true : this._turnHeard === undefined ? undefined : !this._turnHeard;
+    return { subtype: "interrupted", undelivered };
   }
 
   _drainQueue() {
