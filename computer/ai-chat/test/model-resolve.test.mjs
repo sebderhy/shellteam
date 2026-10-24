@@ -36,6 +36,10 @@ test("a retired model moves to the model that replaced it, not the family flagsh
   assert.equal(resolveModelId("gpt-6-sol-ultra"), "gpt-6.1-sol-ultra");
   assert.equal(resolveModelId("gpt-6-sol-max"), "gpt-6.1-sol-max");
   assert.equal(resolveModelId("gpt-6-sol"), "gpt-6.1-sol-max", "cli-form id of a retired model");
+  // Haiku 4.5 -> Haiku 5.5 (SHE-127): a cheap-tier tab stays cheap-tier.
+  assert.equal(isKnownModel("claude-haiku-4-5-20251001"), false);
+  assert.equal(resolveModelId("claude-haiku-4-5-20251001"), "claude-haiku-5-5");
+  assert.equal(resolveModelId("claude-haiku-4-5"), "claude-haiku-5-5");
 });
 
 test("orphans resolve within their own family, not always Claude", () => {

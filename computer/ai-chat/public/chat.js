@@ -511,6 +511,8 @@ window.Chat = {
             const marker = document.createElement('div');
             marker.className = 'compact-marker';
             marker.textContent = `… ${msg.count} earlier messages not shown (long conversation) …`;
+            // The links those messages held, for the reports list (listIn).
+            if (msg.links?.length) marker.dataset.links = JSON.stringify(msg.links);
             App.el.messages.appendChild(marker);
         } else if (msg.event === 'resumed') {
             this.addSystemMessage('Session resumed.');

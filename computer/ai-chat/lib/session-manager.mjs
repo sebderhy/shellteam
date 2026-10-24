@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { HOME, TABS_FILE, SESSION_FILE, MAX_HISTORY, CODEX_HISTORY_DIR, WORKSPACE_LOCK } from "./constants.mjs";
+import { HOME, TABS_FILE, SESSION_FILE, CODEX_HISTORY_DIR, WORKSPACE_LOCK } from "./constants.mjs";
 import {
   loadModel,
   getCliEnv,
@@ -16,6 +16,7 @@ import { handoffSession } from "./portable/index.mjs";
 import {
   findSessionFile,
   readSessionForReplay,
+  capHistory,
   truncateSessionFile,
   listSessions,
   cwdFromSessionPath,
@@ -1090,10 +1091,11 @@ function wireAgentEvents(slotId, agent) {
   on("session_event", (data) => {
     touchSlot(slotId);
     if (data.event === "compacted") {
-      // Trim history: keep only last 3 messages + a compact marker
-      const kept = slot.history.slice(-3);
-      slot.history = [{ type: "session_event", event: "compacted", timestamp: Date.now() }, ...kept];
-      // Session stays alive — compaction compresses context in-place, not a reset.
+      // Only the agent's context was compacted: the owner's transcript keeps
+      // everything before the marker, as a replay from disk does (SHE-73).
+      // Trimming it here hid earlier messages, and the reports they linked,
+      // from every device that loaded the tab afterwards.
+      slot.history = capHistory([...slot.history, { type: "session_event", event: "compacted", timestamp: Date.now() }]);
       saveTabs();
     }
     slotBroadcast(slotId, "session_event", data);
@@ -1113,9 +1115,7 @@ function addToHistory(slotId, msg) {
     saveTabs();
   }
   slot.history.push(msg);
-  if (slot.history.length > MAX_HISTORY) {
-    slot.history = slot.history.slice(-MAX_HISTORY);
-  }
+  slot.history = capHistory(slot.history);
   if (!slot.sessionId) return;
   // Persist history ourselves for agents whose CLI does not (Codex/Gemini/OpenCode).
   if (!supports(slot.config.model, "cliOwnsHistory")) {

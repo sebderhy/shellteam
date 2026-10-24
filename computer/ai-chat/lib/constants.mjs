@@ -39,7 +39,6 @@ export const MODEL_FILE = join(HOME, ".claude-chat-model.txt");
 export const TABS_FILE = join(HOME, ".claude-chat-tabs.json");
 export const CODEX_HISTORY_DIR = join(HOME, ".config", "shellteam", "codex-history");
 export const BROKER_STATE_FILE = join(HOME, ".config", "shellteam", "delegation-broker.json");
-export const MAX_HISTORY = 500;
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
 export const DEFAULT_CODEX_MODEL = "gpt-6.1-sol-max";
 export const DEFAULT_ANTIGRAVITY_MODEL = "gemini-3.1-pro";

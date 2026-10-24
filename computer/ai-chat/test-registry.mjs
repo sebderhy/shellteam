@@ -30,7 +30,7 @@ describe("agent registry — model routing", () => {
   it("routes Claude model families", () => {
     assert.equal(pickAgent("claude-opus-5").id, "claude");
     assert.equal(pickAgent("claude-sonnet-5-5").id, "claude");
-    assert.equal(pickAgent("claude-haiku-4-5-20251001").id, "claude");
+    assert.equal(pickAgent("claude-haiku-5-5").id, "claude");
     assert.equal(pickAgent("sonnet-test").id, "claude");
     assert.equal(pickAgent("opus-test").id, "claude");
     assert.equal(pickAgent("haiku-test").id, "claude");

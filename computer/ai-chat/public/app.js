@@ -574,14 +574,17 @@ const ReportPanel = {
     },
 
     // Every report and app linked in a rendered conversation, each once, oldest
-    // first; a report linked again counts at its latest mention.
+    // first; a report linked again counts at its latest mention. A long
+    // conversation's hidden middle is a marker carrying its links (data-links).
     listIn(container) {
         const seen = new Map();
-        for (const a of container.querySelectorAll('a[href]')) {
-            if (!this.isBoxReport(a.href)) continue;
-            const url = new URL(a.href, location.href).href;
-            seen.delete(url);
-            seen.set(url, { url, ...this.describe(url) });
+        for (const el of container.querySelectorAll('a[href], [data-links]')) {
+            for (const href of el.dataset.links ? JSON.parse(el.dataset.links) : [el.href]) {
+                if (!this.isBoxReport(href)) continue;
+                const url = new URL(href, location.href).href;
+                seen.delete(url);
+                seen.set(url, { url, ...this.describe(url) });
+            }
         }
         return [...seen.values()];
     },

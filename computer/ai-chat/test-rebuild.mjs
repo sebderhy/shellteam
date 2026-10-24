@@ -13,7 +13,7 @@ import WebSocket from "ws";
 
 const WS_URL = process.argv[2] || "ws://127.0.0.1:3456/ws";
 const TIMEOUT = 90_000;
-const TEST_MODEL = "claude-haiku-4-5-20251001";
+const TEST_MODEL = "claude-haiku-5-5";
 
 let passed = 0;
 let failed = 0;

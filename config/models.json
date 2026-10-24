@@ -34,7 +34,11 @@
         "(platform.claude.com/docs/en/models/overview). Claude Code 2.1.280 flags it",
         "`unrecognized_model` but answers; 2.1.285 knows it. Verified 2026-09-30 on 2.1.285 over a",
         "subscription. `replaces` moves a tab still pinned to a retired id onto its successor",
-        "(resolveModelId in computer/ai-chat/lib/model-catalog.mjs) instead of the family default."
+        "(resolveModelId in computer/ai-chat/lib/model-catalog.mjs) instead of the family default.",
+        "Haiku 5.5 (released 2026-10-07, 1M context, 128K output, $0.10/$0.50 per 1M tokens under",
+        "100K-token prompts) replaced Haiku 4.5 (SHE-127). Models API: claude-haiku-5-5. Claude Code",
+        "2.1.285 flags it `unrecognized_model` (and caps auto-compact at 200K) but answers; 2.1.310",
+        "knows it. Verified 2026-10-24 on 2.1.310 over a subscription."
       ],
       "match": {
         "prefixes": [
@@ -62,9 +66,10 @@
           "limit": { "context": 1000000 }
         },
         {
-          "id": "claude-haiku-4-5-20251001",
-          "name": "Haiku 4.5",
-          "limit": { "context": 200000 }
+          "id": "claude-haiku-5-5",
+          "name": "Haiku 5.5",
+          "replaces": ["claude-haiku-4-5-20251001", "claude-haiku-4-5"],
+          "limit": { "context": 1000000 }
         }
       ]
     },

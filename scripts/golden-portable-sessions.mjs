@@ -29,7 +29,7 @@ const execFileP = promisify(execFile);
 
 const FAMILIES = ["claude", "codex", "gemini", "opencode"];
 const MODEL = {
-  claude: "claude-haiku-4-5-20251001",
+  claude: "claude-haiku-5-5",
   codex: "gpt-6-luna",
   gemini: "gemini-3-flash-preview",
   opencode: "glm-5p3-flash",

@@ -5,6 +5,27 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.43] - 2026-10-24
+
+### Added
+- **Claude Haiku 5.5** replaces Haiku 4.5 in the model picker: 1M-token
+  context and a tenth of Haiku 4.5's price. A tab still set to Haiku 4.5 moves
+  to Haiku 5.5 on its own. Claude Code 2.1.310 or newer knows the model
+  (`claude update`); older versions answer but warn and compact at 200K.
+
+### Fixed
+- **The reports list keeps every report on a long conversation.** A long tab
+  only replays its first and last messages, and reports linked in the hidden
+  middle dropped out of the list, so on a phone the Reports row could vanish
+  entirely. They now stay listed. Compacting a conversation also no longer
+  cuts what the tab shows down to its last 3 messages.
+- **The Comment button works on phones and after a triple-click.** On a
+  phone it floated right where Android's Copy / Share bar appears, so it
+  couldn't be tapped; it now sits under the header (or below the selection
+  when you select near the top) and follows the selection handles. On
+  desktop, triple-clicking the last paragraph of a reply selected into the
+  next message and the button never appeared; it now quotes that paragraph.
+
 ## [0.1.42] - 2026-10-23
 
 ### Added

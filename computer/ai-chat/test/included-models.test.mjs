@@ -52,10 +52,10 @@ describe("includedModelsByFamily", () => {
   });
 
   it("groups catalog ids by family and drops unknown ids instead of widening the list", () => {
-    process.env.INCLUDED_MODELS = "gpt-6-luna-max, claude-haiku-4-5-20251001,gpt-6-nope";
+    process.env.INCLUDED_MODELS = "gpt-6-luna-max, claude-haiku-5-5,gpt-6-nope";
     assert.deepEqual(includedModelsByFamily(), {
       codex: ["gpt-6-luna-max"],
-      claude: ["claude-haiku-4-5-20251001"],
+      claude: ["claude-haiku-5-5"],
     });
   });
 

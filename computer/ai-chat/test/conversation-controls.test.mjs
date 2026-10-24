@@ -43,7 +43,7 @@ const { readSessionForReplay, findSessionFile } = await import("../lib/history.m
 // use so running the suite is never expensive. gpt-5.6-luna is Codex's cheapest
 // tier (the cost-efficient model); glm-5p3-flash the cheapest OpenCode model.
 const CHEAP = {
-  claude: "claude-haiku-4-5-20251001",
+  claude: "claude-haiku-5-5",
   codex: "gpt-5.6-luna",
   antigravity: "gemini-3.6-flash",
   opencode: "glm-5p3-flash",

@@ -488,22 +488,44 @@ export function isInternalUserContent(content) {
   return typeof content === "string" && INTERNAL_ENVELOPE_RE.test(content);
 }
 
-// Replay cap: a marathon session can decode into tens of thousands of protocol
+// History cap: a marathon session can decode into tens of thousands of protocol
 // messages — hydrating them all janks the UI (especially mobile). Keep the
 // opening (the original ask, which also seeds tab titles) and the recent tail,
 // with a visible marker for what was elided. The full transcript stays on disk.
+// The same cap bounds a live tab's in-memory history, so a replay and a live
+// tab look alike.
 const REPLAY_HEAD = 20;
 const REPLAY_TAIL = 480;
-function capReplay(messages) {
+// Links the agent wrote in the elided middle ride on the marker: the cockpit's
+// reports list reads them there, so a report linked 600 messages ago is still
+// one tap away (2026-10-24: a long tab's list showed 0 of its 25 reports).
+const LINK_RE = /https?:\/\/[^\s<>()[\]"'`]+/g;
+export function capHistory(messages) {
   const max = REPLAY_HEAD + REPLAY_TAIL;
   if (messages.length <= max + 1) return messages;
-  const dropped = messages.length - max;
-  console.log(`[history] replay capped: ${messages.length} messages -> head ${REPLAY_HEAD} + tail ${REPLAY_TAIL} (${dropped} elided)`);
+  let count = 0;
+  const links = new Set();
+  for (const m of messages.slice(REPLAY_HEAD, messages.length - REPLAY_TAIL)) {
+    if (m.type === "session_event" && m.event === "truncated") {
+      count += m.count;
+      for (const l of m.links || []) links.add(l);
+      continue;
+    }
+    count++;
+    if (m.type !== "text_done") continue;
+    for (const l of m.text?.match(LINK_RE) || []) links.add(l.replace(/[.,;:!?*_]+$/, ""));
+  }
   return [
     ...messages.slice(0, REPLAY_HEAD),
-    { type: "session_event", event: "truncated", count: dropped },
+    { type: "session_event", event: "truncated", count, links: [...links] },
     ...messages.slice(messages.length - REPLAY_TAIL),
   ];
+}
+
+function capReplay(messages) {
+  const capped = capHistory(messages);
+  if (capped !== messages) console.log(`[history] replay capped: ${messages.length} messages -> head ${REPLAY_HEAD} + tail ${REPLAY_TAIL}`);
+  return capped;
 }
 
 export function readSessionForReplay(filePath) {

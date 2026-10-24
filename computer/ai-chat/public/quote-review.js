@@ -39,11 +39,18 @@ window.QuoteReview = (() => {
         pill = document.getElementById('quoteSelPill');
         if (!messages || !tray || !pill) return;
 
-        // Show the pill after a selection settles inside an agent reply. mouseup
-        // (desktop) and touchend (mobile) both fire after the selection exists.
+        // Show the pill after a selection settles inside an agent reply: on
+        // mouseup with a mouse. On a touch screen the selection is made and
+        // adjusted with the phone's own handles, which fire no touchend on the
+        // page, so follow selectionchange instead (SHE-120).
         const onSelectEnd = () => setTimeout(showPillForSelection, 0);
         messages.addEventListener('mouseup', onSelectEnd);
-        messages.addEventListener('touchend', onSelectEnd);
+        let settle = null;
+        document.addEventListener('selectionchange', () => {
+            if (!touchScreen()) return;
+            clearTimeout(settle);
+            settle = setTimeout(showPillForSelection, 250);
+        });
 
         // Prevent the pill's own mousedown from clearing the selection before we
         // read it; the click handler then captures the (still-live) range.
@@ -60,9 +67,35 @@ window.QuoteReview = (() => {
             }
         });
 
-        // A scroll or resize invalidates the pill's fixed position — just hide it.
-        window.addEventListener('scroll', hidePill, true);
-        window.addEventListener('resize', hidePill);
+        // A scroll or resize invalidates the pill's position next to the
+        // selection, so hide it. On a touch screen it is pinned under the
+        // header and stays put.
+        const hideIfFloating = () => { if (!touchScreen()) hidePill(); };
+        window.addEventListener('scroll', hideIfFloating, true);
+        window.addEventListener('resize', hideIfFloating);
+    }
+
+    // Phones draw their own selection toolbar right above the selection (Copy,
+    // Share…) and a search sheet at the bottom of the screen: a pill floating
+    // at the selection sits under the toolbar. There it is pinned just under
+    // the cockpit header instead, a spot neither covers (SHE-120).
+    const touchScreen = () => matchMedia('(pointer: coarse)').matches;
+    const TOOLBAR_ROOM = 140;  // px under the header a phone toolbar can take
+    const HANDLE_ROOM = 56;    // px the selection handles hang below the text
+
+    // The agent reply a selection end belongs to, whether the end is a text
+    // node or an element (a triple-click ends on an element).
+    const replyOf = (n) => (n?.nodeType === Node.ELEMENT_NODE ? n : n?.parentElement)?.closest('.msg-assistant .content');
+
+    // The selected range, limited to agent replies. A triple-click on a
+    // reply's last paragraph ends the selection at the start of whatever
+    // follows the reply (SHE-121): end it at the end of that reply instead.
+    function replyRange(sel) {
+        const range = sel.getRangeAt(0).cloneRange();
+        const first = replyOf(range.startContainer);
+        if (!first) return null;
+        if (!replyOf(range.endContainer)) range.setEnd(first, first.childNodes.length);
+        return range;
     }
 
     function isEditable(el) {
@@ -72,16 +105,26 @@ window.QuoteReview = (() => {
     function showPillForSelection() {
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) return hidePill();
-        const text = sel.toString().trim();
-        if (!text) return hidePill();
         // Only offer commenting on rendered agent replies.
-        const inContent = (n) => n && n.parentElement && n.parentElement.closest('.msg-assistant .content');
-        if (!inContent(sel.anchorNode) || !inContent(sel.focusNode)) return hidePill();
+        const range = replyRange(sel);
+        if (!range || !range.toString().trim()) return hidePill();
 
-        pendingRange = sel.getRangeAt(0);
-        const r = pendingRange.getBoundingClientRect();
-        pill.style.left = (r.left + r.width / 2) + 'px';
-        pill.style.top = r.top + 'px';
+        pendingRange = range;
+        if (touchScreen()) {
+            // Under the header, unless the selection is up there too: then the
+            // phone's toolbar is above it and the pill goes below its handles.
+            const area = messages.getBoundingClientRect();
+            const r = range.getBoundingClientRect();
+            const top = r.top < area.top + TOOLBAR_ROOM ? Math.min(r.bottom + HANDLE_ROOM, area.bottom - 60) : area.top + 10;
+            pill.style.left = '50%';
+            pill.style.top = top + 'px';
+            pill.classList.add('pinned');
+        } else {
+            const r = range.getBoundingClientRect();
+            pill.style.left = (r.left + r.width / 2) + 'px';
+            pill.style.top = r.top + 'px';
+            pill.classList.remove('pinned');
+        }
         pill.classList.add('show');
     }
 

@@ -22,7 +22,7 @@ function reportPanel() {
   vm.createContext(context);
   return vm.runInContext(appSrc.slice(start, end + 3) + "\nReportPanel;", context);
 }
-const conversation = (...hrefs) => ({ querySelectorAll: () => hrefs.map((href) => ({ href })) });
+const conversation = (...hrefs) => ({ querySelectorAll: () => hrefs.map((href) => ({ href, dataset: {} })) });
 
 test("lists each report and app the conversation linked once, at its latest mention", () => {
   const rp = reportPanel();

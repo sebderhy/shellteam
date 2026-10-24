@@ -1241,6 +1241,13 @@ kbd { font-family: var(--mono); }
     content: ""; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
     border: 6px solid transparent; border-top-color: var(--accent);
 }
+/* Touch screens: pinned under the header, clear of the phone's own selection
+   toolbar (SHE-120); a full-size tap target, no arrow pointing at the text. */
+.quote-sel-pill.pinned {
+    transform: translateX(-50%); animation: none;
+    font-size: 15px; padding: 11px 18px; min-height: 44px;
+}
+.quote-sel-pill.pinned::after, .quote-sel-pill.pinned .quote-kbd { display: none; }
 .quote-kbd {
     font-family: var(--mono); font-size: 10px; line-height: 1;
     background: rgba(0, 0, 0, 0.25); border-radius: 4px; padding: 2px 4px; margin-left: 1px;
