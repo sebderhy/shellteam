@@ -37,13 +37,14 @@ no tab state written) rather than just a status code.
 ### Dependency audit
 
 ```bash
-uv pip install pip-audit && uv run pip-audit
+uv sync --frozen --extra dev && uv run pip-audit
 ```
 
 Public CI runs the same audit, but only after the tag is pushed: v0.1.36 went
 out with urllib3 2.7.0 on the day three advisories against it were published,
-and needed v0.1.37 an hour later. `uv sync` removes dev tools, so reinstall
-pip-audit (and pytest) after it.
+and needed v0.1.37 an hour later. Sync with `--extra dev` exactly as CI does:
+v0.1.43 passed a local audit of an environment without the dev extra while CI
+failed on filelock, which only the dev tools pull in (v0.1.44).
 
 ### Phone geometry
 

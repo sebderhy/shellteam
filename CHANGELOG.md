@@ -5,6 +5,12 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.44] - 2026-10-24
+
+### Security
+- filelock 4.2.4 (CVE-2026-112907, CVE-2026-112913, CVE-2026-112940). It is
+  only pulled in by the dependency-audit dev tool, never by a running box.
+
 ## [0.1.43] - 2026-10-24
 
 ### Added
