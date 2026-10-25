@@ -442,7 +442,13 @@ export class CodexAgent extends CodingAgent {
 
   /** initialize → thread/start|resume → turn/start on a fresh app-server. */
   async _startThreadTurn(proc, text, images) {
-    await proc.rpc.request("initialize", { clientInfo: { name: "shellteam-cockpit", version: "1" } });
+    // experimentalApi: Codex 0.150-0.158 only accept thread/resume's
+    // excludeTurns with it, and without excludeTurns a resume ships the whole
+    // history back on every turn (deprecated since 0.159).
+    await proc.rpc.request("initialize", {
+      clientInfo: { name: "shellteam-cockpit", version: "1" },
+      capabilities: { experimentalApi: true },
+    });
     proc.rpc.notify("initialized");
     const threadParams = {
       model: cliModelForId(this._model),

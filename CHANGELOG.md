@@ -5,6 +5,13 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.46] - 2026-10-25
+
+### Fixed
+- **Codex follow-up messages work on Codex CLI 0.150 to 0.158.** On those
+  versions, v0.1.45 could not resume a Codex conversation, so every message
+  after a tab's first one failed. Codex 0.159 and newer were not affected.
+
 ## [0.1.45] - 2026-10-25
 
 ### Added

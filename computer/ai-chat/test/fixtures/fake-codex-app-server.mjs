@@ -26,6 +26,7 @@ const notify = (method, params) => send({ method, params });
 log({ argv: process.argv.slice(2) });
 
 let turnSeq = 0;
+let experimentalApi = false;
 let turn = null;   // { id, timer }
 const textOf = (input) => input.filter((i) => i.type === "text").map((i) => i.text).join("");
 
@@ -46,9 +47,16 @@ function finishTurn() {
 function handle({ id, method, params }) {
   log({ method, params });
   switch (method) {
-    case "initialize": return send({ id, result: { userAgent: "fake" } });
-    case "thread/start":
-    case "thread/resume": return send({ id, result: { thread: { id: THREAD } } });
+    case "initialize":
+      experimentalApi = !!params.capabilities?.experimentalApi;
+      return send({ id, result: { userAgent: "fake" } });
+    case "thread/resume":
+      // As Codex 0.150-0.158 answer (seen live on 0.150.0, 2026-10-25).
+      if (params.excludeTurns && !experimentalApi) {
+        return send({ id, error: { code: -32600, message: "thread/resume.excludeTurns requires experimentalApi capability" } });
+      }
+      return send({ id, result: { thread: { id: THREAD } } });
+    case "thread/start": return send({ id, result: { thread: { id: THREAD } } });
     case "turn/start": {
       turn = { id: `turn-${++turnSeq}` };
       send({ id, result: { turn: { id: turn.id, status: "inProgress" } } });
