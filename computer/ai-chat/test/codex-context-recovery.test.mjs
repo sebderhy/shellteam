@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexAgent, parseRolloutTokenInfo } from "../lib/codex-agent.mjs";
@@ -127,35 +127,8 @@ test("non-overflow failures still error immediately", () => {
   assert.equal(agent._recovery, null);
 });
 
-// --- SHE-67: the prompt must travel over stdin, never argv ---
-// A prompt starting with "- " (any bullet list) parsed as a CLI flag: clap
-// died with `unexpected argument '- ' found`, exit code=2, on every retry.
-
-test("codex is spawned with the '-' stdin sentinel and receives the prompt on stdin", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "codex-fake-"));
-  // Fake `codex` binary: records argv + stdin raw, emits a minimal exec stream.
-  writeFileSync(join(dir, "codex"), `#!/usr/bin/env bash
-printf '%s' "$*" > ${join(dir, "argv.txt")}
-cat > ${join(dir, "stdin.txt")}
-echo '{"type":"thread.started","thread_id":"t-1"}'
-echo '{"type":"turn.completed","usage":{"input_tokens":10}}'
-`);
-  chmodSync(join(dir, "codex"), 0o755);
-
-  const agent = new CodexAgent({ model: "gpt-5.6-sol", cwd: dir, env: { PATH: `${dir}:${process.env.PATH}`, CODEX_HOME: dir } });
-  agent.start();
-  const turnDone = new Promise((resolve) => agent.on("turn_done", resolve));
-  agent.sendMessage("- Remove the dev->main PR for now.");
-  await turnDone;
-
-  const { readFileSync } = await import("node:fs");
-  const argv = readFileSync(join(dir, "argv.txt"), "utf8");
-  const stdin = readFileSync(join(dir, "stdin.txt"), "utf8");
-  assert.ok(argv.trim().endsWith(" -"), `argv must end with the stdin sentinel, got: ${argv}`);
-  assert.ok(!argv.includes("Remove the dev->main"), "the prompt must not appear in argv");
-  assert.equal(stdin, "- Remove the dev->main PR for now.");
-  rmSync(dir, { recursive: true, force: true });
-});
+// SHE-67 (the prompt never travels in argv) lives in
+// codex-steer-mid-turn-she126.test.mjs, against the app-server protocol.
 
 // --- SHE-69: SIGTERM-trapping CLIs exit 143/signal=null — not an error ---
 

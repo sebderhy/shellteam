@@ -31,7 +31,7 @@ function makeAgent({ realSpawn = false } = {}) {
   if (!realSpawn) {
     // Never let a leftover retry timer spawn a real codex from the suite.
     agent.respawned = [];
-    agent._spawnExec = (p) => agent.respawned.push(p);
+    agent._spawnTurn = (p) => agent.respawned.push(p);
   }
   return agent;
 }
@@ -90,7 +90,7 @@ test("interrupt disarms a pending retry — Stop must stay stopped", async () =>
 });
 
 test("a spawn queues behind a winding-down process instead of racing its lock", () => {
-  const agent = makeAgent({ realSpawn: true });  // the queue gate lives in the real _spawnExec
+  const agent = makeAgent({ realSpawn: true });  // the queue gate lives in the real _spawnTurn
   agent._dying = { pid: 12345 };   // interrupted process not yet closed
 
   agent.sendMessage("follow-up");

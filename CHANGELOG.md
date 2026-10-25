@@ -5,6 +5,27 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.45] - 2026-10-25
+
+### Added
+- **Merge one tab into another.** Two tabs that ended up working on the same
+  project, without knowing about each other, can become one. Drag a tab onto
+  the middle of another tab (the edges still reorder), or right-click it and
+  pick Merge into, then confirm. The receiving agent gets the other tab's
+  whole conversation, every message and tool call, reads what it needs,
+  checks the files and tells you what it took over and anything that
+  conflicts with its own work. The merged tab closes; it stays reopenable
+  from Resume. Works across agents, so a Codex tab can merge into a Claude
+  tab.
+
+### Changed
+- **Codex takes a message while it works, like in the terminal.** A message
+  sent mid-turn used to wait until the whole turn ended. It now joins the
+  running turn, and Codex reads it at its next step. The cockpit drives Codex
+  through `codex app-server`, its own client protocol, instead of
+  `codex exec`; conversations started before the update carry on as they
+  were.
+
 ## [0.1.44] - 2026-10-24
 
 ### Security

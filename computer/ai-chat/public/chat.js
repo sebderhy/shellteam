@@ -505,6 +505,8 @@ window.Chat = {
             this.renderHandoffMarker(msg);
         } else if (msg.event === 'fork') {
             this.renderForkMarker(msg);
+        } else if (msg.event === 'merged') {
+            this.renderMergeMarker(msg);
         } else if (msg.event === 'truncated') {
             // Replay cap marker (SHE-73): the middle of a very long transcript
             // is elided for rendering speed; the full history is on disk.
@@ -546,6 +548,19 @@ window.Chat = {
         marker.textContent = msg.crossFamily
             ? `⑃ Forked from here — now on ${FAMILY_LABEL[msg.toFamily] || msg.toFamily}${msg.toModel ? ` (${msg.toModel})` : ''}`
             : '⑃ Forked from here — this is a new branch of the conversation';
+        App.el.messages.appendChild(marker);
+        scrollToBottom();
+    },
+
+    // Merge marker (SHE-128): another tab's conversation was handed to this
+    // one, which carries on its work. Rendered live and on history replay.
+    renderMergeMarker(msg) {
+        const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', opencode: 'OpenCode' };
+        const agent = FAMILY_LABEL[msg.fromFamily] || msg.fromFamily || 'another agent';
+        const marker = document.createElement('div');
+        marker.className = 'compact-marker merge-marker';
+        marker.textContent = `⤵ Merged in “${msg.fromTitle || 'another tab'}” (${agent}). This agent has its whole conversation.`;
+        marker.title = msg.file || '';
         App.el.messages.appendChild(marker);
         scrollToBottom();
     },

@@ -11,7 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
@@ -19,6 +19,7 @@ import { once } from "node:events";
 process.env.HOME = mkdtempSync(join(tmpdir(), "pasted-images-"));
 const { splitContent, textWithImagePaths, ATTACHMENTS_DIR } = await import("../lib/attachments.mjs");
 const { CodexAgent } = await import("../lib/codex-agent.mjs");
+const { fakeCodex } = await import("./fixtures/fake-codex.mjs");
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 const content = [
@@ -43,29 +44,19 @@ test("a CLI with no image flag is told where the image is", () => {
   assert.equal(textWithImagePaths(splitContent("plain text")), "plain text", "no note without images");
 });
 
-test("Codex is spawned with the pasted image attached, and the prompt still goes over stdin", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fake-codex-"));
-  const log = join(dir, "args.json");
-  const fake = join(dir, "codex");
-  writeFileSync(fake, `#!/usr/bin/env node
-const fs = require("fs");
-let stdin = ""; process.stdin.on("data", d => stdin += d);
-process.stdin.on("end", () => {
-  fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), stdin }));
-  console.log(JSON.stringify({ type: "turn.completed", usage: {} }));
-});
-`);
-  chmodSync(fake, 0o755);
-  const agent = new CodexAgent({ model: "gpt-6-luna-max", cwd: dir, env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+test("Codex gets the pasted image as a localImage input next to the prompt", async () => {
+  const fake = fakeCodex();
+  const agent = new CodexAgent({ model: "gpt-6-luna-max", cwd: fake.dir, env: { ...process.env, ...fake.env } });
   agent.start();
   const done = once(agent, "turn_done");
   agent.sendMessage(content);
   await done;
-  const { argv, stdin } = JSON.parse(readFileSync(log, "utf8"));
-  const image = argv.find((a) => a.startsWith("--image="));
-  assert.ok(image, `codex must get --image, argv was: ${argv.join(" ")}`);
-  assert.ok(existsSync(image.slice("--image=".length)), "the attached file exists");
-  assert.equal(argv.at(-1), "-", "the `-` stdin sentinel stays last, not swallowed by --image");
-  assert.equal(stdin, "what does this say?");
+  const { input } = fake.records().find((r) => r.method === "turn/start").params;
+  assert.equal(input[0].type, "text");
+  assert.equal(input[0].text, "what does this say?");
+  const image = input.find((i) => i.type === "localImage");
+  assert.ok(image, `codex must get the image, input was: ${JSON.stringify(input)}`);
+  assert.ok(existsSync(image.path), "the attached file exists");
   agent.stop();
+  fake.cleanup();
 });

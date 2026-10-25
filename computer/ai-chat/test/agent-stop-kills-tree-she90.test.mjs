@@ -87,8 +87,9 @@ test("Codex interrupt(): one turn_done, and post-Stop stdout is dropped", () => 
   assert.equal(a.isGenerating, false, "generating cleared");
 
   // Codex keeps streaming as it winds down — every line must be dropped.
-  a._processLine(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "still going" } }));
-  a._processLine(JSON.stringify({ type: "item.started", item: { id: "t1", type: "command_execution", command: "x" } }));
+  const proc = { rpc: { settle: () => true, respond() {} } };
+  a._processLine(proc, JSON.stringify({ method: "item/completed", params: { item: { type: "agentMessage", text: "still going" } } }));
+  a._processLine(proc, JSON.stringify({ method: "item/started", params: { item: { id: "t1", type: "commandExecution", command: "x" } } }));
   assert.equal(leaked, 0, "no event escapes the interrupted gate");
   assert.equal(turnDone, 1, "and no second turn_done");
 });

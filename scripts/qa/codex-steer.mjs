@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Codex mid-turn behaviour against a LIVE cockpit (SHE-107 / SHE-109).
+// Codex mid-turn behaviour against a LIVE cockpit (SHE-107 / SHE-109 / SHE-126).
 //
 // Drives the real cockpit WebSocket with a real Codex process and checks that
 // steering a running turn never surfaces "already has an active writer":
-//   steer      send a second message while a tool call runs → both answered, in order
+//   steer      send a second message while a tool call runs → the running turn reads it
 //   stop-send  Stop the running turn, send another message at once → answered
 //   burst      two messages back-to-back with no wait → both answered
 //   after-done a message the instant turn_done arrives → answered
@@ -76,7 +76,7 @@ async function newTab(ws) {
   return created.slot;
 }
 
-const LONG = (tag) => `Run the shell command \`sleep 40\` (really wait for it), then reply with exactly the single word DONE-${tag} and nothing else.`;
+const LONG = (tag) => `Run the shell command \`sleep 25\` (really wait for it), then reply with exactly the single word DONE-${tag} and nothing else.`;
 const SHORT = (tag) => `Reply with exactly the single word DONE-${tag} and nothing else.`;
 
 async function scenarioSteer(ws) {
@@ -85,15 +85,20 @@ async function scenarioSteer(ws) {
   send(ws, { type: "send", slot, content: LONG("A") });
   await waitFor(ws, (m) => m.slot === slot && m.type === "tool_start");
   await sleep(1500);
-  send(ws, { type: "send", slot, content: SHORT("B") });
-  await waitFor(ws, (m) => m.slot === slot && m.type === "turn_done");
-  await waitFor(ws, (m) => m.slot === slot && m.type === "turn_done" && turnDones(transcript(ws, slot, t0)).length >= 2);
+  // An addition, not a contradiction: SHORT("B") says "only DONE-B", and a
+  // steered turn rightly obeys the newest instruction.
+  send(ws, { type: "send", slot, content: "Also, after DONE-A, put the word DONE-B on its own line." });
+  await waitFor(ws, (m) => m.slot === slot && m.type === "turn_done" && /DONE-A/.test(textOf(transcript(ws, slot, t0)))
+    && /DONE-B/.test(textOf(transcript(ws, slot, t0))));
+  await sleep(3000);   // a message wrongly queued instead of steered would open a second turn here
   const ev = transcript(ws, slot, t0);
   const text = textOf(ev);
   check(writerErrors(ev).length === 0, `steer: no writer conflict surfaced (${writerErrors(ev).length} seen)`);
-  check(/DONE-A/.test(text), "steer: first turn answered (DONE-A)");
+  check(/DONE-A/.test(text), "steer: first message answered (DONE-A)");
   check(/DONE-B/.test(text), "steer: mid-turn message answered (DONE-B)");
-  check(text.indexOf("DONE-A") < text.indexOf("DONE-B"), "steer: answered in order");
+  // SHE-126: the running turn reads the mid-turn message (turn/steer), as in
+  // Codex's terminal UI, instead of holding it for a turn of its own.
+  check(turnDones(ev).length === 1, `steer: the mid-turn message joined the running turn (${turnDones(ev).length} turn(s))`);
   return slot;
 }
 
@@ -116,7 +121,9 @@ async function scenarioBurst(ws) {
   const t0 = Date.now();
   send(ws, { type: "send", slot, content: SHORT("D") });
   send(ws, { type: "send", slot, content: SHORT("E") });
-  await waitFor(ws, (m) => m.slot === slot && m.type === "turn_done" && turnDones(transcript(ws, slot, t0)).length >= 2);
+  // The second lands before the turn starts (queued) or during it (steered).
+  await waitFor(ws, (m) => m.slot === slot && m.type === "turn_done"
+    && /DONE-D/.test(textOf(transcript(ws, slot, t0))) && /DONE-E/.test(textOf(transcript(ws, slot, t0))));
   const ev = transcript(ws, slot, t0);
   const text = textOf(ev);
   check(writerErrors(ev).length === 0, `burst: no writer conflict surfaced (${writerErrors(ev).length} seen)`);

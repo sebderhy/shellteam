@@ -8,18 +8,20 @@
  * the same still-running holder, and the first process kept running as an
  * orphan the adapter no longer tracked. Claude Code queues a mid-turn message;
  * Codex now does the same — held until the running turn's process has exited,
- * then run as its own turn, in order.
+ * then run as its own turn, in order. Since SHE-126 a running turn takes the
+ * message directly (turn/steer); this queue is the path for every moment it
+ * can't: before the turn started, during /compact or a recovery, or a steer
+ * that lost the race with the turn's end.
  *
  * The integration test drives the REAL spawn/close/drain path with a fake
  * `codex` on PATH (no quota, no network); the unit tests pin the state rules.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, writeFileSync, readFileSync, chmodSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { once } from "node:events";
 import { CodexAgent } from "../lib/codex-agent.mjs";
+import { fakeCodex } from "./fixtures/fake-codex.mjs";
 
 function makeAgent() {
   const agent = new CodexAgent({ model: "gpt-5.6-sol", cwd: tmpdir(), env: {} });
@@ -29,7 +31,7 @@ function makeAgent() {
   // GROUP (kill(-pid)), and a made-up pid that ever reached it would signal
   // real processes — pid 1 did exactly that, kill(-1) took the whole user
   // session down three times on 2026-09-07 before the guard below existed.
-  agent._spawnExec = (p) => { agent.spawned.push(p); agent._isGenerating = true; agent._process = { pid: 999, killed: true }; };
+  agent._spawnTurn = (p) => { agent.spawned.push(p); agent._isGenerating = true; agent._process = { pid: 999, killed: true }; };
   return agent;
 }
 
@@ -115,26 +117,11 @@ test("Stop drops queued follow-ups — a cancelled turn must not resurrect them"
   assert.deepEqual(agent2._queued, []);
 });
 
-test("end-to-end with a fake codex: the second message runs after the first process exits, as a resume", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "she107-"));
-  const log = join(dir, "calls.log");
-  // Fake `codex exec`: records argv + the stdin prompt, streams a minimal
-  // JSONL turn, lingers briefly (the window the bug lived in), then exits.
-  writeFileSync(join(dir, "codex"), `#!/bin/sh
-prompt=$(cat)
-printf '%s\\t%s\\n' "$*" "$prompt" >> "${log}"
-echo '{"type":"thread.started","thread_id":"thread-she107"}'
-echo '{"type":"item.completed","item":{"id":"m1","type":"agent_message","text":"reply to '"$prompt"'"}}'
-echo '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}'
-sleep 0.4
-exit 0
-`);
-  chmodSync(join(dir, "codex"), 0o755);
-
-  const agent = new CodexAgent({
-    model: "gpt-5.6-sol", cwd: dir,
-    env: { PATH: `${dir}:${process.env.PATH}`, HOME: dir, CODEX_HOME: join(dir, "codex-home") },
-  });
+test("end-to-end with a fake codex: a message the running turn can't take runs after the first process exits, as a resume", async () => {
+  // The running turn refuses the mid-turn message (turn/steer fails, e.g. it
+  // was already finishing — SHE-126), so it falls back to the SHE-107 queue.
+  const fake = fakeCodex({ TURN_MS: 400, REFUSE_STEER: 1, THREAD: "thread-she107" });
+  const agent = new CodexAgent({ model: "gpt-5.6-sol", cwd: fake.dir, env: fake.env });
   agent.start();
   const dones = [];
   agent.on("turn_done", (d) => dones.push(d));
@@ -145,7 +132,6 @@ exit 0
     agent.sendMessage("first");
     await once(agent, "text_done");                 // first process is live and streaming
     agent.sendMessage("second");                    // the SHE-107 moment
-    assert.deepEqual(agent._queued, ["second"]);
 
     const deadline = Date.now() + 8000;
     while (dones.length < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
@@ -153,14 +139,16 @@ exit 0
     assert.ok(!dones.some((d) => d.is_error), `no turn may fail: ${JSON.stringify(dones)}`);
     assert.deepEqual(errors, [], "no error toast");
 
-    const calls = readFileSync(log, "utf8").trim().split("\n").map((l) => l.split("\t"));
-    assert.equal(calls.length, 2, "exactly two codex processes, never concurrent");
-    assert.equal(calls[0][1], "first");
-    assert.equal(calls[1][1], "second");
-    assert.match(calls[1][0], /^exec resume thread-she107 /, "the queued message resumes the same thread");
+    const records = fake.records();
+    assert.equal(records.filter((r) => r.argv).length, 2, "exactly two codex processes, never concurrent");
+    const turns = records.filter((r) => r.method === "turn/start").map((r) => r.params.input[0].text);
+    assert.deepEqual(turns, ["first", "second"]);
+    const resumes = records.filter((r) => r.method === "thread/resume");
+    assert.equal(resumes.length, 1);
+    assert.equal(resumes[0].params.threadId, "thread-she107", "the queued message resumes the same thread");
     assert.deepEqual(agent._queued, []);
   } finally {
     agent.stop();
-    rmSync(dir, { recursive: true, force: true });
+    fake.cleanup();
   }
 });

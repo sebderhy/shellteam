@@ -13,6 +13,9 @@ import {
 import { loadAdapterClass, supports, agentIdFor } from "./agents/registry.mjs";
 import { resolveModelId } from "./model-catalog.mjs";
 import { handoffSession } from "./portable/index.mjs";
+import { importSession } from "./portable/import.mjs";
+import { renderTranscript } from "./portable/transcript.mjs";
+import { CSF_DIR } from "./portable/csf.mjs";
 import {
   findSessionFile,
   readSessionForReplay,
@@ -680,10 +683,71 @@ export async function nudgeLostBackgroundTasks(slotId, reason) {
   slot.bgTasks = [];
   saveTabs();
   console.log(`[session-mgr] Slot ${slotId}: ${tasks.length} background task(s) died with the CLI (${reason}) — resuming the agent with a notice`);
-  const message = lostTasksNotice(tasks, reason);
+  return sendNotice(slotId, lostTasksNotice(tasks, reason));
+}
+
+/** Start a turn on a slot with a <cockpit-notice> the user didn't type. */
+async function sendNotice(slotId, message) {
   addUserMessage(slotId, message, { internal: true });
-  if (!slot.agent) await startAgent(slotId);
+  if (!getSlot(slotId).agent) await startAgent(slotId);
   return sendMessage(slotId, message);
+}
+
+function mergeNotice({ title, family, model, cwd, file, messages }) {
+  return [
+    "<cockpit-notice>",
+    `The user merged another tab into this conversation. That tab, "${title}", ran ${family} (${model}) in ${cwd} separately from you, and is now closed.`,
+    `Its whole conversation (${messages} messages, with every tool call and result) is at ${file}.`,
+    "Read what you need from it, check the current state of the files it touched, then tell the user in a few lines what that tab did, what you are taking over from it, and anything that conflicts with your own work. From now on you carry both lines of work.",
+    "</cockpit-notice>",
+  ].join("\n");
+}
+
+/**
+ * Merge tab `sourceId` into tab `targetId` (SHE-128): two tabs that worked on
+ * the same project without talking. No CLI can load two conversations into one
+ * session, so the target agent is handed the source's whole conversation as a
+ * readable transcript and decides itself what matters in it; the source tab
+ * closes. Works across agent families, since the transcript is plain text.
+ */
+export async function mergeSlot(sourceId, targetId) {
+  const source = slots.get(sourceId);
+  const target = slots.get(targetId);
+  if (sourceId === targetId) return { error: "A tab can't be merged into itself. Pick another tab." };
+  if (!source || !target) return { error: "That tab no longer exists." };
+  if (!source.sessionId) return { error: "Nothing to merge yet: that tab has no conversation." };
+  if (source.isGenerating || target.isGenerating) {
+    return { error: "Both tabs must be idle to merge. Wait until they finish, or stop them, then merge." };
+  }
+
+  const family = agentIdFor(source.config.model);
+  const model = source.config.model;
+  const title = source.title || "Untitled tab";
+  let file, stats;
+  try {
+    const imported = importSession({ sessionId: source.sessionId, family, model, cwd: source.config.cwd });
+    stats = imported.stats;
+    mkdirSync(CSF_DIR, { recursive: true });
+    file = join(CSF_DIR, `merge-${Date.now()}-tab${sourceId}-into-tab${targetId}.md`);
+    writeFileSync(file, renderTranscript(imported.csf));
+  } catch (e) {
+    console.error(`[session-mgr] Merge slot ${sourceId}(${source.sessionId}) → ${targetId} FAILED: ${e.stack || e.message}`);
+    return { error: `Couldn't read that tab's conversation: ${e.message}. Both tabs are untouched.` };
+  }
+
+  deleteSlot(sourceId);
+  if (!target.title && source.title) target.title = source.title;
+  const marker = {
+    type: "session_event", event: "merged",
+    fromSlot: sourceId, fromTitle: title, fromFamily: family, fromModel: model, file,
+    timestamp: Date.now(),
+  };
+  addToHistory(targetId, marker);
+  const { type, ...event } = marker;
+  slotBroadcast(targetId, type, event);
+  console.log(`[session-mgr] Merged slot ${sourceId}(${source.sessionId}, ${family}) into slot ${targetId}: ${stats.messages} messages → ${file}`);
+  await sendNotice(targetId, mergeNotice({ title, family, model, cwd: source.config.cwd, file, messages: stats.messages }));
+  return { file };
 }
 
 /** After restoreSlots: nudge every slot that lost background tasks to the restart. */

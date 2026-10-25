@@ -22,13 +22,11 @@ export function autoCompactLimitForModel(model) {
   return Math.floor(contextLimitForId(model) * AUTO_COMPACT_FRACTION);
 }
 
-// FALLBACK mapping of `turn.completed.usage` for the context meter — correct
-// only for single-API-call turns. Verified on codex-cli 0.144.1: that usage
-// object SUMS input_tokens across every API call of the turn (a 3-call turn
-// reports ~3× the context size), so on long tool-heavy turns it inflates to
-// tens of millions of "tokens" (SHE-68 — "42069k · 100%"). The authoritative
-// per-call numbers live in the session rollout file (see
-// parseRolloutTokenInfo); this is only used when that file can't be read.
+// FALLBACK usage for the context meter, used only when the session rollout
+// file (the authoritative per-call numbers, see parseRolloutTokenInfo) can't
+// be read. `codex exec`'s turn.completed.usage SUMMED input_tokens across the
+// turn's API calls (SHE-68 — "42069k · 100%"); the app-server's
+// thread/tokenUsage `last` count, which feeds this now, is per call.
 export function codexUsage(usage) {
   if (!usage || typeof usage.input_tokens !== "number") return undefined;
   return { input_tokens: usage.input_tokens };
@@ -97,19 +95,98 @@ const WATCHDOG_IDLE_MS = 8 * 60 * 1000;  // 8 min
 // wedged tool child) doesn't, escalate so Stop always actually stops.
 const KILL_ESCALATE_MS = 2000;
 
+// Codex colours its stderr log lines; the tail is shown to the user verbatim.
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+// A finished turn's app-server exits once its stdin closes; this bounds a
+// process that doesn't (a wedged MCP child), so the next turn isn't stuck
+// behind a writer lock nobody is using.
+const EXIT_AFTER_TURN_MS = 5000;
+
+/** Text + pasted image paths as app-server `UserInput` items. */
+function userInput(text, images = []) {
+  return [
+    { type: "text", text, text_elements: [] },
+    ...images.map((path) => ({ type: "localImage", path })),
+  ];
+}
+
 /**
- * CodexAgent — wraps the Codex CLI (`codex exec --json`) and translates
- * its JSONL events into clean protocol events.
+ * The text of an app-server TurnError. Provider failures arrive as the raw
+ * response JSON in `message`; its inner message is what a person can read. A
+ * context overflow always reads as one, so the SHE-66 recovery still fires.
+ */
+export function turnErrorMessage(error) {
+  let message = error?.message || "Turn failed";
+  try {
+    const inner = JSON.parse(message)?.error?.message;
+    if (typeof inner === "string" && inner) message = inner;
+  } catch { /* plain-text message */ }
+  if (error?.codexErrorInfo === "contextWindowExceeded" && !CONTEXT_OVERFLOW_RE.test(message)) {
+    message = `Codex ran out of room in the model's context window: ${message}`;
+  }
+  return message;
+}
+
+/**
+ * JSON-RPC over one app-server process's stdio: numbered requests resolved by
+ * their responses, notifications fire-and-forget. A process exit rejects every
+ * request still waiting, so no caller hangs on a dead server.
+ */
+class AppServerConnection {
+  constructor(proc) {
+    this._proc = proc;
+    this._nextId = 0;
+    this._pending = new Map();
+  }
+
+  request(method, params) {
+    const id = ++this._nextId;
+    return new Promise((resolve, reject) => {
+      this._pending.set(id, { resolve, reject, method });
+      this._write({ id, method, params });
+    });
+  }
+
+  notify(method, params) { this._write(params === undefined ? { method } : { method, params }); }
+
+  respond(id, payload) { this._write({ id, ...payload }); }
+
+  /** Settle the request a response line answers; false if it answers none. */
+  settle(message) {
+    const entry = this._pending.get(message.id);
+    if (!entry) return false;
+    this._pending.delete(message.id);
+    if (message.error) entry.reject(new Error(`${entry.method} failed: ${message.error.message || JSON.stringify(message.error)}`));
+    else entry.resolve(message.result);
+    return true;
+  }
+
+  closed() {
+    for (const { reject, method } of this._pending.values()) reject(new Error(`${method}: Codex app-server exited before answering`));
+    this._pending.clear();
+  }
+
+  _write(message) {
+    if (this._proc.stdin.writable) this._proc.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+}
+
+/**
+ * CodexAgent — drives the Codex CLI through `codex app-server` (its own
+ * JSON-RPC client protocol) and translates its notifications into clean
+ * protocol events.
  *
- * Unlike ClaudeAgent (single long-lived SDK query), CodexAgent spawns a
- * new `codex exec` process per user turn. Resume uses thread IDs.
+ * Unlike ClaudeAgent (single long-lived SDK query), CodexAgent spawns a new
+ * app-server process per user turn, which exits when the turn completes.
+ * Resume uses thread IDs. A message sent mid-turn joins the running turn
+ * (turn/steer), as in Codex's terminal UI (SHE-126).
  */
 export class CodexAgent extends CodingAgent {
   constructor(opts) {
     super(opts);
     this._process = null;
     this._threadId = opts.sessionId || null;
-    this._isFirstTurn = !opts.sessionId;
     this._streamingText = "";
     this._currentAgentText = "";
     this._currentAgentId = null;
@@ -132,6 +209,10 @@ export class CodexAgent extends CodingAgent {
     this._pendingSpawn = null;      // prompt queued until _dying exits (SHE-102)
     this._writerRetryPending = false; // delayed retry armed after a writer conflict
     this._writerRetryUsed = false;  // one writer-conflict retry per user message
+    this._activeTurnId = null;      // the running app-server turn, steerable
+    this._steered = [];             // mid-turn messages sent with turn/steer, not yet read
+    this._steerSeq = 0;
+    this._turnTokenUsage = undefined; // last thread/tokenUsage of this turn
 
     // Strip Anthropic secrets from env
     this._env = { ...opts.env };
@@ -161,14 +242,16 @@ export class CodexAgent extends CodingAgent {
   _send(prompt) {
     const text = typeof prompt === "string" ? prompt : prompt.text;
 
-    // A live process holds the thread's writer lock even after turn.completed
+    // A running turn takes the message directly (SHE-126). Otherwise a live
+    // process holds the thread's writer lock even after turn.completed
     // (SHE-107): see _queueIfBusy in coding-agent.mjs.
+    if (this._isBusy() && this._steer(prompt)) return;
     if (this._queueIfBusy(prompt)) return;
 
     if (text.trim() === "/compact") {
       this._compactTurn = true;
       this._compactEmitted = false;
-      this._spawnExec(COMPACT_ACK_PROMPT);
+      this._spawnTurn(COMPACT_ACK_PROMPT);
       return;
     }
 
@@ -178,7 +261,7 @@ export class CodexAgent extends CodingAgent {
     this._recoveryUsed = false;
     this._writerRetryPending = false;
     this._writerRetryUsed = false;
-    this._spawnExec(prompt);
+    this._spawnTurn(prompt);
   }
 
   // A winding-down process still holds the writer lock: its close runs the
@@ -190,11 +273,12 @@ export class CodexAgent extends CodingAgent {
 
   interrupt() {
     this._recovery = null;
-    const dropped = !!this._pendingSpawn || this._queued.length > 0;
-    // A queued spawn, queued follow-ups or an armed writer retry would
-    // resurrect the turn the user just cancelled — drop them.
+    const dropped = !!this._pendingSpawn || this._queued.length > 0 || this._steered.length > 0;
+    // A queued spawn, queued or unread steered follow-ups, or an armed writer
+    // retry would resurrect the turn the user just cancelled — drop them.
     this._pendingSpawn = null;
     this._queued = [];
+    this._steered = [];
     this._writerRetryPending = false;
     if (this._process) this._dying = this._process;
     // Ignore any stdout that keeps arriving while codex winds down — without
@@ -218,6 +302,7 @@ export class CodexAgent extends CodingAgent {
     this._recovery = null;
     this._pendingSpawn = null;
     this._queued = [];
+    this._steered = [];
     this._writerRetryPending = false;
     this._interrupted = true;
     if (this._process) this._dying = this._process;
@@ -230,7 +315,7 @@ export class CodexAgent extends CodingAgent {
 
   // --- Internal ---
 
-  _spawnExec(prompt) {
+  _spawnTurn(prompt) {
     const { text, images } = typeof prompt === "string" ? { text: prompt, images: [] } : prompt;
     // A process signalled by interrupt()/stop() may still be winding down —
     // and it holds this thread's writer lock, so a resume spawned now dies
@@ -244,13 +329,11 @@ export class CodexAgent extends CodingAgent {
       return;
     }
 
-    const args = ["exec"];
-
-    if (!this._isFirstTurn && this._threadId) {
-      args.push("resume", this._threadId);
-    } else if (!this._isFirstTurn) {
-      args.push("resume", "--last");
-    }
+    // `codex app-server` (Codex's own client protocol, the one its terminal UI
+    // speaks) instead of `codex exec`: same one-process-per-turn lifecycle, but
+    // the running turn has an input channel, so a message sent mid-turn joins
+    // it with turn/steer like it does in the terminal (SHE-126).
+    const args = ["app-server", "--stdio"];
 
     if (this._compactTurn) {
       // Manual /compact: force immediate compaction (limit of 1 → always over).
@@ -270,22 +353,11 @@ export class CodexAgent extends CodingAgent {
     }
 
     args.push(
-      "--json",
-      "--dangerously-bypass-approvals-and-sandbox",
-      "--skip-git-repo-check",
       ...codexLayerArgs(this._cwd, this._env), // ShellTeam's additive -c overrides (MCP, doc-fallback, provider)
       ...configArgsForId(this._model),
-      "-m", cliModelForId(this._model),
-      // `=` form: --image takes several values and would swallow the `-` below.
-      ...images.map((path) => `--image=${path}`),
-      // The prompt goes over STDIN (`-` sentinel), never argv: a prompt starting
-      // with `-` (e.g. a bullet list) is otherwise parsed as a flag — clap dies
-      // with `unexpected argument '- ' found`, code=2 (SHE-67) — and argv also
-      // caps prompt length at ARG_MAX.
-      "-",
     );
 
-    this._isResuming = !this._isFirstTurn && !!this._threadId;
+    this._isResuming = !!this._threadId;
     this._watchdogTriggered = false;
     this._interrupted = false;
     if (this._killTimer) { clearTimeout(this._killTimer); this._killTimer = null; }
@@ -301,6 +373,7 @@ export class CodexAgent extends CodingAgent {
       detached: true,
     });
     const proc = this._process;
+    proc.rpc = new AppServerConnection(proc);
 
     // Without this handler a spawn failure (codex not installed) is an
     // UNCAUGHT EventEmitter error that takes down the whole ai-chat server.
@@ -310,18 +383,18 @@ export class CodexAgent extends CodingAgent {
       this._failTurn(this._processErrorMessage("Codex", err, "npm install -g @openai/codex"));
     });
 
-    // Deliver the prompt over stdin (see the `-` sentinel above). EPIPE here
-    // means the process died before reading — the close handler reports that.
+    // EPIPE here means the process died before reading — the close handler
+    // reports that.
     this._process.stdin.on("error", (err) => {
       console.error(`[codex-agent] stdin write failed: ${err.message}`);
     });
-    this._process.stdin.end(text);
 
-    this._isFirstTurn = false;
     this._isGenerating = true;
     this._currentAgentText = "";
     this._currentAgentId = null;
     this._turnResultEmitted = false;
+    this._activeTurnId = null;
+    this._turnTokenUsage = undefined;
     this._startTime = Date.now();
     this._msgCount = 0;
     this._recentMsgs = [];
@@ -329,15 +402,14 @@ export class CodexAgent extends CodingAgent {
 
     let buffer = "";
     this._process.stdout.on("data", (chunk) => {
-      this._turnHeard = true;
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop();
-      for (const line of lines) this._processLine(line);
+      for (const line of lines) this._processLine(proc, line);
     });
 
     this._process.stderr.on("data", (chunk) => {
-      const text = chunk.toString().trim();
+      const text = chunk.toString().replace(ANSI_RE, "").trim();
       if (text) {
         console.error(`[codex-agent] stderr: ${text}`);
         // Keep the tail so an abrupt non-zero exit (no turn.failed event) can
@@ -347,6 +419,8 @@ export class CodexAgent extends CodingAgent {
     });
 
     proc.on("close", (code, signal) => {
+      proc.rpc.closed();
+      if (this._process === proc) this._requeueUnreadSteers();
       this._handleClose(proc, code, signal, buffer);
       // Whatever ended this process, the thread is settled now: run the next
       // message that queued behind the turn (SHE-107). A no-op while a retry,
@@ -355,6 +429,78 @@ export class CodexAgent extends CodingAgent {
     });
 
     this._resetWatchdog();
+    this._startThreadTurn(proc, text, images).catch((err) => {
+      // A refused handshake, resume (e.g. another process holds the thread's
+      // writer lock, SHE-102) or turn/start fails the turn like a turn.failed
+      // event would, so the same writer-retry / overflow-recovery rules apply.
+      if (this._process !== proc || this._interrupted) return;
+      console.error(`[codex-agent] app-server request failed: ${err.message}`);
+      this._processEvent({ type: "turn.failed", error: { message: err.message } });
+      proc.stdin.end();
+    });
+  }
+
+  /** initialize → thread/start|resume → turn/start on a fresh app-server. */
+  async _startThreadTurn(proc, text, images) {
+    await proc.rpc.request("initialize", { clientInfo: { name: "shellteam-cockpit", version: "1" } });
+    proc.rpc.notify("initialized");
+    const threadParams = {
+      model: cliModelForId(this._model),
+      cwd: this._cwd,
+      // == `--dangerously-bypass-approvals-and-sandbox`, which exec took.
+      approvalPolicy: "never",
+      sandbox: "danger-full-access",
+    };
+    const { thread } = this._threadId
+      ? await proc.rpc.request("thread/resume", { ...threadParams, threadId: this._threadId, excludeTurns: true })
+      : await proc.rpc.request("thread/start", threadParams);
+    if (this._process !== proc) return;
+    this._processEvent({ type: "thread.started", thread_id: thread.id });
+    const { turn } = await proc.rpc.request("turn/start", {
+      threadId: thread.id,
+      input: userInput(text, images),
+    });
+    if (this._process === proc && !this._activeTurnId) this._activeTurnId = turn.id;
+  }
+
+  /**
+   * Hand a mid-turn message to the running turn (turn/steer), as Codex's
+   * terminal UI does (SHE-126). Returns false when the turn can't take it —
+   * not started yet, a /compact or overflow-recovery turn, already finishing
+   * — and the caller queues it as its own turn instead (SHE-107).
+   */
+  _steer(prompt) {
+    const proc = this._process;
+    const { text, images } = typeof prompt === "string" ? { text: prompt, images: [] } : prompt;
+    if (!proc || !this._activeTurnId || !this._isGenerating || this._turnResultEmitted
+        || this._compactTurn || this._recovery || this._dying || this._interrupted
+        || text.trim() === "/compact") return false;
+    const clientId = `steer-${++this._steerSeq}`;
+    const pending = { clientId, prompt };
+    this._steered.push(pending);
+    console.log(`[codex-agent] turn in progress — message steered into turn ${this._activeTurnId} (${clientId})`);
+    proc.rpc.request("turn/steer", {
+      threadId: this._threadId,
+      expectedTurnId: this._activeTurnId,
+      clientUserMessageId: clientId,
+      input: userInput(text, images),
+    }).catch((err) => {
+      // Lost the race with the turn's end: it runs as the next turn instead.
+      if (!this._steered.includes(pending)) return;
+      this._steered = this._steered.filter((s) => s !== pending);
+      console.warn(`[codex-agent] turn/steer refused (${err.message}) — message queued as the next turn`);
+      this._queued.push(prompt);
+      this._drainQueue();
+    });
+    return true;
+  }
+
+  /** Steered messages the turn ended without reading run as the next turn. */
+  _requeueUnreadSteers() {
+    if (!this._steered.length) return;
+    console.warn(`[codex-agent] turn ended before reading ${this._steered.length} steered message(s) — queued as the next turn`);
+    this._queued.unshift(...this._steered.map((s) => s.prompt));
+    this._steered = [];
   }
 
   _handleClose(proc, code, signal, buffer) {
@@ -366,7 +512,7 @@ export class CodexAgent extends CodingAgent {
         const queued = this._pendingSpawn;
         this._pendingSpawn = null;
         console.log(`[codex-agent] winding-down process exited — running the queued spawn`);
-        this._spawnExec(queued);
+        this._spawnTurn(queued);
         return;
       }
     }
@@ -374,7 +520,7 @@ export class CodexAgent extends CodingAgent {
     // nulled it. Stay out of the live turn's state — no finishTurn, no reset.
     if (this._process !== proc) return;
     if (this._killTimer) { clearTimeout(this._killTimer); this._killTimer = null; }
-    if (buffer.trim()) this._processLine(buffer);
+    if (buffer.trim()) this._processLine(proc, buffer);
     this._process = null;
     this._clearWatchdog();
     console.log(`[codex-agent] exited code=${code} signal=${signal} (${Date.now() - this._startTime}ms, ${this._msgCount} msgs)`);
@@ -399,7 +545,7 @@ export class CodexAgent extends CodingAgent {
         this._recovery = null;
         console.warn(`[codex-agent] compaction done — retrying the original message`);
         this._compactTurn = false;
-        this._spawnExec(prompt);
+        this._spawnTurn(prompt);
         return;
       }
       // "compacting" and the process died without turn.completed → give up.
@@ -435,16 +581,96 @@ export class CodexAgent extends CodingAgent {
     }
   }
 
-  _processLine(line) {
-    // Stop was pressed: the turn is already reported interrupted. Drop any
-    // output codex emits while it winds down so it can't re-open the turn.
-    if (this._interrupted) return;
+  /** One app-server stdout line: a response, a server request or a notification. */
+  _processLine(proc, line) {
     if (!line.trim()) return;
-    let event;
-    try { event = JSON.parse(line); } catch {
+    let message;
+    try { message = JSON.parse(line); } catch {
       console.warn(`[codex-agent] unparseable: ${line.slice(0, 200)}`);
       return;
     }
+    if (message.id != null && !message.method) {
+      if (!proc.rpc.settle(message)) console.warn(`[codex-agent] response to unknown request ${message.id}`);
+      return;
+    }
+    if (message.id != null) {
+      // approvalPolicy "never" means Codex should not ask for approvals; a
+      // request it still makes gets a clear refusal rather than a hung turn.
+      console.warn(`[codex-agent] app-server request ${message.method} refused — the cockpit runs Codex without approvals`);
+      proc.rpc.respond(message.id, { error: { code: -32601, message: `${message.method} is not supported by the ShellTeam cockpit` } });
+      return;
+    }
+    if (this._process === proc) this._resetWatchdog();
+    const event = this._fromAppServer(message.method, message.params || {});
+    if (event) this._processEvent(event);
+    if (message.method === "turn/completed" && this._process === proc) this._endTurnProcess(proc);
+  }
+
+  /**
+   * An app-server notification in the event shapes _translate reads (the
+   * `codex exec --json` stream is a flattened form of the same protocol), or
+   * null for notifications the chat doesn't show.
+   */
+  _fromAppServer(method, params) {
+    switch (method) {
+      case "turn/started":
+        this._activeTurnId = params.turn?.id || this._activeTurnId;
+        this._turnHeard = true;   // the turn holds the message now
+        return { type: "turn.started" };
+      case "item/started":
+      case "item/completed":
+        if (params.item?.type === "userMessage") {
+          const read = this._steered.findIndex((s) => s.clientId === params.item.clientId);
+          if (read >= 0) {
+            console.log(`[codex-agent] steered message ${params.item.clientId} read by the running turn`);
+            this._steered.splice(read, 1);
+          }
+          return null;
+        }
+        return { type: method === "item/started" ? "item.started" : "item.completed", item: params.item };
+      case "item/agentMessage/delta":
+        return { type: "item/agentMessage/delta", delta: params.delta };
+      case "turn/plan/updated":
+        return { type: "turn/plan/updated", params };
+      case "thread/tokenUsage/updated":
+        // Per-call occupancy for the context meter when the rollout can't be
+        // read (it replaces exec's turn-summed usage, SHE-68). A resume first
+        // replays the thread's previous count: only this turn's counts apply.
+        if (params.turnId && params.turnId === this._activeTurnId && params.tokenUsage?.last) {
+          this._turnTokenUsage = { input_tokens: params.tokenUsage.last.totalTokens };
+        }
+        return null;
+      case "turn/completed": {
+        const turn = params.turn || {};
+        this._activeTurnId = null;
+        this._requeueUnreadSteers();
+        if (turn.status === "failed") return { type: "turn.failed", error: { message: turnErrorMessage(turn.error) } };
+        return { type: "turn.completed", usage: this._turnTokenUsage };
+      }
+      case "error":
+        // A failure that ends the turn is reported again by turn/completed;
+        // only a retried one (stream reconnects) is news on its own.
+        if (!params.willRetry) return null;
+        return { type: "error", message: turnErrorMessage(params.error) };
+      default:
+        return null;
+    }
+  }
+
+  /** Close the finished turn's app-server so it exits and frees the thread. */
+  _endTurnProcess(proc) {
+    proc.stdin.end();
+    setTimeout(() => {
+      if (proc.exitCode !== null || proc.signalCode !== null) return;
+      console.warn(`[codex-agent] app-server still running ${EXIT_AFTER_TURN_MS}ms after its turn completed — terminating it`);
+      this._terminate(proc, "SIGTERM", KILL_ESCALATE_MS);
+    }, EXIT_AFTER_TURN_MS).unref();
+  }
+
+  _processEvent(event) {
+    // Stop was pressed: the turn is already reported interrupted. Drop any
+    // output codex emits while it winds down so it can't re-open the turn.
+    if (this._interrupted) return;
     this._msgCount++;
     const summary = `#${this._msgCount} (${Date.now() - this._startTime}ms): type=${event.type}`;
     if (this._msgCount <= 5 || this._msgCount % 50 === 0) {
@@ -452,8 +678,6 @@ export class CodexAgent extends CodingAgent {
     }
     this._recentMsgs.push(summary);
     if (this._recentMsgs.length > 10) this._recentMsgs.shift();
-
-    this._resetWatchdog();
     this._translate(event);
   }
 
@@ -529,7 +753,7 @@ export class CodexAgent extends CodingAgent {
       if (!this._writerRetryPending) return;   // superseded by interrupt/stop/new message
       this._writerRetryPending = false;
       if (!this._isActive) return;
-      this._spawnExec(this._lastPrompt);
+      this._spawnTurn(this._lastPrompt);
     }, WRITER_RETRY_DELAY_MS);
     return true;
   }
@@ -548,7 +772,7 @@ export class CodexAgent extends CodingAgent {
     this._recovery.phase = "compacting";
     this._compactTurn = true;
     this._compactEmitted = false;
-    this._spawnExec(COMPACT_ACK_PROMPT);
+    this._spawnTurn(COMPACT_ACK_PROMPT);
   }
 
   // --- Rollout-file token accounting (SHE-66/SHE-68) ---
@@ -627,7 +851,7 @@ export class CodexAgent extends CodingAgent {
       }
 
       case "turn.started":
-        // Internal state only — isGenerating already set in _spawnExec
+        // Internal state only — isGenerating already set in _spawnTurn
         break;
 
       case "item.started": {
@@ -732,10 +956,9 @@ export class CodexAgent extends CodingAgent {
           this._recovery.phase = "resend-pending";
           break;
         }
-        // Real occupancy + operative window come from the rollout file —
-        // `event.usage` sums across the turn's API calls (SHE-68, see
-        // codexUsage). Fall back to it (correct for single-call turns) only
-        // when the rollout can't be read, loudly.
+        // Real occupancy + operative window come from the rollout file
+        // (SHE-68). `event.usage` is the turn's last thread/tokenUsage count,
+        // the fallback when the rollout can't be read, loudly.
         const info = this._readTokenInfo();
         if (info?.model_context_window) this._contextWindow = info.model_context_window;
         let usage;
@@ -752,7 +975,7 @@ export class CodexAgent extends CodingAgent {
           console.warn(`[codex-agent] compaction for ${this._threadId} completed before its post-compaction token_count was flushed — leaving the context meter cleared rather than reporting the pre-compaction peak`);
         } else {
           usage = codexUsage(event.usage);
-          console.warn(`[codex-agent] no token_count in rollout for ${this._threadId} — falling back to turn.completed.usage (overcounts on multi-call turns)`);
+          console.warn(`[codex-agent] no token_count in rollout for ${this._threadId} — falling back to the turn's last thread/tokenUsage count`);
         }
         this._finishTurn({ usage, context_window: this._contextWindow || undefined });
         break;

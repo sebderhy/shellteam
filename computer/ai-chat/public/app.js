@@ -2330,9 +2330,15 @@ function handleMessage(msg) {
             break;
         case 'tab_closed': {
             const idx = sessionSlots.findIndex(s => s.id === msg.slot);
+            const followMerge = msg.mergedInto != null && msg.mergedInto === _mergeInto;
+            if (followMerge) _mergeInto = null;
             if (idx >= 0) {
                 sessionSlots.splice(idx, 1);
-                if (msg.slot === activeSlotId) {
+                if (followMerge && sessionSlots.some(s => s.id === msg.mergedInto)) {
+                    if (msg.slot === activeSlotId) activeSlotId = -1;
+                    switchSessionTab(msg.mergedInto);
+                    renderSessionTabs();
+                } else if (msg.slot === activeSlotId) {
                     const newIdx = Math.min(idx, sessionSlots.length - 1);
                     activeSlotId = -1;
                     switchSessionTab(sessionSlots[newIdx].id);
@@ -3559,7 +3565,7 @@ function renderSessionTabs() {
         const close = showClose
             ? `<button class="session-tab-close" type="button" tabindex="-1" aria-hidden="true" onclick="closeSessionTab(${slot.id})" title="Close ${label}">&times;</button>`
             : '';
-        const tip = escHtml(slotMetaSummary(slot)) + ' — double-click to rename';
+        const tip = escHtml(slotMetaSummary(slot)) + ' — double-click to rename, drag onto another tab to merge';
         const selected = slot.id === activeSlotId;
         const tabLabel = `${label}${unread ? ', unread' : ''}${showClose ? ', press Delete to close' : ''}`;
         html += `<div class="session-tab${active}${generating}${unread}" data-slot="${slot.id}" draggable="true" title="${tip}" role="presentation">
@@ -3654,6 +3660,9 @@ function openTabMenu(slotId, x, y) {
         [unread ? 'Mark as read' : 'Mark as unread', () => setTabUnread(slotId, !unread)],
         ['Rename', () => beginRenameTab(slotId)],
     ];
+    for (const other of sessionSlots) {
+        if (other.id !== slotId) items.push([`Merge into “${slotDisplayLabel(other)}”`, () => mergeTabs(slotId, other.id)]);
+    }
     if (sessionSlots.length > 1) items.push(['Close', () => closeSessionTab(slotId)]);
     const menu = document.createElement('div');
     menu.className = 'actions-menu visible tab-context-menu';
@@ -3678,7 +3687,9 @@ document.addEventListener('contextmenu', (e) => {
     const tab = e.target.closest?.('.session-tab, .drawer-item');
     if (!tab) return;
     e.preventDefault();
-    openTabMenu(Number(tab.dataset.slot), e.clientX, e.clientY);
+    // The Menu key / Shift+F10 fires this with no pointer position.
+    const at = e.clientX || e.clientY ? { left: e.clientX, bottom: e.clientY } : tab.getBoundingClientRect();
+    openTabMenu(Number(tab.dataset.slot), at.left, at.bottom);
 });
 document.addEventListener('pointerdown', (e) => {
     if (_tabMenu && !_tabMenu.contains(e.target)) closeTabMenu();
@@ -3742,21 +3753,28 @@ function setupTabDragReorder() {
         const tab = e.target.closest('.session-tab');
         if (!tab) return;
         _tabDragId = parseInt(tab.dataset.slot);
-        e.dataTransfer.effectAllowed = 'move';
+        // 'link' for a merge drop: a dropEffect the drag doesn't allow cancels
+        // the drop silently.
+        e.dataTransfer.effectAllowed = 'linkMove';
         // Firefox requires data to be set for a drag to start.
         try { e.dataTransfer.setData('text/plain', String(_tabDragId)); } catch (_) {}
         tab.classList.add('dragging');
     });
     container.addEventListener('dragend', () => {
         _tabDragId = null;
-        container.querySelectorAll('.session-tab').forEach(t => t.classList.remove('dragging', 'drag-over'));
+        container.querySelectorAll('.session-tab').forEach(t => t.classList.remove('dragging', 'drag-over', 'merge-target'));
     });
     container.addEventListener('dragover', (e) => {
         if (_tabDragId === null) return;
         e.preventDefault();           // allow drop
-        e.dataTransfer.dropEffect = 'move';
         const over = e.target.closest('.session-tab');
-        container.querySelectorAll('.session-tab').forEach(t => t.classList.toggle('drag-over', t === over && parseInt(t.dataset.slot) !== _tabDragId));
+        const target = over && parseInt(over.dataset.slot) !== _tabDragId ? over : null;
+        const merge = !!target && inMergeZone(target, e.clientX);
+        e.dataTransfer.dropEffect = merge ? 'link' : 'move';
+        container.querySelectorAll('.session-tab').forEach(t => {
+            t.classList.toggle('drag-over', t === target && !merge);
+            t.classList.toggle('merge-target', t === target && merge);
+        });
     });
     container.addEventListener('drop', (e) => {
         if (_tabDragId === null) return;
@@ -3767,11 +3785,19 @@ function setupTabDragReorder() {
         let targetId = over ? parseInt(over.dataset.slot) : null;
         let before = true;
         if (over && targetId !== dragId) {
+            if (inMergeZone(over, e.clientX)) { mergeTabs(dragId, targetId); return; }
             const r = over.getBoundingClientRect();
             before = e.clientX < r.left + r.width / 2;   // left half → insert before
         }
         commitTabReorder(dragId, targetId, before);
     });
+}
+
+// The middle half of a tab merges the dragged tab into it (SHE-128); the outer
+// quarters still reorder.
+function inMergeZone(tab, x) {
+    const r = tab.getBoundingClientRect();
+    return x > r.left + r.width / 4 && x < r.right - r.width / 4;
 }
 
 function commitTabReorder(dragId, targetId, before) {
@@ -3972,6 +3998,31 @@ function forkTab(sourceId) {
     S.ws?.send(JSON.stringify({ type: 'fork_slot', slot: src.id, newSlot: id, nonce: newCreateNonce(id), model: src.config.model }));
     switchSessionTab(id);
     renderSessionTabs();
+}
+
+// Merge tab `sourceId` into tab `targetId` (SHE-128): the target's agent gets
+// the source's whole conversation and carries on both lines of work; the
+// source tab closes. Dragging a tab onto another, or the tab menu, lands here.
+let _mergeInto = null;   // the tab to show once our merge lands
+function mergeTabs(sourceId, targetId) {
+    const source = sessionSlots.find(s => s.id === sourceId);
+    const target = sessionSlots.find(s => s.id === targetId);
+    if (!source || !target || sourceId === targetId) return;
+    const sourceLive = sourceId === activeSlotId ? S.sessionId || source.sessionId : source.sessionId;
+    if (!sourceLive) {
+        showError(`Nothing to merge yet: “${slotDisplayLabel(source)}” has no conversation.`);
+        return;
+    }
+    const busy = (slot) => slot.isGenerating || slot.pendingSend || (slot.id === activeSlotId && S.isGenerating);
+    if (busy(source) || busy(target)) {
+        showError('Both tabs must be idle to merge. Wait until they finish, or stop them, then merge.');
+        return;
+    }
+    const from = slotDisplayLabel(source);
+    const into = slotDisplayLabel(target);
+    if (!confirm(`Merge “${from}” into “${into}”?\n\n“${into}” gets the whole conversation of “${from}” and carries on its work. “${from}” closes (you can reopen it from Resume).`)) return;
+    _mergeInto = targetId;
+    S.ws?.send(JSON.stringify({ type: 'merge_slot', slot: sourceId, into: targetId, replySlot: activeSlotId }));
 }
 
 function switchSessionTab(id) {

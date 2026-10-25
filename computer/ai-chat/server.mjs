@@ -90,6 +90,7 @@ import {
   setSlotModel,
   switchSlotModel,
   forkSlot,
+  mergeSlot,
   getSlotModel,
   getTotalCost,
   getApiKeySource,
@@ -1394,6 +1395,27 @@ chatWSS.on("connection", (ws, req) => {
         });
         broadcast({ type: "history", messages: result.history, slot: newSlot });
         console.log(`[ai-chat] Forked tab ${sourceSlot} → ${newSlot}`);
+        break;
+      }
+
+      case "merge_slot": {
+        // Merge tab `slot` into tab `into` (SHE-128): `into` gets the whole
+        // conversation of `slot` and continues its work; `slot` closes. On
+        // error both tabs are untouched.
+        const source = msg.slot;
+        const target = msg.into;
+        if (!requireSlot(source, "merge_slot") || !requireSlot(target, "merge_slot")) break;
+        if (delegationBroker.isBrokerSlot(source) || delegationBroker.isBrokerSlot(target)) {
+          ws.send(JSON.stringify({ type: "error", slot: source, message: "Delegated-task tabs can't be merged." }));
+          break;
+        }
+        const result = await mergeSlot(source, target);
+        if (result.error) {
+          ws.send(JSON.stringify({ type: "error", slot: msg.replySlot ?? source, message: result.error }));
+          break;
+        }
+        broadcast({ type: "tab_closed", slot: source, mergedInto: target });
+        console.log(`[ai-chat] Merged tab ${source} into ${target}`);
         break;
       }
 
