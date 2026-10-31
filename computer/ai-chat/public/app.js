@@ -78,6 +78,7 @@ window.App = {
         // setup screen asks for the user's own plan first and offers these
         // "on us"; the picker lists only them until a plan is connected.
         includedModels: {},
+        includedSkipSignin: false,   // open on the included models, no sign-in screen
         // Provider-normalized subscription quota data. The cockpit refreshes this
         // in the background and the server caches provider checks, so the compact
         // header monitor remains current without repeatedly opening provider TUIs.
@@ -1546,9 +1547,11 @@ function hasAnyProvider() {
 // The user explicitly took the "on us" option (renderIncludedFallback). Kept in
 // this browser: an included key is a courtesy fallback, so the setup screen
 // asks for the user's OWN plan first and only stops asking once they chose it.
+// An operator can skip that ask (INCLUDED_MODELS_SKIP_SIGNIN, e.g. the demo
+// seat): strangers met a credentials form first and left without a prompt.
 const INCLUDED_CHOSEN_KEY = 'shellteam.includedChosen';
 function includedFallbackChosen() {
-    return localStorage.getItem(INCLUDED_CHOSEN_KEY) === '1';
+    return S.includedSkipSignin || localStorage.getItem(INCLUDED_CHOSEN_KEY) === '1';
 }
 
 function hasIncludedFamily() {
@@ -2425,6 +2428,7 @@ function handleStatusMessage(msg) {
     S.apiKeySource = msg.apiKeySource || S.apiKeySource;
     if (msg.authMode) S.authMode = msg.authMode;
     if (msg.includedModels) S.includedModels = msg.includedModels;
+    if (msg.includedSkipSignin !== undefined) S.includedSkipSignin = !!msg.includedSkipSignin;
     if (msg.subscriptionStatus) S.subscriptionStatus = msg.subscriptionStatus;
     renderSubscriptionWarning();
     // NB: top-level msg.sessionId is a legacy slot-0-only field (server sends

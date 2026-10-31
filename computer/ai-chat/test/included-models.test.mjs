@@ -10,6 +10,7 @@
  */
 import { after, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -141,5 +142,30 @@ describe("wiring pins", () => {
     assert.match(app, /preferredModelFor\('codex', 'gpt-6.1-sol-max'\)/);
     assert.match(app, /function continueWithIncluded\(model\) \{\s*\n\s*localStorage\.setItem\(INCLUDED_CHOSEN_KEY, '1'\);/);
     assert.match(html, /<div class="setup-included hidden" id="setupIncluded"><\/div>/);
+  });
+});
+
+describe("INCLUDED_MODELS_SKIP_SIGNIN (SHE-130)", () => {
+  // Demo strangers met a credentials form first and left without a prompt
+  // (seen at 393 px, 2026-10-25: Login with Claude and an API key field,
+  // the free model at the very bottom).
+  const start = app.indexOf("function includedFallbackChosen() {");
+  const body = app.slice(start, app.indexOf("\n}", start) + 2);
+  const chosen = (skip, stored) => vm.runInNewContext(`${body}; includedFallbackChosen()`, {
+    S: { includedSkipSignin: skip },
+    INCLUDED_CHOSEN_KEY: "shellteam.includedChosen",
+    localStorage: { getItem: () => stored },
+  });
+
+  it("an operator who skips the sign-in opens the chat on the included models", () => {
+    assert.equal(chosen(true, null), true);
+  });
+  it("by default the cockpit still asks for the user's own plan until they pick 'on us'", () => {
+    assert.equal(chosen(false, null), false);
+    assert.equal(chosen(false, "1"), true);
+  });
+  it("status carries the operator's setting", () => {
+    assert.match(server, /includedSkipSignin: process\.env\.INCLUDED_MODELS_SKIP_SIGNIN === "1"/);
+    assert.match(app, /if \(msg\.includedSkipSignin !== undefined\) S\.includedSkipSignin = !!msg\.includedSkipSignin;/);
   });
 });

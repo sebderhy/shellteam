@@ -5,6 +5,21 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.47] - 2026-10-31
+
+### Added
+- **Each of your messages shows when you sent it.** A small time under the
+  bubble: the time alone for today, the date too for older messages. Hover
+  for the exact second. Older conversations show their real send times.
+- **`INCLUDED_MODELS_SKIP_SIGNIN=1` opens the chat straight away.** On a box
+  that offers its own key "on us" (`INCLUDED_MODELS`), a newcomer lands in
+  the chat on the included models instead of a sign-in form. Signing in to
+  their own subscription stays one click away in Settings.
+
+### Security
+- msgpack 1.2.4 (CVE-2026-114613). It is only pulled in by the
+  dependency-audit dev tool, never by a running box.
+
 ## [0.1.46] - 2026-10-25
 
 ### Fixed

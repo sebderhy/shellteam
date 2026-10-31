@@ -30,6 +30,19 @@ function owedSpokenReply(messages) {
  * history the server replays, and nobody wants to re-read their own prompt
  * boilerplate in every bubble.
  */
+// When a user message was sent, as shown under its bubble: the time alone
+// today, the date too on other days, the year only when it isn't this one.
+function userMessageTime(timestamp, now = new Date()) {
+    const d = new Date(timestamp);
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (d.toDateString() === now.toDateString()) return time;
+    const day = d.toLocaleDateString([], {
+        month: 'short', day: 'numeric',
+        ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+    });
+    return `${day}, ${time}`;
+}
+
 function withoutAudioReplyHeader(text) {
     return typeof text === 'string' ? text.replace(AUDIO_REPLY_HEADER_RE, '') : text;
 }
@@ -118,7 +131,7 @@ window.Chat = {
                 // echoes) are tagged internal by the server — render them as a
                 // collapsed system note, never as the user's own bubble (SHE-65).
                 if (msg.internal) this.addInternalMessage(msg.content);
-                else this.addUserMessage(msg.content);
+                else this.addUserMessage(msg.content, null, msg.timestamp ?? null);
                 break;
             case 'session_event':
                 this._handleSessionEvent(msg);
@@ -724,7 +737,7 @@ window.Chat = {
         scrollToBottom();
     },
 
-    addUserMessage(rawText, imageUrls) {
+    addUserMessage(rawText, imageUrls, timestamp = Date.now()) {
         const text = withoutAudioReplyHeader(rawText);
         this.commitAssistantEl();
         if (typeof updateEmptyState === 'function') {
@@ -751,6 +764,14 @@ window.Chat = {
             bubble.appendChild(span);
         }
         div.appendChild(bubble);
+        if (timestamp != null) {  // null: replayed history from before timestamps were kept
+            const time = document.createElement('time');
+            time.className = 'msg-time';
+            time.dateTime = new Date(timestamp).toISOString();
+            time.title = new Date(timestamp).toLocaleString();
+            time.textContent = userMessageTime(timestamp);
+            div.appendChild(time);
+        }
         App.el.messages.appendChild(div);
         scrollToBottom();
     },

@@ -222,6 +222,9 @@ function authFlags() {
     // from INCLUDED_MODELS). A family listed here bills "included": the UI asks
     // for the user's own plan first and offers exactly these models "on us".
     includedModels: includedModelsByFamily(),
+    // INCLUDED_MODELS_SKIP_SIGNIN=1: open straight into the chat on those
+    // models instead of asking for the user's own plan first (SHE-130).
+    includedSkipSignin: process.env.INCLUDED_MODELS_SKIP_SIGNIN === "1",
     // Health is independent from billing mode. An expired subscription can
     // coexist with "apikey" when ShellTeam has fallen back to a metered key.
     subscriptionStatus: {
