@@ -31,10 +31,10 @@ from api.services.auth import (
     FILES_COOKIE,
     MASTER_COOKIE,
     PORT_SHARE_COOKIE,
-    files_token,
     port_share_cookie_value,
     sign_share_port,
 )
+from tests._owner_session import files_token, session_token
 from tests.test_proxy import _ws_scope
 
 USER = "user-uuid-1234"
@@ -205,7 +205,7 @@ class TestHttp:
         )
         with TestClient(_app(), base_url="http://localhost") as client:
             resp = client.get(
-                "/", headers={"host": NAMED_HOST}, cookies={MASTER_COOKIE: "fake-jwt-token"}
+                "/", headers={"host": NAMED_HOST}, cookies={MASTER_COOKIE: session_token()}
             )
         assert upstream.called
         assert resp.status_code == 200
@@ -219,7 +219,7 @@ class TestHttp:
         new = respx.get("http://172.20.0.5:4000/").mock(return_value=httpx.Response(200, text="new"))
         app_routes.set_route(USER, "inkling", 4000)
         with TestClient(_app(), base_url="http://localhost") as client:
-            resp = client.get("/", headers={"host": NAMED_HOST}, cookies={MASTER_COOKIE: "fake-jwt-token"})
+            resp = client.get("/", headers={"host": NAMED_HOST}, cookies={MASTER_COOKIE: session_token()})
         assert resp.text == "new" and new.called and not old.called
 
     def test_unknown_name_is_the_styled_404(self, resolve_owner):
@@ -292,7 +292,11 @@ class TestAuthParity:
         )
 
     def test_master(self, inkling):
-        assert self._both(master="fake-jwt-token") == (AUTH_OK, AUTH_OK)
+        assert self._both(master=session_token()) == (AUTH_OK, AUTH_OK)
+
+    def test_owner_token_in_the_session_cookie_is_refused(self, inkling):
+        """SHE-136: the cookie carries a session, never the master itself."""
+        assert self._both(master="fake-jwt-token") == (AUTH_BAD_TOKEN, AUTH_BAD_TOKEN)
 
     def test_no_credential(self, inkling):
         assert self._both() == (AUTH_NO_TOKEN, AUTH_NO_TOKEN)
@@ -452,7 +456,7 @@ class TestInternalApi:
 class TestOwnerApi:
     def test_crud_with_owner_cookie(self):
         with TestClient(_app()) as client:
-            client.cookies.set(MASTER_COOKIE, "fake-jwt-token")
+            client.cookies.set(MASTER_COOKIE, session_token())
             r = client.post("/api/computers/apps", json={"name": "inkling", "port": PORT})
             assert r.status_code == 200 and r.json()["apps"][0]["port"] == PORT
             assert client.get("/api/computers/apps").json()["apps"][0]["name"] == "inkling"
@@ -461,7 +465,7 @@ class TestOwnerApi:
 
     def test_mutations_refuse_foreign_origin(self):
         with TestClient(_app()) as client:
-            client.cookies.set(MASTER_COOKIE, "fake-jwt-token")
+            client.cookies.set(MASTER_COOKIE, session_token())
             r = client.post(
                 "/api/computers/apps", json={"name": "inkling", "port": PORT},
                 headers={"origin": "https://evil.com"},

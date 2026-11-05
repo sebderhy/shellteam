@@ -1135,6 +1135,13 @@ fi
 # Chromium — exactly why bumps must be QA'd, not taken from `:latest`.)
 STEEL_IMAGE="ghcr.io/steel-dev/steel-browser:latest@sha256:995a31d75d3270bc27db3bee788107af78d3378a61f9e162c2813860c21884c9"
 STEEL_CONTAINER="shellteam-steel"
+# Steel's OWN Docker network, inter-container communication off (SHE-136). On the
+# default bridge every other container on the host could reach Steel's
+# unauthenticated CDP (:9223) and API (:3000) ports and read the browser's
+# cookie jar; that is how a box was taken over on 2026-11-03. On this network
+# no container (not even another one attached to it) reaches Steel; only the
+# host does, through the loopback publish below.
+STEEL_NETWORK="shellteam-browser-net"
 # Docker-socket access is root-equivalent, so nobody is put in the docker group
 # just for existing — only the browser module needs it, and it asks for it here,
 # where enabling the module IS the consent. For this run `sudo docker` covers the
@@ -1147,6 +1154,31 @@ ensure_docker_group() {
     warn "Adding $(id -un) to the docker group for the browser module — note that Docker-socket access is root-equivalent (see SECURITY.md)."
     sudo usermod -aG docker "$(id -un)" \
         || warn "could not add $(id -un) to the docker group — 'docker' commands need: sudo usermod -aG docker $(id -un)"
+}
+# Idempotent: reuse the network when it is already isolated, recreate it when
+# someone flipped ICC back on (Steel was removed just before, so nothing of ours
+# is attached). Never starts Steel on a network that is not isolated.
+ensure_browser_network() {
+    local icc
+    icc="$(dk network inspect -f '{{index .Options "com.docker.network.bridge.enable_icc"}}' "$STEEL_NETWORK" 2>/dev/null)" \
+        || icc="missing"
+    if [ "$icc" = "false" ]; then
+        log "  Reusing the isolated Docker network $STEEL_NETWORK (inter-container traffic off)"
+        return 0
+    fi
+    if [ "$icc" != "missing" ]; then
+        warn "Docker network $STEEL_NETWORK exists but is not isolated (enable_icc=$icc): recreating it."
+        dk network rm "$STEEL_NETWORK" >/dev/null || {
+            warn "Could not remove $STEEL_NETWORK (other containers attached?). Detach them and re-run."
+            return 1
+        }
+    fi
+    dk network create --driver bridge \
+        --opt com.docker.network.bridge.enable_icc=false "$STEEL_NETWORK" >/dev/null || {
+        warn "Could not create the Docker network $STEEL_NETWORK."
+        return 1
+    }
+    log "  Created the isolated Docker network $STEEL_NETWORK (inter-container traffic off)"
 }
 provision_browser() {
     if ! command -v docker >/dev/null 2>&1; then
@@ -1179,8 +1211,13 @@ provision_browser() {
     if [ "$STEEL_PORT" != "$prev_steel_port" ]; then
         systemctl --user restart shellteam-api || warn "failed to restart shellteam-api for STEEL_PORT=$STEEL_PORT"
     fi
-    log "Starting Steel browser container (loopback 127.0.0.1:$STEEL_PORT)…"
+    if ! ensure_browser_network; then
+        warn "Browser tab skipped: Steel is never started on a shared Docker network (SHE-136)."
+        return
+    fi
+    log "Starting Steel browser container (loopback 127.0.0.1:$STEEL_PORT, network $STEEL_NETWORK)…"
     if ! dk run -d --name "$STEEL_CONTAINER" --restart unless-stopped \
+        --network "$STEEL_NETWORK" \
         --shm-size=1g -p "127.0.0.1:$STEEL_PORT:3000" "$STEEL_IMAGE" >/dev/null; then
         warn "Failed to start $STEEL_CONTAINER — browser tab skipped. Check 'docker logs $STEEL_CONTAINER'."
         return
@@ -1402,6 +1439,28 @@ $(log "Reaching it from your other devices — recommended: Tailscale (stays pri
   (Quick one-off from a laptop instead:  ssh -N -L ${API_PORT}:127.0.0.1:${API_PORT} $(id -un)@<this-box>)
 EOF
 fi
+
+# Passwordless sudo makes every agent and every terminal session root (SHE-136:
+# the 2026-11-03 takeover went cookie -> web terminal -> root in one step). The
+# installer never grants it to an existing account and never edits a sudoers
+# file it did not write; it only says so, loudly. The dashboard repeats it
+# (api/services/security_checks.py) until the rule is gone.
+warn_passwordless_sudo() {
+    # A --create-owner run: the root wrapper deletes the install-time grant as
+    # soon as this run ends (unless --keep-sudo), so there is nothing to report.
+    if [ -n "${SHELLTEAM_OWNER_BOOTSTRAP:-}" ] && [ "${KEEP_SUDO:-0}" != 1 ]; then
+        return 0
+    fi
+    local listing
+    listing="$(sudo -n -l 2>/dev/null || true)"
+    if printf '%s\n' "$listing" | grep -qE 'NOPASSWD:[[:space:]]*ALL([^A-Za-z]|$)'; then
+        warn "SECURITY: '$(id -un)' has passwordless sudo, so every agent and every terminal session on this box runs as root."
+        warn "  ShellTeam does not need it after the install. Remove the NOPASSWD rule (cloud images often put it in"
+        warn "  /etc/sudoers.d/90-cloud-init-users; edit with: sudo visudo -f <file>), or keep it knowingly."
+        warn "  The dashboard shows this warning until the rule is gone."
+    fi
+}
+warn_passwordless_sudo
 
 if [ "${#FAILED_TOOLS[@]}" -gt 0 ]; then
     warn "These coding-agent CLIs or harness tools FAILED to install: ${FAILED_TOOLS[*]}"

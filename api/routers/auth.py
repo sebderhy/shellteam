@@ -9,9 +9,13 @@ from pydantic import BaseModel
 
 from api.config import APP_DOMAIN, APP_URL, FILE_PORT, OWNER_TOKEN, OWNER_USERNAME, reserved_service_ports
 from api.dependencies import get_current_user, require_trusted_origin
+from api.services import sessions
 from api.services.auth import (
-    apply_session_cookies,
+    MASTER_COOKIE,
+    request_is_https,
+    clear_session_cookies,
     get_user_profile,
+    start_session,
     set_timezone,
     set_username,
     sign_share_path,
@@ -42,10 +46,6 @@ class LoginRequest(BaseModel):
     token: str
 
 
-def _request_is_https(request: Request) -> bool:
-    return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
-
-
 @router.get("/session")
 async def session_status(user: dict = Depends(get_current_user)):
     """Cheap authed probe for the dashboard's login gate (401 when not signed in).
@@ -60,11 +60,11 @@ async def session_status(user: dict = Depends(get_current_user)):
 async def login(
     body: LoginRequest, request: Request, response: Response, _rl=Depends(_login_limit)
 ):
-    """Redeem a hand-entered OWNER_TOKEN into the split session cookies.
+    """Redeem a hand-entered OWNER_TOKEN into a new session.
 
-    Replaces the old dashboard flow where JS wrote the master token into a
-    readable cookie + localStorage. The token now travels once, in a POST body,
-    and lands only in HttpOnly cookies.
+    The token travels once, in a POST body. The browser gets a random,
+    revocable, expiring session in HttpOnly cookies (api/services/sessions.py),
+    never the master itself (SHE-136).
     """
     if not OWNER_TOKEN:
         raise HTTPException(
@@ -75,9 +75,82 @@ async def login(
         note_auth_failure(request)
         log.warning("Dashboard login failed (bad token)")
         raise HTTPException(status_code=401, detail="Invalid token")
-    apply_session_cookies(response, secure=_request_is_https(request))
-    log.info("Dashboard login: session cookies set")
+    minted = start_session(response, request, kind="login")
+    log.info("Dashboard login: session %s started", minted.id)
     return {"authenticated": True}
+
+
+def _current_session(request: Request) -> dict | None:
+    return sessions.lookup(request.cookies.get(MASTER_COOKIE))
+
+
+@router.post("/confirm")
+async def confirm_identity(
+    body: LoginRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    _origin=Depends(require_trusted_origin),
+    _rl=Depends(_login_limit),
+):
+    """Step-up: re-enter OWNER_TOKEN to make this session fresh again.
+
+    The web terminal only opens on a session whose last login (or confirm) is
+    younger than TERMINAL_FRESH_MINUTES; the terminal page calls this when the
+    socket closes with 4401.
+    """
+    if not OWNER_TOKEN:
+        raise HTTPException(status_code=409, detail="No OWNER_TOKEN set, nothing to confirm.")
+    rec = _current_session(request)
+    if rec is None:
+        raise HTTPException(status_code=401, detail="Sign in from the dashboard first.")
+    if not token_is_owner(body.token.strip()):
+        note_auth_failure(request)
+        log.warning("Session %s confirm failed (bad token)", rec["id"])
+        raise HTTPException(status_code=401, detail="Invalid token")
+    sessions.confirm(rec["id"])
+    return {"confirmed": True, "fresh_for_seconds": sessions.TERMINAL_FRESH_SECONDS}
+
+
+@router.get("/sessions")
+async def list_sessions(request: Request, user: dict = Depends(get_current_user)):
+    """The live sign-ins (Settings, Devices). Never returns a credential."""
+    current = _current_session(request)
+    items = sessions.list_sessions()
+    for item in items:
+        item["current"] = bool(current and current["id"] == item["id"])
+    return {"sessions": items}
+
+
+@router.post("/logout")
+async def logout(
+    request: Request,
+    response: Response,
+    user: dict = Depends(get_current_user),
+    _origin=Depends(require_trusted_origin),
+):
+    """End this browser's session."""
+    rec = _current_session(request)
+    if rec is not None:
+        sessions.revoke(rec["id"])
+    clear_session_cookies(response, secure=request_is_https(request))
+    return {"logged_out": True}
+
+
+@router.post("/logout-all")
+async def logout_everywhere(
+    request: Request,
+    response: Response,
+    user: dict = Depends(get_current_user),
+    _origin=Depends(require_trusted_origin),
+):
+    """Log out everywhere: revoke every session (all browsers, phones and the
+    files credentials derived from them). OWNER_TOKEN keeps working as Bearer
+    and to sign in again. In-box: curl -X POST -H "Authorization: Bearer
+    $OWNER_TOKEN" http://127.0.0.1:8000/api/auth/logout-all"""
+    n = sessions.revoke_all()
+    clear_session_cookies(response, secure=request_is_https(request))
+    log.warning("Log out everywhere: %d session(s) revoked", n)
+    return {"revoked": n}
 
 
 @router.get("/share")

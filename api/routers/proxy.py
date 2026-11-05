@@ -37,14 +37,13 @@ from api.services.auth import (
     FILES_COOKIE,
     MASTER_COOKIE,
     PORT_SHARE_COOKIE,
-    get_token_from_request,
     port_share_cookie_value,
+    request_is_owner,
     verify_port_share_cookie,
     verify_share_port_sig,
     origin_is_trusted,
     request_grants_files_read,
     token_grants_files_read,
-    token_is_owner,
     verify_share_sig,
     verify_token,
 )
@@ -376,8 +375,9 @@ def _authorize(
 ) -> str:
     """Split-credential gate for subdomain requests. Returns an AUTH_* code.
 
-    - The MASTER token grants everything (it normally lives host-only on the
-      dashboard, but Bearer callers and pre-split cookies still present it here).
+    - A live SESSION cookie grants everything (it normally lives host-only on
+      the dashboard). Since SHE-136 the cookie never holds the master, and a
+      master value in it is refused (``verify_token`` takes sessions only).
     - The derived FILES credential is read-only on the file host, and unlocks
       other ports (cockpit, agent apps) only from a trusted browser origin —
       so a compromised served page can neither write files nor reach the agents.
@@ -757,7 +757,7 @@ async def serve_owner_file(request: Request, path: str) -> Response:
             if not origin_is_trusted(request.headers.get("origin")):
                 log.warning("Main-host write refused: cross-origin %s /%s", request.headers.get("origin"), p)
                 return _login_required_response()
-            allowed = token_is_owner(get_token_from_request(request))
+            allowed = request_is_owner(request)
         if not allowed:
             log.info(
                 "Main-host file request denied (%s /%s: no credential)",

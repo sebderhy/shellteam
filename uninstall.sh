@@ -12,7 +12,7 @@
 # What it removes:
 #   - the three systemd --user units (api, ai-chat, nginx)
 #   - the runtime state dir (~/.local/state/shellteam) and the agent layer
-#   - the Steel browser container and its ~1.5 GB image
+#   - the Steel browser container, its ~1.5 GB image and its Docker network
 #   - the nginx cap_net_bind_service capability (when install.sh granted it)
 #   - unmasks the system nginx.service that install.sh masked
 #
@@ -96,6 +96,8 @@ systemctl --user reset-failed 'shellteam-*' >/dev/null 2>&1 || true
 log "Removing the Steel browser container + image…"
 if command -v docker >/dev/null 2>&1; then
     docker rm -f "$STEEL_CONTAINER" >/dev/null 2>&1 || true
+    # Steel's own isolated network (SHE-136); fails harmlessly when absent.
+    docker network rm shellteam-browser-net >/dev/null 2>&1 || true
     # The pulled image is ~1.5 GB — removing the container alone leaves it behind.
     docker rmi ghcr.io/steel-dev/steel-browser:latest >/dev/null 2>&1 || true
 fi

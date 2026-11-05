@@ -8,6 +8,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=3">
     <link rel="shortcut icon" href="/static/favicon.ico?v=3">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=3">
+    <!-- Makes "Install app" a real app: full screen, no browser bar (SHE-133). -->
+    <link rel="manifest" href="/static/manifest.webmanifest">
+    <meta name="theme-color" content="#110f0d">
     <title>ShellTeam</title>
     <link rel="stylesheet" href="/static/tokens.css">
     <link rel="stylesheet" href="/static/base.css">
@@ -58,6 +61,15 @@
         }
         .trial-bar a:hover { text-decoration-thickness: 2px; }
         .trial-bar.trial-over { background: var(--text-tertiary); }
+        /* Host security findings (SHE-136, api/services/security_checks.py):
+           passwordless sudo, an agent browser off its isolated network. */
+        .security-bar {
+            padding: 8px 16px; flex-shrink: 0; background: #7f1d1d; color: #fff;
+            font-size: var(--text-sm); line-height: 1.45;
+        }
+        .security-bar[hidden] { display: none; }
+        .security-bar p { margin: 0; }
+        .security-bar p + p { margin-top: 4px; }
 
         /* Feedback widget CSS lives in the shared module /static/feedback.js */
         .status-dot {
@@ -452,6 +464,7 @@
         <a id="trial-cta" href="#" target="_blank" rel="noopener" hidden></a>
     </div>
     <script type="application/json" id="trial-config">__TRIAL_JSON__</script>
+    <div class="security-bar" id="security-bar" hidden role="alert"></div>
 
     <!-- Workspace split: the tabs + panels are the left half; when a report is
          open it takes the right half at full height, reaching the tab row. -->
@@ -559,6 +572,12 @@
                         </div>
                         <p id="enroll-expiry" class="muted" style="margin:10px 0 0;font-size:.78rem"></p>
                     </div>
+                    <p class="muted" id="sessions-summary" style="margin:18px 0 6px"></p>
+                    <button id="logout-all" type="button"
+                        style="padding:9px 18px;border:1px solid #7f1d1d;border-radius:8px;
+                        background:transparent;color:#fca5a5;font-weight:600;font-size:.88rem;cursor:pointer">
+                        Log out everywhere
+                    </button>
                 </div>
 
                 <div class="card" id="routes-card">
@@ -855,10 +874,30 @@
             if (!TOKEN_REQUIRED) return;            // localhost-trust: nothing to do
             try {
                 const r = await fetch('/api/auth/session');
-                if (r.ok) return;                   // HttpOnly session cookie is live
+                if (r.ok) { loadSecurityWarnings(); return; }   // HttpOnly session cookie is live
             } catch (e) { console.error('[auth] session probe failed', e); }
             showLogin();                            // overlay covers the shell until unlocked
         })();
+        if (!TOKEN_REQUIRED) loadSecurityWarnings();
+
+        // Host security findings: shown on every load until fixed (no dismiss),
+        // because each one turns a stolen session into root on this box.
+        async function loadSecurityWarnings() {
+            try {
+                const r = await fetch('/api/security/warnings');
+                if (!r.ok) return;
+                const { warnings } = await r.json();
+                const bar = document.getElementById('security-bar');
+                bar.replaceChildren(...warnings.map((w) => {
+                    const p = document.createElement('p');
+                    const b = document.createElement('strong');
+                    b.textContent = 'Security: ';
+                    p.append(b, document.createTextNode(w.message));
+                    return p;
+                }));
+                bar.hidden = warnings.length === 0;
+            } catch (e) { console.error('[security] warnings probe failed', e); }
+        }
         // ────────────────────────────────────────────────────────────────────
 
         const OWNER_USERNAME = "__OWNER_USERNAME__";
@@ -1072,6 +1111,28 @@
             });
             document.getElementById('tab-settings').addEventListener('click', load);
             if (location.hash === '#settings') load();
+        })();
+
+        // ─── Sign-ins: count + log out everywhere (SHE-136) ──────────────────
+        // Each browser or phone holds its own revocable session, never the
+        // OWNER_TOKEN. Logging out everywhere revokes all of them at once;
+        // the token keeps working to sign back in.
+        (function sessionsCard() {
+            const btn = document.getElementById('logout-all');
+            const summary = document.getElementById('sessions-summary');
+            if (!btn || !TOKEN_REQUIRED) { if (btn) btn.hidden = true; return; }
+            fetch('/api/auth/sessions').then((r) => r.ok ? r.json() : null).then((d) => {
+                if (!d) return;
+                const n = d.sessions.length;
+                summary.textContent = n === 1 ? '1 device is signed in.'
+                    : n + ' devices are signed in. Sign-ins expire on their own after a while.';
+            });
+            btn.addEventListener('click', async () => {
+                if (!confirm('Sign out every browser and phone, including this one? You will sign in again with your OWNER_TOKEN.')) return;
+                const r = await fetch('/api/auth/logout-all', { method: 'POST' });
+                if (r.ok) location.reload();
+                else summary.textContent = 'Could not log out everywhere (HTTP ' + r.status + ').';
+            });
         })();
 
         // ─── Add a device (one-time enrollment link + QR) ───────────────────

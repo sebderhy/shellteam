@@ -956,7 +956,7 @@ class TestWebSocketProxyAuth:
         curl-from-the-VPS reports a healthy cockpit while every real browser is
         refused. Here the peer is a public IP, so the credential gate is real.
         """
-        from api.services.auth import files_token
+        from tests._owner_session import files_token
 
         host = "alice-3456.localhost"
         scope = _ws_scope(
@@ -1114,7 +1114,7 @@ class TestWebSocketProxyAuth:
         ShellTeam credential may ride along. Files cookie authenticates the owner
         at the gate, then is stripped from the upstream connect; the app's own
         cookie survives."""
-        from api.services.auth import files_token
+        from tests._owner_session import files_token
 
         port_service._public_ports["owner-1"] = {4000}
         host = "alice-4000.localhost"
@@ -1559,7 +1559,7 @@ class TestAuthorizeFilesCredential:
     """The derived read-only credential: reads yes, writes/cockpit-riding no."""
 
     def _files_cred(self):
-        from api.services.auth import files_token
+        from tests._owner_session import files_token
         return files_token()
 
     def test_files_cred_reads_file_host(self):
@@ -1664,7 +1664,7 @@ class TestCockpitReachableWithBrowserCredential:
     """
 
     def test_dashboard_cockpit_url_authorizes_its_websocket(self):
-        from api.services.auth import files_token
+        from tests._owner_session import files_token
         from api.config import OWNER_USERNAME, APP_DOMAIN, OWNER_ID
 
         ai_chat_port = int(os.environ["AI_CHAT_PORT"])
@@ -1760,9 +1760,19 @@ class TestMainHostFileServing:
         respx.get(f"{self.FILE_ORIGIN}/tmp/chart.png").mock(
             return_value=httpx.Response(200, content=b"PNG")
         )
-        request = self._request(cookies={"shellteam_token": "fake-jwt-token"})
+        from tests._owner_session import session_token
+        request = self._request(cookies={"shellteam_token": session_token()})
         resp = await proxy_subdomain(request, "tmp/chart.png")
         assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_owner_token_as_cookie_is_refused(self):
+        """SHE-136: a cookie holding the master (what the agent browser leaked)
+        no longer authenticates; only a live session does."""
+        request = self._request(cookies={"shellteam_token": "fake-jwt-token"})
+        resp = await proxy_subdomain(request, "tmp/chart.png")
+        assert resp.status_code == 401
 
     @pytest.mark.asyncio
     @respx.mock
@@ -1792,7 +1802,7 @@ class TestMainHostFileServing:
     @pytest.mark.asyncio
     @respx.mock
     async def test_files_credential_reads(self):
-        from api.services.auth import files_token
+        from tests._owner_session import files_token
         respx.get(f"{self.FILE_ORIGIN}/tmp/chart.png").mock(
             return_value=httpx.Response(200, content=b"PNG")
         )
@@ -1804,7 +1814,7 @@ class TestMainHostFileServing:
     @respx.mock
     async def test_files_credential_cannot_write(self):
         """The read-only credential must not reach the editor's write API."""
-        from api.services.auth import files_token
+        from tests._owner_session import files_token
         route = respx.post(f"{self.FILE_ORIGIN}/_api/save").mock(
             return_value=httpx.Response(200)
         )
@@ -1818,7 +1828,8 @@ class TestMainHostFileServing:
     async def test_master_cookie_can_write(self):
         """Editor saves (main-origin iframe) ride the host-only master cookie."""
         respx.post(f"{self.FILE_ORIGIN}/_api/save").mock(return_value=httpx.Response(200))
-        request = self._request(cookies={"shellteam_token": "fake-jwt-token"}, method="POST")
+        from tests._owner_session import session_token
+        request = self._request(cookies={"shellteam_token": session_token()}, method="POST")
         resp = await proxy_subdomain(request, "_api/save")
         assert resp.status_code == 200
 

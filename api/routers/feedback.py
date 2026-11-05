@@ -13,10 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from api.config import APP_DOMAIN, OWNER_USERNAME, RUNTIME
 from api.services import feedback, stt
-from api.services.auth import (
-    get_token_from_request,
-    token_is_owner,
-)
+from api.services.auth import request_is_owner
 from api.services.ratelimit import note_auth_failure
 
 log = logging.getLogger(__name__)
@@ -34,7 +31,7 @@ async def feedback_principal(request: Request) -> dict:
     We check the owner token WITHOUT the brute-force throttle so a guest (who
     never carries the master token) is not penalised for its absence.
     """
-    if token_is_owner(get_token_from_request(request)):
+    if request_is_owner(request):
         return {"label": "owner", "guest": None, "folder": None}
     note_auth_failure(request)
     raise HTTPException(status_code=401, detail="Invalid or expired token")

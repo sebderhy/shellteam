@@ -18,12 +18,14 @@ from http.cookies import SimpleCookie
 
 import pytest
 
+from api.services import sessions
 from api.services.auth import (
-    files_token,
     sign_share_path,
     token_grants_files_read,
     verify_share_sig,
 )
+
+from tests._owner_session import files_token, session_token
 
 MASTER = "fake-jwt-token"  # conftest's pinned OWNER_TOKEN
 
@@ -43,7 +45,7 @@ def parse_set_cookies(resp) -> dict[str, SimpleCookie]:
 class TestDerivedCredential:
     def test_files_token_is_derived_not_master(self):
         ft = files_token()
-        assert len(ft) == 64 and ft != MASTER
+        assert ft.startswith("f1.") and MASTER not in ft
 
     def test_grants_matrix(self):
         assert token_grants_files_read(MASTER) is True
@@ -98,12 +100,13 @@ class TestSessionCookies:
         # Master: HttpOnly + HOST-ONLY (empty Domain attribute) — page JS can't
         # read it, subdomains never receive it.
         master = jar["shellteam_token@"]
-        assert master.value == MASTER
+        # SHE-136: a minted session, never the master itself.
+        assert master.value != MASTER and sessions.lookup(master.value) is not None
         assert master["httponly"]
         assert master["samesite"].lower() == "lax"
         # Files credential: HttpOnly + domain-wide (subdomain iframes carry it).
         files = jar["shellteam_files@localhost"]
-        assert files.value == files_token()
+        assert sessions.lookup_files_cred(files.value)["id"] == sessions.lookup(master.value)["id"]
         assert files["httponly"]
         # The legacy JS-readable domain-wide master is explicitly deleted.
         legacy = jar["shellteam_token@localhost"]
@@ -125,10 +128,18 @@ class TestSessionCookies:
         assert resp.status_code == 401
         assert "set-cookie" not in {k.lower() for k in resp.headers}
 
-    def test_dashboard_refreshes_cookies_for_authed_session(self, client, auth_header):
-        resp = client.get("/", headers=auth_header)
+    def test_dashboard_migrates_a_legacy_master_cookie(self, client):
+        client.cookies.set("shellteam_token", MASTER)
+        resp = client.get("/")
         assert resp.status_code == 200
         self.assert_split_cookies(resp)
+
+    def test_dashboard_leaves_a_live_session_alone(self, client):
+        """No session churn: a signed-in load does not mint a new session."""
+        client.cookies.set("shellteam_token", session_token())
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "set-cookie" not in {k.lower() for k in resp.headers}
 
     def test_dashboard_sets_no_cookies_unauthenticated(self, client):
         resp = client.get("/")
@@ -152,8 +163,12 @@ class TestSessionProbe:
         assert client.get("/api/auth/session", headers=auth_header).status_code == 200
 
     def test_session_cookie_authed(self, client):
-        client.cookies.set("shellteam_token", MASTER)
+        client.cookies.set("shellteam_token", session_token())
         assert client.get("/api/auth/session").status_code == 200
+
+    def test_master_in_the_cookie_is_refused(self, client):
+        client.cookies.set("shellteam_token", MASTER)
+        assert client.get("/api/auth/session").status_code == 401
 
     def test_session_unauthed_401(self, client):
         assert client.get("/api/auth/session").status_code == 401

@@ -69,9 +69,17 @@ class TestTokenIsOwner:
 
     def test_verify_token_returns_owner_payload(self, monkeypatch):
         auth = _reload_auth(monkeypatch, OWNER_TOKEN="s3cret", OWNER_ID="me", OWNER_EMAIL="me@x")
-        payload = auth.verify_token("s3cret")
+        minted = auth.sessions.mint("test")
+        payload = auth.verify_token(minted.token)
         assert payload["sub"] == "me"
         assert payload["email"] == "me@x"
+        assert payload["sid"] == minted.id
+
+    def test_verify_token_refuses_the_master_itself(self, monkeypatch):
+        """SHE-136: cookie-borne credentials are sessions; the master is not one."""
+        auth = _reload_auth(monkeypatch, OWNER_TOKEN="s3cret")
+        with pytest.raises(HTTPException):
+            auth.verify_token("s3cret")
 
     def test_verify_token_rejects_bad_token(self, monkeypatch):
         auth = _reload_auth(monkeypatch, OWNER_TOKEN="s3cret")

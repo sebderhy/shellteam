@@ -27,12 +27,12 @@ from api.services.auth import (
     FILES_COOKIE,
     MASTER_COOKIE,
     PORT_SHARE_COOKIE,
-    files_token,
     port_share_cookie_value,
     sign_share_port,
     verify_port_share_cookie,
     verify_share_port_sig,
 )
+from tests._owner_session import files_token
 
 
 APP_PORT = 4000  # an ordinary user app port (backend)

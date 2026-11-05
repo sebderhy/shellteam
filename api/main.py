@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -58,6 +59,13 @@ async def lifespan(app: FastAPI):
         )
     port_service.seed_from_disk()
     app_routes.seed_from_disk()
+    # Host security self-checks (SHE-136): passwordless sudo, Steel off its
+    # isolated network. Off the event loop (they shell out); findings are
+    # logged at WARNING and shown as a dashboard banner.
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        from api.services import security_checks
+
+        asyncio.get_running_loop().run_in_executor(None, security_checks.refresh)
     report_service.seed_from_disk()
     # ~/public is no longer an ambient world-readable mount (a stray write or a
     # prompt-injected agent could publish by touching a path). Serving now
@@ -374,6 +382,7 @@ app.include_router(feedback.router)
 app.include_router(mirror.router)
 app.include_router(integrations.router)
 app.include_router(settings.router)
+app.include_router(settings.security_router)
 app.include_router(knowledge.router)
 
 # Serve frontend static files
@@ -480,11 +489,13 @@ if FRONTEND_DIR.exists():
         """
         from fastapi.responses import RedirectResponse
         from api import config
-        from api.services.auth import get_token_from_request, token_is_owner
+        from api.services.auth import MASTER_COOKIE, request_is_owner, token_is_owner
 
         if not config.VISITOR_REDIRECT_URL or not OWNER_TOKEN:
             return None
-        if token_is_owner(get_token_from_request(request)):
+        # A pre-SHE-136 master cookie is still "the owner" here: dashboard_page
+        # migrates it to a session right after this check.
+        if request_is_owner(request) or token_is_owner(request.cookies.get(MASTER_COOKIE)):
             return None
         logging.getLogger(__name__).info(
             "Visitor without a session on %s -> %s", request.url.path, config.VISITOR_REDIRECT_URL
@@ -496,23 +507,21 @@ if FRONTEND_DIR.exists():
     @app.get("/")
     async def dashboard_page(request: Request):
         from fastapi.responses import RedirectResponse
-        from api.services.auth import apply_session_cookies, get_token_from_request, token_is_owner
+        from api.services.auth import MASTER_COOKIE, start_session, token_is_owner
         from api.services.ratelimit import note_auth_failure
 
-        secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
-
         # One-time URL redemption (decisions/20260702-split-credentials.md): a
-        # valid `/?token=` is accepted exactly once — set the HttpOnly session
-        # cookies and redirect with the query scrubbed, so the token never
-        # persists in the address bar, history, or bookmarks. This keeps the
-        # install-banner "open this URL" flow working with no readable cookie.
+        # valid `/?token=` is accepted exactly once: it mints a fresh session
+        # (api/services/sessions.py), sets the HttpOnly cookies and redirects
+        # with the query scrubbed, so the token never persists in the address
+        # bar, history, or bookmarks, and never lands in a cookie (SHE-136).
         url_token = request.query_params.get("token")
         if url_token is not None:
             resp = RedirectResponse(url="/", status_code=303)
             if OWNER_TOKEN and token_is_owner(url_token):
-                apply_session_cookies(resp, secure=secure)
+                start_session(resp, request, kind="url-token")
                 logging.getLogger(__name__).info(
-                    "Redeemed one-time ?token= dashboard URL into session cookies"
+                    "Redeemed one-time ?token= dashboard URL into a new session"
                 )
             else:
                 # A GET /?token= loop is otherwise an unthrottled dictionary
@@ -528,11 +537,15 @@ if FRONTEND_DIR.exists():
         if bounce := _visitor_redirect(request):
             return bounce
         resp = _render("dashboard.html", request)
-        # Refresh/migrate the session cookies on every authed dashboard load:
-        # upgrades pre-split sessions (JS-readable domain-wide master) to the
-        # HttpOnly split pair and deletes the legacy cookie.
-        if OWNER_TOKEN and token_is_owner(get_token_from_request(request)):
-            apply_session_cookies(resp, secure=secure)
+        # Migrate a pre-SHE-136 browser whose cookie still holds the master:
+        # replace it with a session. Not "fresh": the browser replayed a stored
+        # cookie, nobody typed the token, so the terminal still asks to confirm.
+        if OWNER_TOKEN and token_is_owner(request.cookies.get(MASTER_COOKIE)):
+            start_session(resp, request, kind="migrated", fresh=False)
+            logging.getLogger(__name__).warning(
+                "Migrated a legacy master-token cookie to a session (rotate OWNER_TOKEN "
+                "if any browser that held it may have been exposed)"
+            )
         return resp
 
 

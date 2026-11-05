@@ -5,6 +5,31 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.48] - 2026-11-05
+
+### Added
+- **Install app opens the dashboard full screen.** The dashboard now has a web
+  app manifest, so installing it on a phone or desktop opens it without a
+  browser bar.
+
+### Security
+- **A container on the same host can no longer take over the box through the
+  agent browser (SHE-136).** The Steel browser now runs on its own Docker
+  network (`shellteam-browser-net`) with traffic between containers turned off,
+  so other containers cannot reach its debugging port. Re-run `./install.sh`
+  to move an existing browser onto it.
+- **Browsers hold a sign-in, never your `OWNER_TOKEN`.** Each sign-in is its
+  own session that expires after 14 days (`SESSION_TTL_DAYS`) and can be
+  revoked: Settings, Devices, **Log out everywhere**, or rotate `OWNER_TOKEN`.
+  The token still signs you in and still works as a Bearer header for scripts.
+- **Opening the terminal asks for your token** when you signed in more than 15
+  minutes ago (`TERMINAL_FRESH_MINUTES`). Each terminal session is logged with
+  its IP and sent to your notification channel, if you set one up.
+- **Passwordless sudo is flagged.** The installer and the dashboard warn when
+  your account has it: with it, any shell on the box is root.
+- **If you ran the browser module before this release, rotate `OWNER_TOKEN`.**
+  An older agent browser may have stored it in its cookies.
+
 ## [0.1.47] - 2026-10-31
 
 ### Added

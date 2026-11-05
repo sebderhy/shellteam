@@ -26,7 +26,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from api.config import APP_DOMAIN, OWNER_TOKEN
 from api.dependencies import get_current_user, require_trusted_origin
 from api.services import enrollment
-from api.services.auth import apply_session_cookies
+from api.services.auth import start_session
 from api.services.ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -148,11 +148,10 @@ async def redeem_enrollment(
         return HTMLResponse(_REDEEM_FAIL_HTML, status_code=400)
 
     resp = RedirectResponse(url="/", status_code=303)
-    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
-    # Split-credential session (see api/services/auth.py:apply_session_cookies):
-    # HttpOnly host-only master + HttpOnly domain-wide read-only files credential.
-    # No page JavaScript anywhere can read either.
-    apply_session_cookies(resp, secure=secure)
+    # A fresh, revocable session (api/services/sessions.py), never the master:
+    # HttpOnly host-only session cookie + HttpOnly domain-wide read-only files
+    # credential bound to it. No page JavaScript anywhere can read either.
+    start_session(resp, request, kind="enroll")
     client = request.headers.get("x-forwarded-for", "") or (request.client.host if request.client else "?")
     log.info("Device enrolled via one-time link (client=%s)", client.split(",")[-1].strip())
     return resp

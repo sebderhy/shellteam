@@ -43,7 +43,7 @@ class TestGetCurrentUser:
 
     async def test_localhost_trust_allows_no_token(self):
         """When OWNER_TOKEN is unset, any caller is the owner."""
-        with patch("api.dependencies.token_is_owner", return_value=True):
+        with patch("api.dependencies.request_is_owner", return_value=True):
             result = await get_current_user(_request())
         assert result["id"] == "user-uuid-1234"
 

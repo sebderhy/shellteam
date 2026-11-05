@@ -143,6 +143,8 @@ Full Chromium available via `browser` MCP tools (Steel + Playwright). Use for JS
 **Single-tab rule:** Never open new tabs — always navigate within the current tab. The user watches your browser in real-time through a screencast.
 
 Screenshots save to `~/tmp/`. Browser state persists across sessions (`~/.chrome-data`).
+
+**Never sign this browser in to the dashboard of this box** (terminal, files, cockpit), never type the owner's token or open a login or device-enrollment link in it. Its cookies outlive your task and are the first thing an attacker on the host reads. To check a private page of this box, fetch it from the box itself (in-box requests are owner-trusted) or ask the user to look.
 <!-- END:browser -->
 
 <!-- BEGIN:composio -->

@@ -153,13 +153,13 @@ def mock_get_user_profile(fake_profile):
 def _reset_rate_limiters():
     """Reset all rate limiter buckets between tests to prevent leakage."""
     yield
-    from api.routers.auth import _username_limit
+    from api.routers.auth import _login_limit, _username_limit
     from api.routers.computers import _start_limit
     from api.routers.ai_tools import _ai_limit, _fireworks_limit
     from api.main import _global_limit
     from api.services.ratelimit import auth_failure_limiter
 
-    for rl in (_username_limit, _start_limit, _ai_limit, _fireworks_limit, _global_limit, auth_failure_limiter):
+    for rl in (_username_limit, _login_limit, _start_limit, _ai_limit, _fireworks_limit, _global_limit, auth_failure_limiter):
         rl.reset()
 
 

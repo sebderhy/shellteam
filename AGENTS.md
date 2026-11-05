@@ -101,11 +101,17 @@ there is no client-side profile fetch). It does **not** redirect to the cockpit.
   (`OWNER_ID` / `OWNER_USERNAME` / `OWNER_EMAIL` in `api/config.py`) — no database,
   no per-request user lookup.
 - **`OWNER_TOKEN`** is the auth boundary, deployed as a **credential split**
-  (`docs/decisions/20260702-split-credentials.md`): the master rides an HttpOnly
-  **host-only** `shellteam_token` cookie on the dashboard origin (or a Bearer
-  header); content subdomains carry only `shellteam_files`, a derived HMAC
-  credential that can read files and nothing else (cockpit-port access is
-  additionally Origin-gated). Sharing mints signed expiring `?sig=&exp=` links
+  (`docs/decisions/20260702-split-credentials.md`). It only bootstraps a login
+  (and works as a Bearer header for in-box tooling): every sign-in mints a
+  random, expiring, revocable **session** (`api/services/sessions.py`, hashed at
+  rest, bound to the current token so a rotation revokes all), and the HttpOnly
+  **host-only** `shellteam_token` cookie carries that session, NEVER the master
+  (SHE-136, `docs/decisions/20261104-sessions-not-the-master-token.md`). Every
+  request check goes through `auth.request_is_owner` (cookie = session only);
+  content subdomains carry only `shellteam_files`, an HMAC credential bound to
+  one session that can read files and nothing else (cockpit-port access is
+  additionally Origin-gated). The web terminal also needs a fresh sign-in
+  (`TERMINAL_FRESH_MINUTES`, else close 4401 and the page asks for the token). Sharing mints signed expiring `?sig=&exp=` links
   (`GET /api/auth/share`). `?token=` is NOT a general auth param — it is redeemed
   exactly once on `GET /` into cookies and scrubbed. All compares are
   constant-time (`api/services/auth.py`). When `OWNER_TOKEN` is **empty**, the box

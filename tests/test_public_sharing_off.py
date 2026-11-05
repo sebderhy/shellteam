@@ -13,6 +13,8 @@ import time
 
 import pytest
 
+from tests._owner_session import session_token
+
 from api import config
 from api.services import ports as port_service, reports as report_service
 from api.services.auth import (
@@ -41,7 +43,7 @@ def sharing_off(monkeypatch):
 @pytest.fixture
 def owner(client):
     """The owner's browser: master cookie + dashboard origin."""
-    client.cookies.set(MASTER_COOKIE, "fake-jwt-token")
+    client.cookies.set(MASTER_COOKIE, session_token())
     client.headers.update({"Origin": "http://localhost", "Referer": "http://localhost/"})
     return client
 

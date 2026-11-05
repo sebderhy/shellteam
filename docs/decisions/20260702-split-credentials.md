@@ -12,6 +12,9 @@
   the cockpit port accepts the derived credential **behind an Origin
   allow-list** (a host-only master can never reach a port subdomain), and the
   Files tab/editor moved to the dashboard origin (its writes need the master).
+- **Amended 2026-11-04 (SHE-136):** the cookie no longer carries the master. It
+  carries a revocable, expiring session, and `shellteam_files` is bound to that
+  session. See [20261104-sessions-not-the-master-token.md](20261104-sessions-not-the-master-token.md).
 - **Deciders:** Seb + Claude (cockpit session)
 - **Related:** [SECURITY.md](../../SECURITY.md), [20260702-main-domain-file-urls.md](20260702-main-domain-file-urls.md)
 

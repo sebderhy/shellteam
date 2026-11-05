@@ -1,9 +1,11 @@
 """Single-user auth for ShellTeam OSS.
 
 There is exactly one owner; their identity is fixed from the environment
-(`api.config`). There is no database, no JWTs, no per-request users. Auth is a
-single shared secret: when `OWNER_TOKEN` is set every request must present it;
-when it is empty the box is assumed bound to localhost and requests are trusted.
+(`api.config`). There is no database, no JWTs, no per-request users. The root
+secret is `OWNER_TOKEN`: it signs a browser in (which mints a revocable session,
+`api/services/sessions.py`; the cookie carries that session, never the token)
+and works as a Bearer header for in-box tooling. When it is empty the box is
+assumed bound to localhost and requests are trusted.
 
 The owner's mutable profile (username, timezone) lives in a small JSON file
 under `DATA_DIR/OWNER_ID/profile.json` so it survives restarts.
@@ -20,24 +22,28 @@ from urllib.parse import urlparse
 from fastapi import Request, HTTPException, Response
 
 from api.config import APP_DOMAIN, MAIN_HOSTS, OWNER_ID, OWNER_EMAIL, OWNER_USERNAME, OWNER_TOKEN, DATA_DIR
+from api.services import sessions
 from api.services.exposure_policy import public_sharing_enabled
 
 log = logging.getLogger(__name__)
 
 # Cookie names of the split-credential model (decisions/20260702-split-credentials.md):
-# the master session cookie (HttpOnly, host-only on APP_DOMAIN — page JS can never
-# read it, subdomains never receive it) and the derived read-only content credential
-# (HttpOnly, domain-wide so file/port-subdomain iframes carry it).
+# the session cookie (HttpOnly, host-only on APP_DOMAIN: page JS can never read
+# it, subdomains never receive it) and the read-only content credential derived
+# from that session (HttpOnly, domain-wide so file/port-subdomain iframes carry
+# it). Since SHE-136 neither cookie carries OWNER_TOKEN: both hold a revocable,
+# expiring session minted by api/services/sessions.py.
 MASTER_COOKIE = "shellteam_token"
 FILES_COOKIE = "shellteam_files"
-SESSION_MAX_AGE = 31536000  # 1 year
 
 
 def token_is_owner(token: str | None) -> bool:
-    """True if the presented token authenticates the owner.
+    """True if ``token`` IS the master OWNER_TOKEN.
 
-    Constant-time compare against OWNER_TOKEN. When OWNER_TOKEN is unset the box
-    is in localhost-trust mode and any caller is treated as the owner.
+    Constant-time compare. Only the bootstrap paths (login body, one-time
+    ``GET /?token=``, confirm, Bearer headers) take the master; a cookie never
+    does (see ``request_is_owner``). When OWNER_TOKEN is unset the box is in
+    localhost-trust mode and any caller is treated as the owner.
     """
     if not OWNER_TOKEN:
         return True
@@ -67,32 +73,39 @@ def _sig_eq(presented: str, expected: str) -> bool:
     )
 
 
-def files_token() -> str:
-    """The derived, read-only content credential (`shellteam_files` cookie value).
-
-    Grants GET/HEAD on the owner's files and nothing else — it cannot reach the
-    terminal, mutating API routes, or file writes. Rotates with OWNER_TOKEN.
-    Empty in localhost-trust mode (no OWNER_TOKEN → nothing to derive).
-    """
-    return _derive("files-v1")
-
-
 def token_grants_files_read(token: str | None) -> bool:
-    """True if ``token`` may READ the owner's files: the master or the derived
-    files credential. Constant-time; trust-mode (no OWNER_TOKEN) always passes."""
+    """True if ``token`` may READ the owner's files: the master, a live session
+    token, or a live session's files credential. Trust mode always passes."""
     if not OWNER_TOKEN:
         return True
     if not token:
         return False
-    tok = token.encode("utf-8", "ignore")  # bytes compare: total, non-ASCII-safe (L4)
-    return hmac.compare_digest(tok, OWNER_TOKEN.encode("utf-8")) or hmac.compare_digest(
-        tok, files_token().encode("utf-8")
+    return token_is_owner(token) or sessions.lookup(token) is not None or (
+        sessions.lookup_files_cred(token) is not None
     )
 
 
+def request_is_owner(request: Request) -> bool:
+    """The owner check for an HTTP request (the one choke point).
+
+    - ``Authorization: Bearer`` takes the master (in-box tooling, curl) or a
+      session token;
+    - the session cookie takes a live session token ONLY: a cookie holding the
+      master is refused (pre-SHE-136 cookies are migrated on ``GET /``).
+    Trust mode (no OWNER_TOKEN) always passes.
+    """
+    if not OWNER_TOKEN:
+        return True
+    auth = request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        bearer = auth[7:]
+        return token_is_owner(bearer) or sessions.lookup(bearer) is not None
+    return sessions.lookup(request.cookies.get(MASTER_COOKIE)) is not None
+
+
 def request_grants_files_read(request: Request) -> bool:
-    """File-read auth for an HTTP request: master (Bearer/cookie) or files cookie."""
-    if token_grants_files_read(get_token_from_request(request)):
+    """File-read auth for an HTTP request: owner (Bearer/session) or files cookie."""
+    if request_is_owner(request):
         return True
     files_cred = request.cookies.get(FILES_COOKIE, "")
     return bool(files_cred) and token_grants_files_read(files_cred)
@@ -218,29 +231,58 @@ def verify_mirror_cred(cred: str | None) -> bool:
 
 
 
-def apply_session_cookies(response: Response, secure: bool) -> None:
+def _client_ip(request: Request) -> str:
+    # uvicorn fills request.client from the proxy-validated forwarded chain.
+    return request.client.host if request.client else ""
+
+
+def start_session(response: Response, request: Request, kind: str, fresh: bool = True) -> sessions.Minted:
+    """Mint a session for this browser and set its cookies (login, enrollment,
+    ``?token=`` redemption, legacy-cookie migration): the DRY entry point."""
+    minted = sessions.mint(
+        kind, ip=_client_ip(request), ua=request.headers.get("user-agent"), fresh=fresh
+    )
+    apply_session_cookies(response, minted, secure=request_is_https(request))
+    return minted
+
+
+def request_is_https(request: Request) -> bool:
+    return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+
+
+def apply_session_cookies(response: Response, minted: sessions.Minted, secure: bool) -> None:
     """Set the split-credential session cookies (and clear the legacy one).
 
-    - master → HttpOnly, HOST-ONLY (no ``domain=``): page JavaScript can never
-      read it and subdomains never receive it. One XSS in served content no
-      longer exfiltrates the credential that drives the terminal.
+    - session → HttpOnly, HOST-ONLY (no ``domain=``): page JavaScript can never
+      read it and subdomains never receive it. The value is a revocable,
+      expiring session token, never OWNER_TOKEN (SHE-136).
     - files credential → HttpOnly, ``domain=APP_DOMAIN`` so the cockpit/files
-      subdomain iframes can read files; it is powerless everywhere else.
+      subdomain iframes can read files; derived from (and revoked with) the
+      session, powerless everywhere else.
     - the pre-split cookie (JS-readable, domain-wide master) is explicitly
-      deleted — it is a distinct cookie (different Domain attribute) that would
+      deleted: it is a distinct cookie (different Domain attribute) that would
       otherwise linger, readable, for its remaining year.
     """
+    max_age = max(0, int(minted.expires - time.time()))
     response.set_cookie(
         MASTER_COOKIE, "", max_age=0, domain=APP_DOMAIN, path="/",
         secure=secure, httponly=False, samesite="lax",
     )
     response.set_cookie(
-        MASTER_COOKIE, OWNER_TOKEN, max_age=SESSION_MAX_AGE, path="/",
+        MASTER_COOKIE, minted.token, max_age=max_age, path="/",
         secure=secure, httponly=True, samesite="lax",
     )
     response.set_cookie(
-        FILES_COOKIE, files_token(), max_age=SESSION_MAX_AGE, domain=APP_DOMAIN,
+        FILES_COOKIE, minted.files_cred, max_age=max_age, domain=APP_DOMAIN,
         path="/", secure=secure, httponly=True, samesite="lax",
+    )
+
+
+def clear_session_cookies(response: Response, secure: bool) -> None:
+    """Remove the session cookies from this browser (log out)."""
+    response.set_cookie(MASTER_COOKIE, "", max_age=0, path="/", secure=secure, httponly=True, samesite="lax")
+    response.set_cookie(
+        FILES_COOKIE, "", max_age=0, domain=APP_DOMAIN, path="/", secure=secure, httponly=True, samesite="lax",
     )
 
 
@@ -266,18 +308,27 @@ def origin_is_trusted(origin: str | None) -> bool:
 
 
 def verify_token(token: str) -> dict:
-    """Validate a presented token and return the owner payload.
+    """Validate a session-cookie value and return the owner payload.
 
-    Signature-compatible with the legacy multi-tenant verifier (returns a dict with
-    `sub`/`email`). Raises HTTPException(401) if the token is not the owner's.
+    Used for cookie-borne credentials (terminal WS, subdomain proxy): only a
+    live session token passes, never the master. The payload carries the
+    session ``sid`` and ``auth_at`` (the terminal's freshness gate). In
+    localhost-trust mode (OWNER_TOKEN unset) every caller is the owner and
+    counts as fresh. Raises HTTPException(401) otherwise.
     """
-    if not token_is_owner(token):
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return {"sub": OWNER_ID, "email": OWNER_EMAIL}
+    if not OWNER_TOKEN:
+        return {"sub": OWNER_ID, "email": OWNER_EMAIL, "sid": None, "auth_at": time.time()}
+    rec = sessions.lookup(token)
+    if rec is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return {"sub": OWNER_ID, "email": OWNER_EMAIL, "sid": rec["id"], "auth_at": rec["auth_at"]}
 
 
 def get_token_from_request(request: Request) -> str:
     """Extract a token from the Authorization header or the session cookie.
+
+    Extraction only: decide with ``request_is_owner`` (a cookie must hold a
+    session, never the master).
 
     ``?token=`` is deliberately NOT accepted: a master token in a URL ends up in
     browser history, server logs, and Referer headers. The only URL-borne

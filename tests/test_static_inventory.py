@@ -35,6 +35,7 @@ APPROVED = {
     "icons/googledrive.svg",
     "icons/notion.svg",
     "icons/slack.svg",
+    "manifest.webmanifest",  # installs the dashboard as a full-screen phone app (SHE-133)
     "tokens.css",
     # Brand faces, self-hosted so no page load reaches a third party. SIL Open
     # Font License 1.1 (redistribution permitted); regenerate with

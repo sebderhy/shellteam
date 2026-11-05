@@ -5,6 +5,7 @@ dashboard Settings tab calls these same-origin, riding the HttpOnly session
 cookie.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -16,10 +17,18 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import get_current_user
 from api import config
-from api.services import dreaming, feature_keys
+from api.services import dreaming, feature_keys, security_checks
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+security_router = APIRouter(prefix="/api/security", tags=["security"])
+
+
+@security_router.get("/warnings")
+async def get_security_warnings(user: dict = Depends(get_current_user)) -> dict:
+    """Host-level security findings the dashboard shows as a banner (SHE-136):
+    passwordless sudo for the owner, a Steel container off its isolated network."""
+    return {"warnings": await asyncio.to_thread(security_checks.current)}
 
 
 class FeatureKeyRequest(BaseModel):

@@ -5,23 +5,45 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from api.services import runtime, activity
+from api.config import APP_DOMAIN
+from api.services import activity, notify, runtime, sessions
 from api.services.auth import MASTER_COOKIE, origin_is_trusted, verify_token
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["terminal"])
+
+# Close code the terminal page answers with a "re-enter your token" prompt.
+CLOSE_NEEDS_CONFIRM = 4401
+
+
+def _notify_terminal_opened(ip: str) -> None:
+    """Tell the owner a terminal was opened, off-box (SHE-136). Best effort:
+    notify never raises; with no channel configured the journal line is the
+    record (logged by the caller)."""
+    if notify.notify_channel() == "none":
+        log.info("Terminal open not notified: no notify channel configured (NOTIFY_* in .env)")
+        return
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    asyncio.create_task(
+        notify.send_notification(
+            "ShellTeam: web terminal opened",
+            f"A web terminal was opened on {APP_DOMAIN} from {ip} at {stamp}. "
+            "If this was not you: Settings, Devices, Log out everywhere, then rotate OWNER_TOKEN.",
+        )
+    )
 
 
 @router.websocket("/api/terminal")
 async def terminal_websocket(ws: WebSocket):
     """WebSocket terminal: bridges xterm.js to a shell on the box."""
     # Authenticate BEFORE accepting the upgrade — this socket hands out a shell.
-    # MASTER session cookie ONLY: the terminal page is same-origin with the
+    # SESSION cookie ONLY: the terminal page is same-origin with the
     # dashboard, so the HttpOnly host-only cookie rides the upgrade by itself.
-    # No ?token= (URL-borne master tokens leak into logs/history) and never the
-    # derived files credential (read-only by design). An empty token is allowed
-    # only in localhost-trust mode (OWNER_TOKEN unset) — verify_token() still
-    # rejects it whenever OWNER_TOKEN is set.
+    # No ?token= (URL-borne master tokens leak into logs/history), never the
+    # derived files credential (read-only by design), and never the master
+    # itself in the cookie (SHE-136: verify_token takes live sessions only).
+    # An empty token is allowed only in localhost-trust mode (OWNER_TOKEN
+    # unset); verify_token() rejects it whenever OWNER_TOKEN is set.
     # CSRF layer: a browser always sends Origin on a WS upgrade. Refuse any origin
     # that is not a dashboard host — a content-sandboxed report is `Origin: null`,
     # so it cannot open this shell even though it shares the APP_DOMAIN site.
@@ -32,11 +54,12 @@ async def terminal_websocket(ws: WebSocket):
         return
 
     token = ws.cookies.get(MASTER_COOKIE) or ""
+    ip = ws.client.host if ws.client else "?"
 
     try:
         payload = verify_token(token)
     except Exception as e:
-        log.error("Terminal WS token verification failed: %s", e)
+        log.warning("Terminal WS refused from %s: no live session (%s)", ip, e)
         # A close-handshake needs an accepted socket; accept solely to send the
         # auth-failure close code — no shell resources exist yet at this point.
         await ws.accept()
@@ -48,6 +71,19 @@ async def terminal_websocket(ws: WebSocket):
     user_id = payload.get("sub")
     if not user_id:
         await ws.close(code=4001, reason="Invalid token: missing subject")
+        return
+
+    # Step-up (SHE-136): a shell needs a RECENT proof of the master, not just a
+    # cookie. A stolen or long-lived session cookie alone no longer opens it.
+    if not sessions.is_fresh(payload):
+        log.warning(
+            "Terminal WS refused from %s: session %s needs a fresh confirmation",
+            ip, payload.get("sid"),
+        )
+        await ws.close(
+            code=CLOSE_NEEDS_CONFIRM,
+            reason="Confirm it is you: re-enter your token to open the terminal",
+        )
         return
 
     status = await runtime.get_status(user_id)
@@ -66,7 +102,8 @@ async def terminal_websocket(ws: WebSocket):
     # One INFO line per terminal session at each end: the request log is how an
     # operator later tells "opened the Terminal tab" from "typed nothing".
     opened_at = time.monotonic()
-    log.info("Terminal shell opened for %s", user_id)
+    log.info("Terminal shell opened for %s from %s (session %s)", user_id, ip, payload.get("sid"))
+    _notify_terminal_opened(ip)
 
     async def shell_to_browser():
         try:
@@ -113,7 +150,7 @@ async def terminal_websocket(ws: WebSocket):
     finally:
         shell.close()
         activity.connection_closed(user_id)
-        log.info("Terminal shell closed for %s after %.0fs", user_id, time.monotonic() - opened_at)
+        log.info("Terminal shell closed for %s from %s after %.0fs", user_id, ip, time.monotonic() - opened_at)
         try:
             await ws.close()
         except Exception:

@@ -92,12 +92,21 @@ Two things follow from taking that seriously:
    report, a compromised CDN script). The design
    ([decision](docs/decisions/20260702-split-credentials.md)):
 
-   - The **master session** is an `HttpOnly`, **host-only** cookie on the
+   - The **session** is an `HttpOnly`, **host-only** cookie on the
      dashboard origin. No page script — on any origin — can read it; content
      subdomains never even receive it. It alone unlocks the terminal, the API's
-     mutating routes, and file writes.
+     mutating routes, and file writes. Since SHE-136 it is **never
+     `OWNER_TOKEN`**: each sign-in (login, enrollment link, `/?token=`) mints a
+     random session that expires (`SESSION_TTL_DAYS`), is stored hashed, and is
+     revoked by "Log out everywhere" or by rotating `OWNER_TOKEN`. The token
+     itself only signs you in and works as a Bearer header for in-box tooling.
+     ([decision](docs/decisions/20261104-sessions-not-the-master-token.md))
+   - **The web terminal needs a fresh sign-in.** A session older than
+     `TERMINAL_FRESH_MINUTES` must re-enter the token before a shell opens, and
+     every terminal session is logged with its IP and sent to your notification
+     channel (`NOTIFY_*`).
    - Content origins (file/port subdomains) carry only a **derived, read-only
-     credential** (`HMAC(master, "files-v1")`, also HttpOnly). A compromised
+     credential** (`HMAC(master, session id)`, also HttpOnly, dies with its session). A compromised
      served page downgrades from "owns the box" to "can read files the owner can
      read" — it cannot write files, and reaching the cockpit port with it
      requires a trusted browser `Origin` (the dashboard or the cockpit itself),
@@ -167,7 +176,13 @@ Two things follow from taking that seriously:
    only by the installer (apt, Caddy, a systemd drop-in). `--create-owner`
    therefore grants sudo for the install run and removes it afterwards; the
    docker group is added only by the browser module, and only because the
-   Docker socket is the one way to run its container.
+   Docker socket is the one way to run its container. On an existing account
+   that already has passwordless sudo (cloud images often grant it), the
+   installer and the dashboard warn loudly: with it, any shell is root.
+   - The **agent browser** (Steel) runs on its own Docker network,
+     `shellteam-browser-net`, with inter-container traffic off, so no other
+     container on the host can reach its unauthenticated debugging port and
+     read its cookies. Never sign the agent browser in to the dashboard.
 
 6. **Prompt injection is the real residual risk, and it is the CLI's too.** An
    agent tricked by untrusted input has whatever the user has, in a terminal or

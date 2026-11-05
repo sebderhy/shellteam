@@ -80,6 +80,19 @@ It needs a Codex login or API key on the box and spends a few short turns,
 which is why it is manual. `--scenario hold` then a cockpit restart then
 `--scenario resume --slot N` covers the restart case.
 
+### Agent browser isolation
+
+On a box running the browser module (`shellteam-steel` up):
+
+```bash
+SHELLTEAM_LIVE_DOCKER_TESTS=1 uv run pytest tests/test_she136_box_takeover.py -k live
+```
+
+Starts a throwaway `alpine` container on the default Docker bridge and probes
+Steel's CDP (9223) and API (3000) on every address Steel has. Nothing may
+answer (SHE-136: a container on the same host read the agent browser's cookies
+through CDP). CI has no Docker daemon with Steel, so this is manual.
+
 
 ## Why these are separate from the suites
 

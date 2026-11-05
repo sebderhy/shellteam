@@ -137,7 +137,8 @@ def app_owner():
 
 
 def _owner_cookie():
-    from api.services.auth import FILES_COOKIE, files_token
+    from api.services.auth import FILES_COOKIE
+    from tests._owner_session import files_token
 
     return {"cookie": f"{FILES_COOKIE}={files_token()}"}
 
