@@ -5,6 +5,13 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.51] - 2026-11-06
+
+### Fixed
+- The cockpit proxy refuses a non-JSON body before it looks for the cockpit,
+  so the answer is the same whether the cockpit is up or not (v0.1.50's CI
+  ran without a cockpit and got "not running" instead).
+
 ## [0.1.50] - 2026-11-06
 
 A security release from a full audit after the 2026-11-03 incident. Update now.

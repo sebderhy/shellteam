@@ -260,6 +260,11 @@ async def proxy_ai_chat(path: str, request: Request, user: dict = Depends(get_cu
     know whether the control plane holds a Fireworks key, but we do, and the
     OpenCode universal fallback only actually works when that key is configured.
     """
+    body = await request.body()
+    if body and not _is_json(request):
+        # A text/plain POST is a CORS "simple" request (no preflight); this
+        # route used to relabel it as JSON for the cockpit (SHE-145).
+        raise HTTPException(status_code=415, detail="Send JSON (Content-Type: application/json)")
     ip = await containers.get_container_ip(user["id"])
     if not ip:
         raise HTTPException(status_code=503, detail="Container not running")
@@ -267,11 +272,6 @@ async def proxy_ai_chat(path: str, request: Request, user: dict = Depends(get_cu
     url = f"http://{ip}:{COCKPIT_PORT}/api/{path}"
     if query:
         url = f"{url}?{query}"
-    body = await request.body()
-    if body and not _is_json(request):
-        # A text/plain POST is a CORS "simple" request (no preflight); this
-        # route used to relabel it as JSON for the cockpit (SHE-145).
-        raise HTTPException(status_code=415, detail="Send JSON (Content-Type: application/json)")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.request(
             request.method, url,
