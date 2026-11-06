@@ -61,6 +61,7 @@ unit_state() { systemctl --user is-active "$1" 2>/dev/null || true; }
 log "Stopping systemd --user units…"
 systemctl --user disable --now shellteam-dream.timer >/dev/null 2>&1 || true
 systemctl --user disable --now shellteam-update.timer >/dev/null 2>&1 || true
+systemctl --user disable --now shellteam-security.timer >/dev/null 2>&1 || true
 # The timers' oneshots may be mid-run right now — stop them too, or they keep
 # working (writing knowledge / restarting services) after the uninstall.
 systemctl --user stop shellteam-dream.service >/dev/null 2>&1 || true
@@ -78,7 +79,7 @@ done
 
 # Prove every unit is down BEFORE removing any file. Deleting unit files out
 # from under live processes leaves orphans systemd can no longer manage.
-for u in "${UNITS[@]}" shellteam-dream.timer shellteam-dream.service shellteam-update.timer shellteam-update.service; do
+for u in "${UNITS[@]}" shellteam-dream.timer shellteam-dream.service shellteam-update.timer shellteam-update.service shellteam-security.timer shellteam-security.service; do
     state="$(unit_state "$u")"
     if [ "$state" = "active" ] || [ "$state" = "activating" ]; then
         die "$u is still $state after stop — aborting before deleting anything."
@@ -87,6 +88,7 @@ done
 log "All units stopped — removing unit files…"
 rm -f "$UNIT_DIR/shellteam-dream.timer" "$UNIT_DIR/shellteam-dream.service"
 rm -f "$UNIT_DIR/shellteam-update.timer" "$UNIT_DIR/shellteam-update.service"
+rm -f "$UNIT_DIR/shellteam-security.timer" "$UNIT_DIR/shellteam-security.service"
 for u in "${UNITS[@]}"; do rm -f "$UNIT_DIR/$u.service"; done
 systemctl --user daemon-reload
 # A unit that was stopping when its file vanished lingers as "not-found failed"
@@ -140,6 +142,15 @@ fi
 log "Unmasking system nginx.service (install.sh masked it)…"
 sudo systemctl unmask nginx.service >/dev/null 2>&1 || \
     warn "Could not unmask nginx.service — do it manually if you want the distro nginx back."
+
+# Command log (SHE-149): our audit rules and the user@ drop-in. auditd itself
+# stays installed (other software may rely on it); its log is root-owned.
+for f in /etc/audit/rules.d/shellteam.rules "/etc/systemd/system/user@$(id -u).service.d/shellteam-command-log.conf"; do
+    [ -f "$f" ] || continue
+    log "Removing $f (install.sh wrote it)…"
+    sudo rm -f "$f" || warn "Could not remove $f — remove it manually."
+done
+command -v auditctl >/dev/null 2>&1 && { sudo auditctl -D -k shellteam-login >/dev/null 2>&1; sudo auditctl -D -k shellteam-root >/dev/null 2>&1; } || true
 
 BROWSER_FW_UNIT="/etc/systemd/system/shellteam-browser-firewall.service"
 if [ -f "$BROWSER_FW_UNIT" ]; then

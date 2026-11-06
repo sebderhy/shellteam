@@ -133,6 +133,8 @@ auth_failure_limiter = RateLimiter(rate=10, period=60)
 def note_auth_failure(request: Request) -> None:
     """Record a failed authentication for *request*'s IP; raise 429 once an IP
     has exceeded the failed-attempt budget. Call this on every rejected token."""
+    from api.services import security_watch
+    security_watch.note_auth_failure(request.client.host if request.client else "unknown", request.url.path)
     if not auth_failure_limiter.allow(request):
         ip = request.client.host if request.client else "unknown"
         log.warning("Auth-failure backoff tripped for %s — too many bad tokens", ip)

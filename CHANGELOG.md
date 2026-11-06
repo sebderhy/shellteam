@@ -5,6 +5,20 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.52] - 2026-11-06
+
+### Added
+- **Know when someone gets in.** Every sign-in, new device, token change and
+  web terminal messages you (Telegram or ntfy), flagged when it comes from a
+  network you haven't used before.
+- **A daily security check** (every box): it messages you only when something
+  is unusual, such as a sign-in or SSH login from a new place, a token change,
+  a burst of wrong tokens, or a new scheduled job.
+- **Command log** (`./install.sh --command-log`, part of `--full`): records
+  sudo, and every command from SSH, cron or any login other than ShellTeam's
+  own, in a log that is owned by root, so an intruder in your account can't
+  erase it.
+
 ## [0.1.51] - 2026-11-06
 
 ### Fixed

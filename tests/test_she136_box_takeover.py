@@ -234,8 +234,8 @@ class TestTerminalFreshConfirmation:
     def test_fresh_session_opens_logs_ip_and_notifies(self, caplog):
         minted = sessions.mint("login")
         sent = AsyncMock(return_value={"channel": "ntfy", "ok": True})
-        with patch("api.routers.terminal.notify.send_notification", sent), patch(
-            "api.routers.terminal.notify.notify_channel", return_value="ntfy"
+        with patch("api.services.security_watch.notify.send_notification", sent), patch(
+            "api.services.security_watch.notify.notify_channel", return_value="ntfy"
         ), caplog.at_level("INFO"):
             msg = _open_terminal(minted.token)
         assert msg["type"] != "websocket.close" or msg.get("code") not in (4001, 4401)

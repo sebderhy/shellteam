@@ -67,6 +67,12 @@ os.environ["COMPOSIO_API_KEY"] = ""
 # override=False, refills any key that is *absent* from os.environ straight from
 # `.env` — so popping would be silently undone. An empty string is "present"
 # (load_dotenv leaves it) yet falsy, so `notify_channel()` reads it as "none".
+# SHE-149: the security check's known addresses go to a throwaway file, never
+# the real ~/.shellteam (a test sign-in from "testclient" landed there once).
+# Set once here, not in a monkeypatch fixture: an autouse monkeypatch fixture
+# changes teardown order and broke test_employees' config reload.
+import tempfile as _tempfile  # noqa: E402
+os.environ["SHELLTEAM_SECURITY_STATE"] = os.path.join(_tempfile.mkdtemp(prefix="st-sec-"), "known.json")
 for _k in ("NOTIFY_TELEGRAM_BOT_TOKEN", "NOTIFY_TELEGRAM_CHAT_ID", "NOTIFY_NTFY_TOPIC"):
     os.environ[_k] = ""
 

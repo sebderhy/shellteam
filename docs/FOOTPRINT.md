@@ -36,6 +36,8 @@ already covers — the edits are unnecessary). Pinned by
 | Images pasted into the chat for Codex, OpenCode and Antigravity (kept 7 days) | `~/.shellteam/attachments/` | `uninstall.sh --purge` |
 | Secrets vault: your API keys (Settings -> Secrets), owner-only `0600`, plus where agents wrote each one | `~/.shellteam/secrets.json` | `uninstall.sh --purge` |
 | Steel browser (opt-in: part of `--full`) | Docker container `shellteam-steel` on its own network `shellteam-browser-net` (inter-container traffic off) | `uninstall.sh` |
+| Daily security check | `~/.config/systemd/user/shellteam-security.{service,timer}`; known addresses in `~/.shellteam/security/known.json` | `uninstall.sh` |
+| Command log (opt-in: `--command-log`, part of `--full`) | Installs `auditd`; writes `/etc/audit/rules.d/shellteam.rules` (sudo/su) and `/etc/systemd/system/user@<uid>.service.d/shellteam-command-log.conf` (commands from logins other than ShellTeam's own); makes `/var/log/audit` readable by your group | `uninstall.sh` removes the rules and drop-in; leaves the `auditd` package |
 | Browser firewall (with the Steel browser) | Root unit `/etc/systemd/system/shellteam-browser-firewall.service`: iptables chain `SHELLTEAM-BROWSER` so pages the agent opens reach only ports 80/443 of this host, plus a `DOCKER-USER` drop for the cloud metadata address | `uninstall.sh` |
 
 ## Tier 2 — the agent layer (additive; **never your dotfiles**)

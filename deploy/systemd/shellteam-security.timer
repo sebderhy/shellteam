@@ -1,0 +1,12 @@
+# Daily security check (SHE-149). Persistent: a box that was off still checks
+# on its next boot. Installed by install.sh on every box; removed by uninstall.sh.
+[Unit]
+Description=ShellTeam daily security check at 07:00 (local time)
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

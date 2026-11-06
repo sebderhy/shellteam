@@ -125,6 +125,9 @@ def _live() -> dict:
         n = len(data.get("sessions", {}))
         if n:
             log.warning("OWNER_TOKEN changed since the sessions were issued: revoked %d session(s)", n)
+        if data.get("epoch"):  # a previous token existed: this is a change, not a first start
+            from api.services import security_watch
+            security_watch.note_token_changed(n)
         data = _empty()
         changed = True
     expired = [sid for sid, s in data["sessions"].items() if s["expires"] <= now]
@@ -175,6 +178,8 @@ def mint(
         data["sessions"][sid] = record
         _write(data)
     log.info("Session %s minted (kind=%s, ip=%s, ttl=%ds)", sid, kind, record["ip"] or "?", SESSION_TTL)
+    from api.services import security_watch
+    security_watch.note_signin(kind, record["ip"], ua)
     return Minted(sid, f"{_TOKEN_PREFIX}.{sid}.{secret}", files_cred_for(sid), record["expires"])
 
 
@@ -274,6 +279,8 @@ def revoke_all() -> int:
         _write(_empty())
     if n:
         log.warning("All %d session(s) revoked (log out everywhere)", n)
+    from api.services import security_watch
+    security_watch.note_signout_all(n)
     return n
 
 

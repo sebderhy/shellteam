@@ -5,8 +5,7 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from api.config import APP_DOMAIN
-from api.services import activity, notify, runtime, sessions
+from api.services import activity, runtime, security_watch, sessions
 from api.services.auth import MASTER_COOKIE, origin_is_trusted, verify_token
 
 log = logging.getLogger(__name__)
@@ -14,23 +13,6 @@ router = APIRouter(tags=["terminal"])
 
 # Close code the terminal page answers with a "re-enter your token" prompt.
 CLOSE_NEEDS_CONFIRM = 4401
-
-
-def _notify_terminal_opened(ip: str) -> None:
-    """Tell the owner a terminal was opened, off-box (SHE-136). Best effort:
-    notify never raises; with no channel configured the journal line is the
-    record (logged by the caller)."""
-    if notify.notify_channel() == "none":
-        log.info("Terminal open not notified: no notify channel configured (NOTIFY_* in .env)")
-        return
-    stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-    asyncio.create_task(
-        notify.send_notification(
-            "ShellTeam: web terminal opened",
-            f"A web terminal was opened on {APP_DOMAIN} from {ip} at {stamp}. "
-            "If this was not you: Settings, Devices, Log out everywhere, then rotate OWNER_TOKEN.",
-        )
-    )
 
 
 @router.websocket("/api/terminal")
@@ -103,7 +85,7 @@ async def terminal_websocket(ws: WebSocket):
     # operator later tells "opened the Terminal tab" from "typed nothing".
     opened_at = time.monotonic()
     log.info("Terminal shell opened for %s from %s (session %s)", user_id, ip, payload.get("sid"))
-    _notify_terminal_opened(ip)
+    security_watch.note_terminal_open(ip)  # journal + off-box message (SHE-136, SHE-149)
 
     async def shell_to_browser():
         try:

@@ -62,6 +62,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAW_ARGS=("$@")           # verbatim args, so --create-owner can re-exec the rest
 CREATE_OWNER=""           # non-empty → root bootstrap: create this user, then re-exec
 WITH_BROWSER=0          # v1 default: pure core — the browser container is opt-in
+WITH_COMMAND_LOG=0        # --command-log (part of --full): auditd keeps a root-owned record of login-session commands and sudo
 START_SERVICES=1
 PUBLIC_MODE=none          # none | sslip | domain
 PUBLIC_DOMAIN=""
@@ -85,7 +86,8 @@ while [ $# -gt 0 ]; do
                          [ -n "$CREATE_OWNER" ] || { echo "--create-owner requires a username, e.g. sudo ./install.sh --create-owner shellteam" >&2; exit 1; } ;;
         --create-owner=*) CREATE_OWNER="${1#*=}"
                          [ -n "$CREATE_OWNER" ] || { echo "--create-owner requires a username" >&2; exit 1; } ;;
-        --full)          add_module persona; add_module browser; add_module dreaming; WITH_BROWSER=1 ;;
+        --full)          add_module persona; add_module browser; add_module dreaming; WITH_BROWSER=1; WITH_COMMAND_LOG=1 ;;
+        --command-log)   WITH_COMMAND_LOG=1 ;;
         --keep-sudo)     KEEP_SUDO=1 ;;
         --no-start)      START_SERVICES=0; EXPLICIT_LOCAL=1 ;;
         --plan)          PLAN_ONLY=1 ;;
@@ -183,6 +185,8 @@ print_plan() {
     echo "THIS USER'S SYSTEMD (--user units; removed by uninstall.sh):"
     echo "  + ~/.config/systemd/user/shellteam-{api,ai-chat,nginx}.service"
     echo "  + ~/.config/systemd/user/shellteam-update.{service,timer} (inert unless AUTO_UPDATE=1)"
+    echo "  + ~/.config/systemd/user/shellteam-security.{service,timer} (daily security check; messages you only when something is unusual)"
+    [ "$WITH_COMMAND_LOG" -eq 1 ] && echo "  + install auditd; write /etc/audit/rules.d/shellteam.rules and /etc/systemd/system/user@$(id -u).service.d/shellteam-command-log.conf (command log; reversed by uninstall.sh)"
     case ",$REQUESTED_MODULES," in *,dreaming,*)
         echo "  + ~/.config/systemd/user/shellteam-dream.{service,timer} (dreaming module)" ;;
     esac
@@ -429,7 +433,7 @@ EOF
     read -r -p "   Choice [1-2]: " choice
     case "${choice:-1}" in
         1) ;;
-        2) add_module persona; add_module browser; add_module dreaming; WITH_BROWSER=1 ;;
+        2) add_module persona; add_module browser; add_module dreaming; WITH_BROWSER=1; WITH_COMMAND_LOG=1 ;;
         *) die "Invalid choice '$choice' — re-run and pick 1-2 (or pass --full / --minimal)." ;;
     esac
 }
@@ -1010,6 +1014,10 @@ sed -i "s|$REPO/deploy/nginx/shellteam.conf|$STATE/nginx.conf|g" "$UNIT_DIR/shel
 # Settings toggle works without any systemctl choreography.
 render "$REPO/deploy/systemd/shellteam-update.service" "$UNIT_DIR/shellteam-update.service"
 render "$REPO/deploy/systemd/shellteam-update.timer"   "$UNIT_DIR/shellteam-update.timer"
+# Daily security check (SHE-149): core, like the update timer. Silent unless
+# something is unusual and a NOTIFY_* channel is set.
+render "$REPO/deploy/systemd/shellteam-security.service" "$UNIT_DIR/shellteam-security.service"
+render "$REPO/deploy/systemd/shellteam-security.timer"   "$UNIT_DIR/shellteam-security.timer"
 
 # Dreaming module: the nightly sweep is a oneshot service + timer, installed and
 # enabled ONLY when the module is on — and torn down when it isn't, so dropping
@@ -1039,6 +1047,8 @@ done
 UPDATE_NOW=""; [ "$START_SERVICES" -eq 1 ] && UPDATE_NOW="--now"
 systemctl --user enable $UPDATE_NOW shellteam-update.timer >/dev/null 2>&1 || \
     warn "could not enable shellteam-update.timer"
+systemctl --user enable $UPDATE_NOW shellteam-security.timer >/dev/null 2>&1 || \
+    warn "could not enable shellteam-security.timer"
 case ",$CUR_MODULES," in
     *,dreaming,*)
         DREAM_NOW=""; [ "$START_SERVICES" -eq 1 ] && DREAM_NOW="--now"
@@ -1306,6 +1316,66 @@ provision_browser() {
     warn "Removing the broken container. Fix the cause (see logs above) and re-run the installer, or remove 'browser' from MODULES in .env."
     dk rm -f "$STEEL_CONTAINER" >/dev/null 2>&1 || true
 }
+# Command log (SHE-149). Everything ShellTeam runs is the owner's user, so an
+# intruder with a shell can erase anything that user owns (bash history, agent
+# transcripts). auditd writes a root-owned log the owner can READ but not
+# change. It records every sudo/su, and every command the owner runs from a
+# login session OTHER than the one ShellTeam's services run in: SSH logins,
+# cron jobs, anything that got in some other way. ShellTeam's agents and web
+# terminal share the user manager's audit session, which is excluded, so the
+# log stays small and means something. That session id changes whenever the
+# user manager restarts, so a root drop-in on user@UID re-applies the rule on
+# every start. The daily security check (api/services/security_watch.py)
+# reads the log.
+AUDIT_RULES="/etc/audit/rules.d/shellteam.rules"
+AUDIT_DROPIN_DIR="/etc/systemd/system/user@$(id -u).service.d"
+AUDIT_DROPIN="$AUDIT_DROPIN_DIR/shellteam-command-log.conf"
+provision_command_log() {
+    local uid group apply manager_pid
+    uid="$(id -u)"; group="$(id -gn)"
+    if ! command -v auditctl >/dev/null 2>&1; then
+        log "Installing auditd for the command log…"
+        sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y -qq auditd >/dev/null \
+            || { warn "Could not install auditd: the command log is off (the daily security check still runs)."; return 0; }
+    fi
+    # One shell line, used both now and in the drop-in: replace the login rule
+    # with one that skips session $S (the user manager's).
+    apply="auditctl -D -k shellteam-login >/dev/null 2>&1; for a in b64 b32; do auditctl -a always,exit -F arch=\$a -S execve -F auid=$uid -F uid=$uid -F sessionid!=\$S -k shellteam-login; done"
+    if printf '%s\n' \
+        '# Written by ShellTeam install.sh; removed by uninstall.sh (SHE-149).' \
+        '# The login-session rule is applied by the user@ drop-in (it needs the session id).' \
+        '-w /usr/bin/sudo -p x -k shellteam-root' \
+        '-w /usr/bin/su -p x -k shellteam-root' \
+        | sudo tee "$AUDIT_RULES" >/dev/null \
+        && sudo mkdir -p "$AUDIT_DROPIN_DIR" \
+        && printf '%s\n' \
+            '# Written by ShellTeam install.sh; removed by uninstall.sh (SHE-149).' \
+            '# Re-applies the command-log rule with this manager'"'"'s audit session excluded.' \
+            '[Service]' \
+            "ExecStartPost=+/bin/sh -c 'S=\$\$(cat /proc/\$\$MAINPID/sessionid); ${apply//\$/\$\$}'" \
+            | sudo tee "$AUDIT_DROPIN" >/dev/null \
+        && sudo sed -i -e "s/^log_group *=.*/log_group = $group/" \
+                       -e "s/^max_log_file *=.*/max_log_file = 25/" \
+                       -e "s/^num_logs *=.*/num_logs = 8/" /etc/audit/auditd.conf \
+        && sudo chgrp "$group" /var/log/audit && sudo chmod 0750 /var/log/audit \
+        && sudo systemctl daemon-reload \
+        && sudo systemctl enable auditd >/dev/null 2>&1 \
+        && sudo systemctl restart auditd \
+        && sudo augenrules --load >/dev/null 2>&1 \
+        && manager_pid="$(systemctl show "user@$uid.service" -p MainPID --value)" \
+        && [ -n "$manager_pid" ] && [ "$manager_pid" != 0 ] \
+        && sudo sh -c "S=\$(cat /proc/$manager_pid/sessionid); $apply"; then
+        set_env COMMAND_LOG 1
+        log "  Command log on: sudo, and commands from logins other than ShellTeam's own, go to /var/log/audit (root-owned, readable by $group)"
+    else
+        warn "Could not set up the command log: the daily security check runs without it."
+    fi
+}
+[ "$(env_val COMMAND_LOG)" = "1" ] && WITH_COMMAND_LOG=1
+if [ "$WITH_COMMAND_LOG" -eq 1 ] && [ "$START_SERVICES" -eq 1 ]; then
+    provision_command_log
+fi
+
 if [ "$WITH_BROWSER" -eq 1 ]; then
     if [ "$START_SERVICES" -eq 1 ]; then
         provision_browser

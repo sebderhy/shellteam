@@ -1,0 +1,16 @@
+# ShellTeam daily security check (SHE-149): reads the security events the API
+# wrote to the journal (sign-ins, devices, terminals, token changes) and, when
+# the command log is on, the audit log (SSH, cron, sudo). Messages the owner
+# through the NOTIFY_* channel ONLY when something is unusual.
+# Oneshot: a failed check leaves the unit red in systemctl --user.
+[Unit]
+Description=ShellTeam daily security check
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+EnvironmentFile=@REPO@/.env
+Environment=HOME=%h
+Environment=PATH=@AGENT_PATH@:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=@UV@ run python -m api.services.security_watch --notify
+TimeoutStartSec=600
