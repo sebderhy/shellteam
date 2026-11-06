@@ -14,6 +14,34 @@ import { homedir } from "node:os";
 
 const MIN_MASK_LEN = 8; // same floor as secrets_vault.MIN_MASK_LEN
 
+// The box's own credentials, from the cockpit's environment (.env). An agent
+// running `env` or `cat .env` showed the master token in the chat (SHE-147).
+// The master is also removed from the environment agents inherit
+// (scrubMasterToken); it is captured here first so it can still be masked.
+const BOX_SECRET_NAMES = ["OWNER_TOKEN", "SHELLTEAM_AI_TOKEN"];
+const BOX_SECRET_RE = /(_API_KEY|_TOKEN|_SECRET|_PASSWORD)$/;
+const boxSecrets = new Map();
+
+function captureBoxSecrets() {
+  for (const [name, value] of Object.entries(process.env)) {
+    if (!(BOX_SECRET_NAMES.includes(name) || BOX_SECRET_RE.test(name))) continue;
+    if (typeof value === "string" && value.length >= MIN_MASK_LEN) boxSecrets.set(name, value);
+  }
+}
+captureBoxSecrets();
+
+/** Agents never need the master token: every agent tool uses SHELLTEAM_AI_TOKEN. */
+export function scrubMasterToken() {
+  delete process.env.OWNER_TOKEN;
+}
+
+function withVariants(list, value, label) {
+  list.push([value, label]);
+  // Inside a JSON frame the value appears escaped (quotes, backslashes, unicode).
+  const escaped = JSON.stringify(value).slice(1, -1);
+  if (escaped !== value) list.push([escaped, label]);
+}
+
 export function vaultPath() {
   return process.env.SHELLTEAM_SECRETS_FILE || join(process.env.HOME || homedir(), ".shellteam", "secrets.json");
 }
@@ -25,19 +53,16 @@ function pairs() {
   try {
     mtimeMs = statSync(vaultPath()).mtimeMs;
   } catch (err) {
-    if (err.code === "ENOENT") return [];
-    throw err;
+    if (err.code !== "ENOENT") throw err;
+    mtimeMs = 0;
   }
   if (mtimeMs === cache.mtimeMs) return cache.pairs;
-  const secrets = JSON.parse(readFileSync(vaultPath(), "utf8")).secrets || {};
+  const secrets = mtimeMs ? JSON.parse(readFileSync(vaultPath(), "utf8")).secrets || {} : {};
   const list = [];
+  for (const [name, value] of boxSecrets) withVariants(list, value, `[secret ${name}]`);
   for (const [name, s] of Object.entries(secrets)) {
     if (typeof s?.value !== "string" || s.value.length < MIN_MASK_LEN) continue;
-    const label = `[secret ${name}]`;
-    list.push([s.value, label]);
-    // Inside a JSON frame the value appears escaped (quotes, backslashes, unicode).
-    const escaped = JSON.stringify(s.value).slice(1, -1);
-    if (escaped !== s.value) list.push([escaped, label]);
+    withVariants(list, s.value, `[secret ${name}]`);
   }
   list.sort((a, b) => b[0].length - a[0].length); // longest first
   cache = { mtimeMs, pairs: list };

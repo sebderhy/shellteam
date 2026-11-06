@@ -1653,7 +1653,7 @@
                     btn.disabled = false; btn.textContent = 'Test active connection';
                     out.innerHTML = resp.success
                         ? `<span class="ok">✓ Working</span><span class="latency">${resp.latency_ms}ms</span>`
-                        : `<span class="err">✗ ${resp.error || 'Test failed'}</span>`;
+                        : `<span class="err">✗ ${escapeHtml(resp.error || 'Test failed')}</span>`;
                 });
 
                 panel.querySelectorAll('.ai-key-toggle').forEach(toggle => toggle.addEventListener('click', () => {

@@ -225,3 +225,13 @@ GUEST_DENIED_HTML = NOT_FOUND_HTML.replace(
 ).replace('<a href="/">Back to ShellTeam</a>', "").replace(
     "<title>404 \u2014 ShellTeam</title>", "<title>Guest access \u2014 ShellTeam</title>"
 )
+
+
+def child_env() -> dict[str, str]:
+    """The environment for agents and commands the control plane starts: ours
+    minus the master token, which none of them needs (they use
+    SHELLTEAM_AI_TOKEN). One `env` in an agent's shell put it in a transcript
+    and on the model provider's servers (SHE-147)."""
+    env = dict(os.environ)
+    env.pop("OWNER_TOKEN", None)
+    return env

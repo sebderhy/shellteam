@@ -214,12 +214,18 @@ def _env_line(var: str, value: str) -> str:
         return f"{var}={value}"
     if "'" not in value:
         return f"{var}='{value}'"
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+    # Inside double quotes a shell still expands \ " $ and the backtick; an
+    # unescaped backtick ran a command when the file was sourced (SHE-148).
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
     return f'{var}="{escaped}"'
 
 
 def _upsert_env_file(path: Path, assignments: dict[str, str]) -> None:
     """Set each VAR in the env file, keeping every other line as it was."""
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        # A symlinked .env (a cloned repo can ship one) would get the secrets
+        # written into, and read back from, whatever it points at (SHE-148).
+        raise SecretsError(f"{path} is a symlink or not a regular file; point at the real file.")
     lines = path.read_text().splitlines() if path.exists() else []
     pending = dict(assignments)
     for i, line in enumerate(lines):
@@ -232,7 +238,10 @@ def _upsert_env_file(path: Path, assignments: dict[str, str]) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-", suffix=".tmp")
     with os.fdopen(fd, "w") as f:
         f.write("\n".join(lines) + "\n")
-    os.chmod(tmp, 0o600 if new else (path.stat().st_mode & 0o777))
+    mode = 0o600 if new else (path.stat().st_mode & 0o777)
+    if mode & 0o077:
+        log.warning("secrets: %s is readable by other users (mode %o); consider chmod 600", path, mode)
+    os.chmod(tmp, mode)
     os.replace(tmp, path)
 
 
@@ -257,7 +266,9 @@ def check_unit(unit: str | None) -> str | None:
 
 def write_env(file: str, mapping: dict[str, str], restart: str | None = None) -> Path:
     """Write the named secrets into ``file`` and remember it for rotations."""
-    path = Path(file).expanduser().resolve()
+    # absolute(), not resolve(): resolving would silently follow a symlinked
+    # .env to its target; _upsert_env_file refuses it instead.
+    path = Path(os.path.normpath(Path(file).expanduser().absolute()))
     restart = check_unit(restart)
     data = load()
     _require(data, list(mapping.values()))
@@ -290,7 +301,9 @@ def forget(target: str) -> int:
 
 def command_env(names: list[str], data: dict) -> dict[str, str]:
     _require(data, names)
-    return {**os.environ, **{n: data["secrets"][n]["value"] for n in names}}
+    from api.config import child_env
+
+    return {**child_env(), **{n: data["secrets"][n]["value"] for n in names}}
 
 
 def run(names: list[str], argv: list[str], remember: bool = False, cwd: str | None = None) -> int:

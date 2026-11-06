@@ -56,7 +56,8 @@ async def _probe(
         async with httpx.AsyncClient(timeout=VALIDATE_TIMEOUT) as client:
             resp = await client.get(url, headers=headers)
     except httpx.HTTPError as e:
-        return f"Could not reach {provider} to validate the key: {e}"
+        # Never the exception text: httpx quotes the offending header, i.e. the key.
+        return f"Could not reach {provider} to validate the key ({type(e).__name__})."
     if resp.status_code == 200:
         return None
     if resp.status_code in (401, 403):
@@ -203,6 +204,21 @@ def _set_env_line(text: str, var: str, value: str) -> str:
     return "\n".join(lines)
 
 
+def _atomic_write_private(path: Path, text: str) -> None:
+    """Write via a 0600 temp file and rename, so .env is never half-written or
+    briefly readable by others."""
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".env.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
 def persist(env_var: str, value: str) -> None:
     """Write ``env_var=value`` to .env AND sync os.environ so request-time
     readers see the change immediately. ``value=''`` clears the key."""
@@ -212,8 +228,7 @@ def persist(env_var: str, value: str) -> None:
     else:
         log.warning("feature-keys: %s does not exist — creating it", path)
         text = ""
-    path.write_text(_set_env_line(text, env_var, value))
-    path.chmod(0o600)
+    _atomic_write_private(path, _set_env_line(text, env_var, value))
     if value:
         os.environ[env_var] = value
         log.info("feature-keys: %s set (persisted to %s + live in os.environ)", env_var, path)
@@ -280,6 +295,10 @@ async def set_key(name: str, key: str) -> dict:
         raise ValueError(f"Unknown feature key '{name}' — known: {', '.join(sorted(FEATURE_KEYS))}")
 
     key = key.strip()
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in key):
+        # A line break inside a key would add a line to .env (any variable,
+        # even OWNER_TOKEN) and leaked the key in the validator's error (SHE-148).
+        raise ValueError("This key contains a line break or a control character. Paste it on one line.")
     if key:
         error = await spec.validate(key)
         if error is not None:

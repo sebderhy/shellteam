@@ -211,3 +211,13 @@ class TestInternalAiStatus:
         assert resp.json() == {"stt": False, "tts": False, "opencode": False}
         resp = self._get(client, monkeypatch, ELEVENLABS_API_KEY="el", FIREWORKS_API_KEY="fk")
         assert resp.json() == {"stt": True, "tts": True, "opencode": True}
+
+
+@pytest.mark.asyncio
+async def test_a_key_with_a_line_break_is_refused_without_echoing_it():
+    # SHE-148: a line break would add a .env line, and httpx's error quoted the key.
+    from api.services import feature_keys
+
+    with pytest.raises(ValueError) as e:
+        await feature_keys.set_key("composio", "ak_SECRETVALUE\nOWNER_TOKEN=x")
+    assert "SECRETVALUE" not in str(e.value) and "line break" in str(e.value)

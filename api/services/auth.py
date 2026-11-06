@@ -236,11 +236,13 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-def start_session(response: Response, request: Request, kind: str, fresh: bool = True) -> sessions.Minted:
+def start_session(
+    response: Response, request: Request, kind: str, fresh: bool = True, parent: dict | None = None
+) -> sessions.Minted:
     """Mint a session for this browser and set its cookies (login, enrollment,
     ``?token=`` redemption, legacy-cookie migration): the DRY entry point."""
     minted = sessions.mint(
-        kind, ip=_client_ip(request), ua=request.headers.get("user-agent"), fresh=fresh
+        kind, ip=_client_ip(request), ua=request.headers.get("user-agent"), fresh=fresh, parent=parent
     )
     apply_session_cookies(response, minted, secure=request_is_https(request))
     return minted

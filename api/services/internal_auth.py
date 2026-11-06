@@ -32,7 +32,8 @@ def verify_token(token: str, user_id: str) -> bool:
         return False
     if hmac.compare_digest(token.encode(), _SECRET):
         return True
-    return hmac.compare_digest(token, make_token(user_id))
+    # Bytes, not str: compare_digest raises TypeError on non-ASCII str (a 500).
+    return hmac.compare_digest(token.encode(), make_token(user_id).encode())
 
 
 # --- Scoped notify credential (M0 §0.4) ---
@@ -58,7 +59,7 @@ def verify_notify_token(token: str) -> bool:
     if not _SECRET or not token:
         return False
     return hmac.compare_digest(token.encode(), _SECRET) or hmac.compare_digest(
-        token, notify_token()
+        token.encode(), notify_token().encode()
     )
 
 

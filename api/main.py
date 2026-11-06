@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import os
 from pathlib import Path
 
@@ -29,6 +30,27 @@ from api.config import RUNTIME, migrate_legacy_state_dir  # noqa: E402
 from api.routers import ai_tools, auth, computers, enroll, feedback, integrations, knowledge, mirror, settings, terminal, internal, proxy  # noqa: E402
 from api.services import app_routes, ports as port_service, reports as report_service  # noqa: E402
 from api.services.ratelimit import RateLimiter  # noqa: E402
+from api.services.auth import origin_is_trusted  # noqa: E402
+
+log = logging.getLogger(__name__)
+
+
+_SECRET_QUERY_RE = re.compile(r"(?i)\b(token|sig|code|key)=[^&\s\"]+")
+
+
+class _RedactSecretQueries(logging.Filter):
+    """uvicorn's access log printed `GET /?token=<master> 303` into the journal
+    on every token sign-in (SHE-147). Redact credential query values."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _SECRET_QUERY_RE.sub(r"\1=[redacted]", a) if isinstance(a, str) else a for a in record.args
+            )
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactSecretQueries())
 
 # Global rate limit — 120 req/min per IP (catch-all safety net)
 _global_limit = RateLimiter(rate=120, period=60)
@@ -269,21 +291,38 @@ CONTENT_SANDBOX_CSP = (
     "allow-downloads allow-forms allow-modals"
 )
 
-# ShellTeam's OWN trusted file-UI pages (the Monaco editor, directory listings,
-# the file-write API) are served under the main host too, but must keep the real
-# origin — they make credentialed same-origin fetches to do their job — so they
-# are exempt from the content sandbox. Everything else main-host HTML is content.
-_TRUSTED_FILE_UI_PREFIXES = ("/_editor", "/_ls", "/_files", "/_api", "/api/computers/cockpit")
+# ShellTeam's OWN trusted pages served under the main host that must keep the
+# real origin: the Monaco editor SPA (static, from the state dir, never a home
+# file) and the cockpit's GitHub connect widget. Nothing else is exempt. /_files/
+# and /_ls/ alias the whole home dir, so a raw file opened there is content like
+# any other (SHE-144: /_files/x.html used to run unsandboxed as the dashboard);
+# the editor only fetch()es /_ls/ and /_api/, and a CSP header on a fetch
+# response changes nothing.
+_TRUSTED_FILE_UI_PREFIXES = ("/_editor", "/api/computers/cockpit")
+
+# Types a browser runs script in when opened as a page. text/html alone missed
+# SVG (`<svg><script>`), XHTML and XML (SHE-144). Other types (images, PDFs,
+# text) are not sandboxed: Chrome refuses to render a PDF under `sandbox`, and
+# nosniff (Caddy) stops a browser from treating them as HTML.
+_ACTIVE_CONTENT_TYPES = ("text/html", "application/xhtml+xml", "image/svg+xml", "text/xml", "application/xml")
+
+
+def is_active_content(content_type: str) -> bool:
+    ctype = content_type.split(";")[0].strip().lower()
+    return ctype in _ACTIVE_CONTENT_TYPES or ctype.endswith("+xml")
+
+
+def is_trusted_file_ui(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") for p in _TRUSTED_FILE_UI_PREFIXES)
 
 
 def _wants_content_sandbox(request: Request, response) -> bool:
-    """True for owner/agent HTML served through the main-host file catch-all."""
+    """True for owner/agent documents served through the main-host file catch-all."""
     if not is_main_host(request) or _wants_dashboard_csp(request):
         return False
-    path = request.url.path
-    if any(path == p or path.startswith(p + "/") for p in _TRUSTED_FILE_UI_PREFIXES):
+    if is_trusted_file_ui(request.url.path):
         return False
-    return response.headers.get("content-type", "").startswith("text/html")
+    return is_active_content(response.headers.get("content-type", ""))
 
 
 def _wants_dashboard_csp(request: Request) -> bool:
@@ -339,6 +378,59 @@ def _is_served_home_content(request: Request) -> bool:
     if _wants_dashboard_csp(request) or path == "/health" or path == "/robots.txt":
         return False
     return not path.startswith("/api/") and not path.startswith("/internal/")
+
+
+_SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _is_ip_literal(host: str) -> bool:
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+def _host_is_ours(host: str) -> bool:
+    """A Host this box answers to: a dashboard host, one of its subdomains, or a
+    bare IP (a Tailscale 100.x address). DNS rebinding always uses a name."""
+    return (
+        host in MAIN_HOSTS
+        or host.endswith("." + APP_DOMAIN)
+        or host.endswith(".localhost")
+        or _is_ip_literal(host)
+    )
+
+
+@app.middleware("http")
+async def cross_site_guard(request: Request, call_next):
+    """Refuse requests another website makes the owner's browser send (SHE-145).
+
+    1. Any state-changing request on a dashboard host whose browser ``Origin``
+       is not a dashboard host is refused, for every route at once. Per-route
+       ``require_trusted_origin`` missed the cockpit proxies, and a ``text/plain``
+       POST (a CORS "simple" request: no preflight) reached the cockpit as JSON
+       and could repoint every agent at an attacker's model endpoint.
+    2. Without ``OWNER_TOKEN`` (the localhost-trust install) every caller is the
+       owner, so a rebound name (``evil.example`` -> 127.0.0.1) would make the
+       attacker's page same-origin with the API. Only our own hosts are served.
+    """
+    from urllib.parse import urlsplit
+
+    host = urlsplit("//" + request.headers.get("host", "")).hostname or ""
+    if not OWNER_TOKEN and not _host_is_ours(host):
+        log.warning("Refused unknown Host %r on a token-less box (DNS rebinding guard)", host)
+        return PlainTextResponse(
+            "Unknown host. Add it to EXTRA_MAIN_HOSTS in .env if this is your box.", status_code=421
+        )
+    if request.method not in _SAFE_METHODS and is_main_host(request):
+        origin = request.headers.get("origin")
+        if not origin_is_trusted(origin):
+            log.warning("Cross-site %s %s refused (Origin %r)", request.method, request.url.path, origin)
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin request refused"})
+    return await call_next(request)
 
 
 @app.middleware("http")

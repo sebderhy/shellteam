@@ -27,8 +27,18 @@ _escaped_domain = re.escape(APP_DOMAIN)
 # `aaa2.<domain>`, … could trigger a fresh ACME order per name and burn the
 # Let's Encrypt weekly quota, breaking cert issuance for the real host (M4).
 _VALID_SUBDOMAIN_RE = re.compile(
-    rf"^{re.escape(OWNER_USERNAME)}(?:-\d+)?\.{_escaped_domain}$"
+    rf"^{re.escape(OWNER_USERNAME)}(?:-(\d{{1,5}}))?\.{_escaped_domain}$"
 )
+
+
+def _port_is_listening(port: int) -> bool:
+    import socket
+
+    if not 1 <= port <= 65535:
+        return False
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.3)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
 def _require_loopback(request: Request) -> None:
@@ -55,8 +65,16 @@ async def check_domain(request: Request, domain: str = Query(...)):
     _require_loopback(request)
     if domain == APP_DOMAIN:
         return Response(status_code=200)
-    if _VALID_SUBDOMAIN_RE.match(domain):
-        return Response(status_code=200)
+    m = _VALID_SUBDOMAIN_RE.match(domain)
+    if m:
+        port = m.group(1)
+        # `owner-<digits>` matched any number, so SNI owner-1, owner-2, ...
+        # each started an ACME order (SHE-148). Only a port that is really
+        # serving something gets a certificate.
+        if port is None or await asyncio.to_thread(_port_is_listening, int(port)):
+            return Response(status_code=200)
+        log.info("check-domain: refused %s (nothing listens on that port)", domain)
+        raise HTTPException(status_code=403, detail="Domain not allowed")
     # A registered named app route (`<name>.<APP_DOMAIN>`) gets a cert; any
     # other label is refused so strangers cannot trigger ACME orders.
     label, dot, parent = domain.partition(".")

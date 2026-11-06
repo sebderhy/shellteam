@@ -188,6 +188,9 @@ print_plan() {
     esac
     echo "  + loginctl enable-linger $(id -un) (services survive logout; reversed by uninstall.sh --purge)"
     echo "  + write /etc/systemd/system/user@$(id -u).service.d/shellteam-restart.conf (Restart=always; reversed by uninstall.sh)"
+    case ",$REQUESTED_MODULES," in *,browser,*)
+        echo "  + write /etc/systemd/system/shellteam-browser-firewall.service (agent browser reaches only ports 80/443 of this host; reversed by uninstall.sh)" ;;
+    esac
     echo
     echo "FILES WRITTEN (ShellTeam's own namespace only):"
     echo "  + $REPO/.env (from .env.example; auto-generates OWNER_TOKEN + SHELLTEAM_AI_TOKEN)"
@@ -1158,8 +1161,20 @@ ensure_docker_group() {
 # Idempotent: reuse the network when it is already isolated, recreate it when
 # someone flipped ICC back on (Steel was removed just before, so nothing of ours
 # is attached). Never starts Steel on a network that is not isolated.
+# Docker 28+ drops traffic to a published container address from anywhere but
+# its own bridge (a raw-table rule). Older daemons let other containers and LAN
+# neighbours reach Steel's CDP directly, the 2026-11-03 attack path (SHE-148).
+check_docker_isolation_version() {
+    local v major
+    v="$(dk version -f '{{.Server.Version}}' 2>/dev/null)" || return 0
+    major="${v%%.*}"
+    if [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -lt 28 ]; then
+        warn "Docker $v is older than 28: other containers on this host may reach the agent browser directly. Upgrade Docker (https://docs.docker.com/engine/install/) before trusting the browser module."
+    fi
+}
 ensure_browser_network() {
     local icc
+    check_docker_isolation_version
     icc="$(dk network inspect -f '{{index .Options "com.docker.network.bridge.enable_icc"}}' "$STEEL_NETWORK" 2>/dev/null)" \
         || icc="missing"
     if [ "$icc" = "false" ]; then
@@ -1179,6 +1194,49 @@ ensure_browser_network() {
         return 1
     }
     log "  Created the isolated Docker network $STEEL_NETWORK (inter-container traffic off)"
+}
+# The browser's own firewall (SHE-148). enable_icc=false keeps other
+# CONTAINERS away from Steel, but a page the agent opens can still reach the
+# HOST: any service listening on 0.0.0.0 (a dev server, a database, sshd) and,
+# on cloud boxes, the metadata service (169.254.169.254, which holds the box's
+# cloud-init user-data). Allow only the box's own web ports (agents open their
+# apps through the public URL) and replies. Rules inline in a root-owned unit:
+# root never runs a script from this user-writable checkout.
+BROWSER_FW_UNIT="/etc/systemd/system/shellteam-browser-firewall.service"
+ensure_browser_firewall() {
+    local subnet
+    subnet="$(dk network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$STEEL_NETWORK" 2>/dev/null)"
+    if ! [[ "$subnet" =~ ^[0-9.]+/[0-9]+$ ]] || ! command -v iptables >/dev/null 2>&1; then
+        warn "Could not set the browser firewall (subnet '$subnet', iptables missing?): pages the agent opens can reach services on this host."
+        return 0
+    fi
+    local ipt; ipt="$(command -v iptables)"
+    if printf '%s\n' \
+        '# Written by ShellTeam install.sh; removed by uninstall.sh (SHE-148).' \
+        '[Unit]' \
+        'Description=ShellTeam: keep the agent browser away from host services' \
+        'After=docker.service' \
+        '[Service]' \
+        'Type=oneshot' \
+        'RemainAfterExit=yes' \
+        "ExecStart=-$ipt -N SHELLTEAM-BROWSER" \
+        "ExecStart=$ipt -F SHELLTEAM-BROWSER" \
+        "ExecStart=$ipt -A SHELLTEAM-BROWSER -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN" \
+        "ExecStart=$ipt -A SHELLTEAM-BROWSER -p tcp -m multiport --dports 80,443 -j RETURN" \
+        "ExecStart=$ipt -A SHELLTEAM-BROWSER -j DROP" \
+        "ExecStart=/bin/sh -c '$ipt -C INPUT -s $subnet -j SHELLTEAM-BROWSER 2>/dev/null || $ipt -I INPUT 1 -s $subnet -j SHELLTEAM-BROWSER'" \
+        "ExecStart=-/bin/sh -c '$ipt -C DOCKER-USER -s $subnet -d 169.254.169.254 -j DROP 2>/dev/null || $ipt -I DOCKER-USER 1 -s $subnet -d 169.254.169.254 -j DROP'" \
+        "ExecStop=-/bin/sh -c '$ipt -D INPUT -s $subnet -j SHELLTEAM-BROWSER; $ipt -D DOCKER-USER -s $subnet -d 169.254.169.254 -j DROP; $ipt -F SHELLTEAM-BROWSER; $ipt -X SHELLTEAM-BROWSER'" \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        | sudo tee "$BROWSER_FW_UNIT" >/dev/null 2>&1 \
+        && sudo systemctl daemon-reload \
+        && sudo systemctl enable shellteam-browser-firewall.service >/dev/null 2>&1 \
+        && sudo systemctl restart shellteam-browser-firewall.service; then
+        log "  Browser firewall on: pages the agent opens reach only this box's web ports ($subnet)"
+    else
+        warn "Could not install $BROWSER_FW_UNIT: pages the agent opens can reach services on this host."
+    fi
 }
 provision_browser() {
     if ! command -v docker >/dev/null 2>&1; then
@@ -1215,6 +1273,7 @@ provision_browser() {
         warn "Browser tab skipped: Steel is never started on a shared Docker network (SHE-136)."
         return
     fi
+    ensure_browser_firewall
     log "Starting Steel browser container (loopback 127.0.0.1:$STEEL_PORT, network $STEEL_NETWORK)…"
     if ! dk run -d --name "$STEEL_CONTAINER" --restart unless-stopped \
         --network "$STEEL_NETWORK" \

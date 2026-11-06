@@ -8,10 +8,12 @@ Handles:
 """
 
 import asyncio
+import os
 import html as html_mod
 import re
 import logging
 import time
+from pathlib import Path
 from urllib.parse import quote, unquote
 
 import httpx
@@ -580,6 +582,64 @@ def _is_dotfile_path(path: str) -> bool:
     return any(seg.startswith(".") for seg in unquote(path).split("/") if seg)
 
 
+# nginx serves these prefixes straight from the home dir (deploy/nginx).
+_HOME_ALIAS_PREFIXES = ("_files/", "_ls/")
+# ...and these from somewhere that is never a home file.
+_NOT_HOME_PREFIXES = ("_editor/", "_editor", "_api/")
+
+
+def _escapes_home(path: str) -> bool:
+    """True when ``~/<path>`` is (or runs through) a symlink that lands outside
+    the home dir or on a dotfile (SHE-144).
+
+    nginx's ``disable_symlinks if_not_owner`` never fires on a single-user box
+    (the owner owns the link and the target), so a symlink in a published
+    folder (``reports/bundle/a.txt -> ../../.env``, or one a cloned repo ships)
+    served its target to the world. The request-path dotfile check can't see it.
+    """
+    rel = unquote(path).lstrip("/")
+    if rel.startswith(_NOT_HOME_PREFIXES):
+        return False
+    for prefix in _HOME_ALIAS_PREFIXES:
+        if rel.startswith(prefix):
+            rel = rel[len(prefix):]
+            break
+    home = Path.home().resolve()
+    target = home / rel
+    if not os.path.lexists(target):
+        return False  # nothing there: nginx answers 404 on its own
+    try:
+        real = target.resolve()
+    except OSError:
+        return True
+    if real == home:
+        return False
+    if home not in real.parents:
+        log.warning("File /%s resolves outside the home dir; refused", path)
+        return True
+    if _is_dotfile_path(str(real.relative_to(home))):
+        log.warning("File /%s resolves to a dotfile; refused", path)
+        return True
+    return False
+
+
+def _sandbox_file_response(path: str, response: Response) -> Response:
+    """Stamp the content sandbox on a file-server document that would run script
+    (HTML, SVG, XML) on the owner file subdomain, as the main host already does.
+
+    The files cookie is set for the parent domain, so it reaches
+    ``<owner>.APP_DOMAIN``: an unsandboxed page there could fetch anything the
+    credential reads (SHE-144). The editor SPA keeps its real origin.
+    """
+    from api.main import CONTENT_SANDBOX_CSP, is_active_content, is_trusted_file_ui
+
+    if not is_trusted_file_ui("/" + path.lstrip("/")) and is_active_content(
+        response.headers.get("content-type", "")
+    ):
+        response.headers["Content-Security-Policy"] = CONTENT_SANDBOX_CSP
+    return response
+
+
 # Quiet, self-contained (inline styles, color:inherit + opacity so it reads on
 # dark and light reports alike) — appended before </body> on shared HTML.
 _SHARE_FOOTER_HTML = (
@@ -727,7 +787,7 @@ async def serve_owner_file(request: Request, path: str) -> Response:
     """
     if _has_path_traversal(path):
         return Response(status_code=400, content="Invalid path")
-    if _is_dotfile_path(path):
+    if _is_dotfile_path(path) or await asyncio.to_thread(_escapes_home, path):
         from api.config import NOT_FOUND_HTML
         return HTMLResponse(status_code=404, content=NOT_FOUND_HTML)
 
@@ -832,6 +892,19 @@ async def proxy_subdomain(request: Request, path: str):
     if _has_path_traversal(path):
         return Response(status_code=400, content="Invalid path")
 
+    if port == FILE_PORT:
+        # Same file guards as the main host (SHE-144): dotfiles anywhere (nginx's
+        # `^~ /public/` block skips its own dotfile deny), symlinks out of home,
+        # and the cockpit file API, which only the editor on the main host uses
+        # (it read dotfiles: /_api/zip?path=.env with the files cookie).
+        from api.config import NOT_FOUND_HTML
+        if (
+            _is_dotfile_path(path)
+            or path.lstrip("/").startswith("_api/")
+            or await asyncio.to_thread(_escapes_home, path)
+        ):
+            return HTMLResponse(status_code=404, content=NOT_FOUND_HTML)
+
     # --- Auth gate ---
     # Public: ~/public/ on the file-server port, or ports explicitly marked public.
     # Owner-only by default; shared folders grant recipient access there.
@@ -902,7 +975,12 @@ async def proxy_subdomain(request: Request, path: str):
     # every cross-origin call in a two-port app. Let OPTIONS through to app
     # ports (never the file host or reserved services); the real request that
     # follows is still authorized normally.
-    if not allow and is_app_port and request.method == "OPTIONS":
+    # Only a real preflight (it names the method it asks about) skips auth; a
+    # bare OPTIONS reached any local service and returned its body (SHE-148).
+    if (
+        not allow and is_app_port and request.method == "OPTIONS"
+        and request.headers.get("access-control-request-method")
+    ):
         allow = True
 
     if not allow and _get_client_ip(request) != ip:
@@ -934,6 +1012,8 @@ async def proxy_subdomain(request: Request, path: str):
     )
     if reached and owner_id and port != FILE_PORT:
         ports.record_port_hit(owner_id, port)
+    if reached and port == FILE_PORT:
+        response = _sandbox_file_response(path, response)
     if reached and panel_document:
         response = _inject_app_review_picker(response)
     if reached and _share_footer_applies(request, is_published_report, False, path):

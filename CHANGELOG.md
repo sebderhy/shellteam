@@ -5,6 +5,35 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.50] - 2026-11-06
+
+A security release from a full audit after the 2026-11-03 incident. Update now.
+
+### Security
+- **Files in your home can't act as the dashboard.** An HTML or SVG file
+  opened through `/_files/`, `/_ls/`, the file subdomain, or as SVG/XML ran
+  with your dashboard's rights. Every file page is now sandboxed; dotfiles and
+  symlinks pointing out of your home are refused, also inside published folders.
+- **Other websites can't drive your box.** A page you visit could send a
+  "simple" request through the cockpit proxy and point your agents at its own
+  model server. One guard now refuses every cross-site write, the cockpit
+  checks Host and Origin itself (localhost and Tailscale installs), and
+  token-less boxes refuse unknown host names (DNS rebinding).
+- **Agent output can't run script.** Raw HTML in an agent's reply is shown as
+  text; folder and file names are text in the Knowledge tab.
+- **The master token stays out of logs and agents.** The access log redacts
+  `?token=`; no agent, shell or tool inherits `OWNER_TOKEN`; the cockpit masks
+  the box's own keys and tokens, also in terminals.
+- **Adding a device can't refresh a stolen session.** A device added from a
+  session keeps that session's age and end date and is signed out with it.
+- **Auto-update installs only signed releases.** Release tags are signed; a
+  box refuses a tag not signed by a key in `deploy/release-signers`.
+- **The agent browser can't reach services on the host** (only its web
+  ports) or the cloud metadata address (`shellteam-browser-firewall.service`).
+- Smaller fixes: keys with line breaks refused and never echoed, backticks
+  escaped in env files, symlinked env files refused, certificates only for
+  ports in use, bare OPTIONS no longer reach apps, a warning below Docker 28.
+
 ## [0.1.49] - 2026-11-06
 
 ### Added

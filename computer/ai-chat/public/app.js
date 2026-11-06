@@ -390,6 +390,13 @@ marked.use({
         },
     },
     renderer: {
+        // Raw HTML in agent markdown is shown as text, never parsed (SHE-146).
+        // An agent echoing a prompt-injected page (`<img src=x onerror=…>`,
+        // `<details ontoggle=…>`) ran script in the cockpit origin, which can
+        // open the shell socket; history replay re-ran it on every reconnect.
+        html({ text }) {
+            return escHtml(text);
+        },
         // NB: marked 15 passes token fields (codespan text, image/link href, title)
         // RAW — nothing is pre-escaped. Every interpolation into HTML text or an
         // attribute must go through escHtml, or agent output like `<img

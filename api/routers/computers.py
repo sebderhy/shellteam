@@ -268,6 +268,10 @@ async def proxy_ai_chat(path: str, request: Request, user: dict = Depends(get_cu
     if query:
         url = f"{url}?{query}"
     body = await request.body()
+    if body and not _is_json(request):
+        # A text/plain POST is a CORS "simple" request (no preflight); this
+        # route used to relabel it as JSON for the cockpit (SHE-145).
+        raise HTTPException(status_code=415, detail="Send JSON (Content-Type: application/json)")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.request(
             request.method, url,
@@ -292,6 +296,16 @@ async def proxy_ai_chat(path: str, request: Request, user: dict = Depends(get_cu
 
 _COCKPIT_HOP_HEADERS = {"transfer-encoding", "content-encoding", "content-length", "connection", "keep-alive"}
 
+# The only cockpit paths served on the dashboard origin: the GitHub connect
+# widget and its API. Anything else (the chat SPA renders untrusted model
+# output) must stay on its own origin (SHE-145).
+_COCKPIT_SAME_ORIGIN_PATHS = ("github.html",)
+_COCKPIT_SAME_ORIGIN_PREFIXES = ("api/github/",)
+
+
+def _is_json(request: Request) -> bool:
+    return request.headers.get("content-type", "").split(";")[0].strip().lower() == "application/json"
+
 
 @router.api_route("/cockpit/{path:path}", methods=["GET", "POST"])
 async def proxy_cockpit(path: str, request: Request, user: dict = Depends(get_current_user)):
@@ -309,18 +323,23 @@ async def proxy_cockpit(path: str, request: Request, user: dict = Depends(get_cu
     renders untrusted model output) stays on its cookie-isolated subdomain, so
     this path never lets served/agent content reach the master cookie.
     """
+    if path not in _COCKPIT_SAME_ORIGIN_PATHS and not path.startswith(_COCKPIT_SAME_ORIGIN_PREFIXES):
+        log.warning("Same-origin cockpit proxy refused /%s (not the GitHub widget)", path)
+        raise HTTPException(status_code=404, detail="Not found")
+    body = await request.body()
+    if body and not _is_json(request):
+        raise HTTPException(status_code=415, detail="Send JSON (Content-Type: application/json)")
     ip = await containers.get_container_ip(user["id"])
     if not ip:
         raise HTTPException(status_code=503, detail="Cockpit not running")
     url = f"http://{ip}:{COCKPIT_PORT}/{path}"
     if request.url.query:
         url = f"{url}?{request.url.query}"
-    body = await request.body()
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.request(
             request.method, url,
             content=body if body else None,
-            headers={"Content-Type": request.headers.get("content-type", "application/json")} if body else {},
+            headers={"Content-Type": "application/json"} if body else {},
         )
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in _COCKPIT_HOP_HEADERS}
     return Response(content=resp.content, status_code=resp.status_code, headers=headers)

@@ -26,6 +26,8 @@ CODE_TTL_SECONDS = 300  # 5 minutes
 # code -> unix-epoch expiry. Module-level so it survives across requests within
 # the process lifetime.
 _codes: dict[str, float] = {}
+# code -> the session that minted it (None when minted with the master).
+_parents: dict[str, dict | None] = {}
 
 
 def _purge(now: float) -> None:
@@ -33,9 +35,10 @@ def _purge(now: float) -> None:
     expired = [c for c, exp in _codes.items() if exp <= now]
     for c in expired:
         del _codes[c]
+        _parents.pop(c, None)
 
 
-def mint_code() -> tuple[str, int]:
+def mint_code(parent: dict | None = None) -> tuple[str, int]:
     """Create a single-use enrollment code. Returns ``(code, ttl_seconds)``.
 
     Enrollment only makes sense when ``OWNER_TOKEN`` is set (there is a secret to
@@ -45,6 +48,7 @@ def mint_code() -> tuple[str, int]:
     _purge(now)
     code = secrets.token_urlsafe(32)  # 256 bits — unguessable
     _codes[code] = now + CODE_TTL_SECONDS
+    _parents[code] = parent
     log.info(
         "Minted device-enrollment code (ttl=%ss, pending=%d)",
         CODE_TTL_SECONDS,
@@ -79,7 +83,7 @@ def peek_code(code: str | None) -> bool:
     return _match(code) is not None
 
 
-def redeem_code(code: str | None) -> bool:
+def redeem_code(code: str | None) -> tuple[bool, dict | None]:
     """Validate and consume a code (single use). True if it grants the token.
 
     Consumed on success so a link works exactly once. Only the ``POST`` handler
@@ -88,7 +92,8 @@ def redeem_code(code: str | None) -> bool:
     matched = _match(code)
     if matched is None:
         log.warning("Rejected invalid or expired device-enrollment code")
-        return False
+        return False, None
     del _codes[matched]
+    parent = _parents.pop(matched, None)
     log.info("Redeemed device-enrollment code; issuing owner session cookie")
-    return True
+    return True, parent

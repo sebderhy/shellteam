@@ -19,6 +19,7 @@ import {
   openSync,
   readSync,
   closeSync,
+  realpathSync,
 } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
 import { spawn } from "node:child_process";
@@ -81,6 +82,7 @@ export function cwdFromSessionPath(sessionPath) {
 // --- Find session file ---
 
 export function findSessionFile(sessionId) {
+  if (!isSafeSessionId(sessionId)) return null;
   // Check Codex history first (fast, flat directory)
   const codexPath = join(CODEX_HISTORY_DIR, sessionId + ".jsonl");
   if (existsSync(codexPath)) return codexPath;
@@ -132,7 +134,7 @@ export function familyOfSession(sessionId) {
  * which workspace a Codex conversation belongs to. Returns null if unknown.
  */
 export function codexSessionCwd(sessionId) {
-  if (!sessionId) return null;
+  if (!isSafeSessionId(sessionId)) return null;
   const file = join(CODEX_HISTORY_DIR, sessionId + ".jsonl");
   if (!existsSync(file)) return null;
   return readCodexSessionMeta(file).cwd;
@@ -699,4 +701,36 @@ export function safePath(p) {
   const resolved = resolve(HOME, p.startsWith("/") ? p.slice(1) : p);
   if (!resolved.startsWith(HOME + "/") && resolved !== HOME) return null;
   return resolved;
+}
+
+/**
+ * The file API's path check (editor saves, uploads, zip, rename, delete):
+ * safePath, plus no dotfile segment and no symlink out of home or onto a
+ * dotfile (SHE-148). The file server never serves dotfiles; this API read and
+ * wrote them (/_api/zip?path=.env, /_api/write .bashrc).
+ */
+export function safeFileApiPath(p) {
+  const abs = safePath(p);
+  if (!abs) return null;
+  const hasDot = (x) => x.slice(HOME.length).split("/").some((seg) => seg.startsWith("."));
+  if (hasDot(abs)) return null;
+  // The deepest existing ancestor (the file itself, or the folder a new file
+  // goes in) must really be inside home.
+  let probe = abs;
+  while (!existsSync(probe) && probe !== HOME) probe = dirname(probe);
+  let real;
+  try {
+    real = realpathSync(probe);
+  } catch {
+    return null;
+  }
+  const realHome = realpathSync(HOME);
+  if (!(real === realHome || real.startsWith(realHome + "/"))) return null;
+  if (real.slice(realHome.length).split("/").some((seg) => seg.startsWith("."))) return null;
+  return abs;
+}
+
+/** Session ids become file names: never a path (SHE-148). */
+export function isSafeSessionId(id) {
+  return typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id);
 }

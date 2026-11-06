@@ -234,3 +234,27 @@ def test_guess_patterns_are_valid_regexes():
     for s in vault.SUGGESTIONS:
         for pattern in s.get("patterns", []):
             re.compile(pattern)
+
+
+def test_backticks_never_run_when_the_file_is_sourced(tmp_path):
+    # SHE-148: a value with both ' and ` went in double quotes, unescaped.
+    tricky = "it's`touch " + str(tmp_path / "pwned") + "`$(id)"
+    vault.set_secret("PW", tricky)
+    env = tmp_path / ".env"
+    vault.write_env(str(env), {"PW": "PW"})
+    got = subprocess.run(["bash", "-c", f"set -a; . {env}; printf %s \"$PW\""],
+                         capture_output=True, text=True).stdout
+    assert got == tricky and not (tmp_path / "pwned").exists()
+
+
+def test_a_symlinked_env_file_is_refused(tmp_path):
+    # SHE-148: a cloned repo's .env -> ../somewhere would receive the secrets.
+    vault.set_secret("K", VALUE)
+    target = tmp_path / "published.txt"
+    target.write_text("")
+    link = tmp_path / "app" / ".env"
+    link.parent.mkdir()
+    link.symlink_to(target)
+    with pytest.raises(vault.SecretsError):
+        vault.write_env(str(link), {"K": "K"})
+    assert target.read_text() == ""

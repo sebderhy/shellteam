@@ -80,6 +80,22 @@ It needs a Codex login or API key on the box and spends a few short turns,
 which is why it is manual. `--scenario hold` then a cockpit restart then
 `--scenario resume --slot N` covers the restart case.
 
+### Signed release tag
+
+Every release tag is signed with the release key (SSH format). Boxes with
+`AUTO_UPDATE` on refuse a tag that is not signed by a key listed in
+`deploy/release-signers` of the version they already run (SHE-148), so an
+unsigned tag stops every box from updating:
+
+```bash
+git -c gpg.format=ssh -c user.signingkey=~/.config/shellteam-release/release_ed25519 \
+  tag -s vX.Y.Z -m "ShellTeam vX.Y.Z"
+git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=deploy/release-signers verify-tag vX.Y.Z
+```
+
+Rotating the key: add the new public key to `deploy/release-signers`, ship one
+release signed with the OLD key, then sign with the new one and drop the old.
+
 ### Agent browser isolation
 
 On a box running the browser module (`shellteam-steel` up):
@@ -92,6 +108,16 @@ Starts a throwaway `alpine` container on the default Docker bridge and probes
 Steel's CDP (9223) and API (3000) on every address Steel has. Nothing may
 answer (SHE-136: a container on the same host read the agent browser's cookies
 through CDP). CI has no Docker daemon with Steel, so this is manual.
+
+Then, from inside Steel, the host must answer only on its web ports
+(SHE-148: a page the agent opened reached host services and the cloud
+metadata address):
+
+```bash
+docker exec shellteam-steel curl -s -m 4 -o /dev/null -w '%{http_code}\n' http://10.250.0.1:8000/   # 000
+docker exec shellteam-steel curl -s -m 4 -o /dev/null -w '%{http_code}\n' http://169.254.169.254/  # 000
+docker exec shellteam-steel curl -s -m 4 -o /dev/null -w '%{http_code}\n' https://$APP_DOMAIN/health  # 200
+```
 
 
 ## Why these are separate from the suites

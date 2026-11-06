@@ -24,7 +24,7 @@ import {
   searchSessions,
   listFiles,
   expandFileReferences,
-  safePath,
+  safeFileApiPath,
 } from "./lib/history.mjs";
 import {
   loadModel,
@@ -115,10 +115,14 @@ import {
   jsonResponse as sharedJsonResponse,
 } from "../shared/media-handlers.mjs";
 import { internalCallerAuthorized } from "./lib/internal-auth.mjs";
-import { maskSocket } from "./lib/secret-mask.mjs";
+import { maskSocket, scrubMasterToken } from "./lib/secret-mask.mjs";
+
+// SHE-147: no agent, shell or tool this cockpit starts inherits the master token.
+scrubMasterToken();
 import { createLiveDelegationBroker } from "./lib/delegation-broker.mjs";
 import { collectUsageCached } from "./lib/usage.mjs";
 import { aiAvailability, startAiAvailabilityPolling } from "./lib/ai-availability.mjs";
+import { refuseCrossSite } from "./lib/request-gate.mjs";
 
 // --- State ---
 const browserSockets = new Set();
@@ -310,7 +314,7 @@ function handleFileAPI(req, res) {
 
   if (route === "/_api/zip" && req.method === "GET") {
     const zipPath = url.searchParams.get("path") || "";
-    const abs = safePath(zipPath);
+    const abs = safeFileApiPath(zipPath);
     if (!abs) return jsonResponse(res, 400, { error: "Invalid path" });
     if (!existsSync(abs)) return jsonResponse(res, 404, { error: "Not found" });
     const stat = statSync(abs);
@@ -345,7 +349,7 @@ function handleFileAPI(req, res) {
   if (route === "/_api/write") {
     readBody(req).then((body) => {
       const { path: filePath, content } = JSON.parse(body.toString());
-      const abs = safePath(filePath);
+      const abs = safeFileApiPath(filePath);
       if (!abs) return jsonResponse(res, 400, { error: "Invalid path" });
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content);
@@ -356,7 +360,7 @@ function handleFileAPI(req, res) {
 
   if (route === "/_api/upload") {
     const filePath = req.headers["x-file-path"];
-    const abs = safePath(filePath);
+    const abs = safeFileApiPath(filePath);
     if (!abs) return jsonResponse(res, 400, { error: "Invalid path" });
     readBody(req).then((body) => {
       mkdirSync(dirname(abs), { recursive: true });
@@ -369,7 +373,7 @@ function handleFileAPI(req, res) {
   if (route === "/_api/mkdir") {
     readBody(req).then((body) => {
       const { path: dirPath } = JSON.parse(body.toString());
-      const abs = safePath(dirPath);
+      const abs = safeFileApiPath(dirPath);
       if (!abs) return jsonResponse(res, 400, { error: "Invalid path" });
       mkdirSync(abs, { recursive: true });
       jsonResponse(res, 200, { ok: true });
@@ -380,7 +384,7 @@ function handleFileAPI(req, res) {
   if (route === "/_api/delete") {
     readBody(req).then((body) => {
       const { path: delPath } = JSON.parse(body.toString());
-      const abs = safePath(delPath);
+      const abs = safeFileApiPath(delPath);
       if (!abs) return jsonResponse(res, 400, { error: "Invalid path" });
       if (!existsSync(abs)) return jsonResponse(res, 404, { error: "Not found" });
       const stat = statSync(abs);
@@ -397,8 +401,8 @@ function handleFileAPI(req, res) {
   if (route === "/_api/rename") {
     readBody(req).then((body) => {
       const { oldPath, newPath } = JSON.parse(body.toString());
-      const absOld = safePath(oldPath);
-      const absNew = safePath(newPath);
+      const absOld = safeFileApiPath(oldPath);
+      const absNew = safeFileApiPath(newPath);
       if (!absOld || !absNew) return jsonResponse(res, 400, { error: "Invalid path" });
       if (!existsSync(absOld)) return jsonResponse(res, 404, { error: "Not found" });
       mkdirSync(dirname(absNew), { recursive: true });
@@ -420,6 +424,12 @@ const handleUpload = sharedHandleUpload;
 // --- HTTP Server ---
 
 const server = createServer((req, res) => {
+  const refused = refuseCrossSite(req, PORT);
+  if (refused) {
+    console.warn(`[ai-chat] refused ${req.method} ${req.url}: ${refused}`);
+    jsonResponse(res, 403, { error: "Cross-site request refused" });
+    return;
+  }
   // Employee "Browser" tab: forward /ui/* + /v1/* to this employee's OWN Steel
   // sidecar (inert unless STEEL_BROWSER_URL is set — owner cockpit unaffected).
   if (proxyBrowserHttp(req, res)) return;
@@ -827,6 +837,12 @@ const terminalWSS = new WebSocketServer({ noServer: true });
 const shellWSS = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
+  const refused = refuseCrossSite(req, PORT, { upgrade: true });
+  if (refused) {
+    console.warn(`[ai-chat] refused WebSocket ${req.url}: ${refused}`);
+    socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+    return;
+  }
   const url = new URL(req.url, "http://localhost");
   if (url.pathname === "/ws") {
     chatWSS.handleUpgrade(req, socket, head, (ws) => chatWSS.emit("connection", ws, req));
@@ -834,7 +850,7 @@ server.on("upgrade", (req, socket, head) => {
     terminalWSS.handleUpgrade(req, socket, head, (ws) => terminalWSS.emit("connection", ws, req));
   } else if (url.pathname === "/ws/shell") {
     // Plain per-connection bash console (shell.html) — one pty per socket.
-    shellWSS.handleUpgrade(req, socket, head, (ws) => attachShellSocket(ws));
+    shellWSS.handleUpgrade(req, socket, head, (ws) => attachShellSocket(maskSocket(ws)));
   } else if (proxyBrowserUpgrade(req, socket, head)) {
     // handled: Steel sidecar screencast WS (/v1/sessions/cast, …)
   } else {
@@ -1179,7 +1195,7 @@ chatWSS.on("connection", (ws, req) => {
           const slot = msg.slot ?? 0;
           if (!requireSlot(slot, "set_cwd")) break;
           const abs = resolve(msg.cwd);
-          if (!abs.startsWith(HOME)) {
+          if (abs !== HOME && !abs.startsWith(HOME + "/")) {
             ws.send(JSON.stringify({ type: "error", slot, message: "Directory must be under home" }));
             break;
           }
@@ -1212,7 +1228,7 @@ chatWSS.on("connection", (ws, req) => {
         const abs = resolve(prefix);
         const outsideRoot = WORKSPACE_LOCK
           ? clampToWorkspaceLock(abs) !== abs
-          : !abs.startsWith(HOME);
+          : abs !== HOME && !abs.startsWith(HOME + "/");
         if (outsideRoot) {
           ws.send(JSON.stringify({ type: "directories_list", dirs: [] }));
           break;
@@ -1498,6 +1514,7 @@ chatWSS.on("connection", (ws, req) => {
 // --- Terminal WebSocket (unchanged) ---
 
 terminalWSS.on("connection", (ws) => {
+  maskSocket(ws); // SHE-147: the managed terminal shows secrets masked too
   console.log("[ai-chat] Terminal client connected");
   TerminalBridge.addSocket(ws);
 

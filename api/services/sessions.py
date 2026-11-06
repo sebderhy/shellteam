@@ -141,9 +141,17 @@ def files_cred_for(sid: str) -> str:
     return f"{_FILES_PREFIX}.{sid}.{_hmac(f'files-v2|{sid}')}"
 
 
-def mint(kind: str, ip: str | None = None, ua: str | None = None, fresh: bool = True) -> Minted:
-    """Create a session. ``fresh`` = the master (or a one-time enrollment code)
-    was presented just now, so the session may open the terminal right away."""
+def mint(
+    kind: str, ip: str | None = None, ua: str | None = None, fresh: bool = True,
+    parent: dict | None = None,
+) -> Minted:
+    """Create a session. ``fresh`` = the master was presented just now, so the
+    session may open the terminal right away.
+
+    ``parent`` is the session that minted an enrollment link (SHE-147): the new
+    device inherits its proof time and end date and dies with it, so a stolen
+    cookie can't launder itself into a fresh, longer-lived, unrevocable one.
+    """
     if not _master():
         raise RuntimeError("sessions need OWNER_TOKEN (localhost-trust mode has no logins)")
     sid = secrets.token_hex(8)
@@ -158,6 +166,10 @@ def mint(kind: str, ip: str | None = None, ua: str | None = None, fresh: bool = 
         "ip": (ip or "")[:64],
         "ua": (ua or "")[:200],
     }
+    if parent is not None:
+        record["expires"] = min(record["expires"], int(parent["expires"]))
+        record["auth_at"] = int(parent.get("auth_at", 0))
+        record["parent"] = parent["id"]
     with _lock:
         data = _live()
         data["sessions"][sid] = record
@@ -188,6 +200,13 @@ def lookup(token: str | None) -> dict | None:
     if rec is None or not hmac.compare_digest(rec["hash"], _hash(secret)):
         return None
     return {"id": sid, **rec}
+
+
+def lookup_id(sid: str) -> dict | None:
+    """The live session record for an id (no secret: internal use only)."""
+    with _lock:
+        rec = _live()["sessions"].get(sid)
+    return None if rec is None else {"id": sid, **rec}
 
 
 def lookup_files_cred(cred: str | None) -> dict | None:
@@ -232,13 +251,19 @@ def confirm(sid: str) -> bool:
 
 
 def revoke(sid: str) -> bool:
+    """Revoke a session and every device it enrolled (and theirs)."""
     with _lock:
         data = _live()
-        gone = data["sessions"].pop(sid, None) is not None
+        doomed, frontier = set(), {sid}
+        while frontier:
+            doomed |= frontier
+            frontier = {k for k, r in data["sessions"].items() if r.get("parent") in frontier} - doomed
+        gone = [k for k in doomed if data["sessions"].pop(k, None) is not None]
         if gone:
             _write(data)
-    log.info("Session %s revoked (existed=%s)", sid, gone)
-    return gone
+    log.info("Session %s revoked (existed=%s, enrolled devices also revoked: %d)",
+             sid, sid in gone, max(0, len(gone) - (sid in gone)))
+    return sid in gone
 
 
 def revoke_all() -> int:

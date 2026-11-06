@@ -41,10 +41,23 @@ class TestCheckDomain:
             resp = client.get("/internal/check-domain", params={"domain": "alice.localhost"})
         assert resp.status_code == 200
 
-    def test_port_subdomain_allowed(self):
+    def test_port_subdomain_allowed_only_while_something_listens(self):
+        # SHE-148: any owner-<digits> used to get a cert (ACME quota burn).
+        import socket
+
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen()
+        port = srv.getsockname()[1]
+        try:
+            with self._loopback_client() as client:
+                ok = client.get("/internal/check-domain", params={"domain": f"alice-{port}.localhost"})
+        finally:
+            srv.close()
+        assert ok.status_code == 200
         with self._loopback_client() as client:
-            resp = client.get("/internal/check-domain", params={"domain": "alice-3000.localhost"})
-        assert resp.status_code == 200
+            for domain in (f"alice-{port}.localhost", "alice-99999.localhost", "alice-1234567.localhost"):
+                assert client.get("/internal/check-domain", params={"domain": domain}).status_code == 403
 
     def test_foreign_domain_rejected(self):
         with self._loopback_client() as client:

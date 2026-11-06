@@ -26,15 +26,15 @@ class TestEnrollmentService:
     def test_redeem_is_single_use(self):
         from api.services import enrollment
         code, _ = enrollment.mint_code()
-        assert enrollment.redeem_code(code) is True
-        assert enrollment.redeem_code(code) is False  # already consumed
+        assert enrollment.redeem_code(code)[0] is True
+        assert enrollment.redeem_code(code)[0] is False  # already consumed
 
     def test_peek_validates_without_consuming(self):
         from api.services import enrollment
         code, _ = enrollment.mint_code()
         assert enrollment.peek_code(code) is True
         assert enrollment.peek_code(code) is True  # peek never consumes
-        assert enrollment.redeem_code(code) is True  # still redeemable after peeks
+        assert enrollment.redeem_code(code)[0] is True  # still redeemable after peeks
         assert enrollment.peek_code(code) is False  # gone once consumed
 
     def test_peek_rejects_unknown_and_empty(self):
@@ -45,19 +45,19 @@ class TestEnrollmentService:
 
     def test_redeem_rejects_unknown_code(self):
         from api.services import enrollment
-        assert enrollment.redeem_code("never-minted") is False
+        assert enrollment.redeem_code("never-minted")[0] is False
 
     def test_redeem_rejects_empty(self):
         from api.services import enrollment
-        assert enrollment.redeem_code("") is False
-        assert enrollment.redeem_code(None) is False
+        assert enrollment.redeem_code("")[0] is False
+        assert enrollment.redeem_code(None)[0] is False
 
     def test_expired_code_is_rejected(self):
         from api.services import enrollment
         code, _ = enrollment.mint_code()
         # Force the code to have expired a second ago.
         enrollment._codes[code] = time.time() - 1
-        assert enrollment.redeem_code(code) is False
+        assert enrollment.redeem_code(code)[0] is False
 
 
 # ---------------------------------------------------------------------------

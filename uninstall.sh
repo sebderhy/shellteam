@@ -141,6 +141,14 @@ log "Unmasking system nginx.service (install.sh masked it)…"
 sudo systemctl unmask nginx.service >/dev/null 2>&1 || \
     warn "Could not unmask nginx.service — do it manually if you want the distro nginx back."
 
+BROWSER_FW_UNIT="/etc/systemd/system/shellteam-browser-firewall.service"
+if [ -f "$BROWSER_FW_UNIT" ]; then
+    log "Removing the browser firewall unit (install.sh wrote it)…"
+    sudo systemctl disable --now shellteam-browser-firewall.service >/dev/null 2>&1 || true   # ExecStop drops the rules
+    sudo rm -f "$BROWSER_FW_UNIT" && sudo systemctl daemon-reload >/dev/null 2>&1 \
+        || warn "Could not remove $BROWSER_FW_UNIT — remove it manually."
+fi
+
 USER_MANAGER_DROPIN="/etc/systemd/system/user@$(id -u).service.d/shellteam-restart.conf"
 if [ -f "$USER_MANAGER_DROPIN" ]; then
     log "Removing the user-manager restart drop-in (install.sh wrote it)…"

@@ -145,10 +145,18 @@
             return r.json();
         }
 
-        function sideItem(label, path, cls = '') {
+        // Labels are folder and file names (an agent's cwd, a name the dream
+        // LLM chose): text only, never HTML (SHE-146).
+        function sideItem(label, path, cls = '', empty = false) {
             const b = document.createElement('button');
             b.className = 'item ' + cls;
-            b.innerHTML = label;
+            b.textContent = label;
+            if (empty) {
+                const dim = document.createElement('span');
+                dim.className = 'dim';
+                dim.textContent = ' (empty)';
+                b.appendChild(dim);
+            }
             if (path) b.onclick = () => openFile(path, b);
             else { b.disabled = true; b.classList.add('dim'); }
             return b;
@@ -160,13 +168,11 @@
             let h = document.createElement('h2'); h.textContent = 'You (injected everywhere)';
             side.appendChild(h);
             for (const f of t.user_layer)
-                side.appendChild(sideItem(f.path + (f.exists ? '' : ' <span class="dim">(empty)</span>'),
-                                          f.exists ? f.path : null));
+                side.appendChild(sideItem(f.path, f.exists ? f.path : null, '', !f.exists));
             h = document.createElement('h2'); h.textContent = 'Cross-project (root scope)';
             side.appendChild(h);
             for (const f of t.root_layer)
-                side.appendChild(sideItem(f.path + (f.exists ? '' : ' <span class="dim">(empty)</span>'),
-                                          f.exists ? f.path : null));
+                side.appendChild(sideItem(f.path, f.exists ? f.path : null, '', !f.exists));
             h = document.createElement('h2'); h.textContent = 'Projects (per-folder memory)';
             side.appendChild(h);
             if (!t.nodes.length) {

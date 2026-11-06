@@ -74,17 +74,29 @@ class TestWantsContentSandbox:
 
     def test_trusted_file_ui_not_sandboxed(self):
         # These make credentialed same-origin fetches — must keep the real origin.
-        for p in ("/_editor/x.py", "/_ls/tmp", "/_files/", "/_api/save",
-                  "/api/computers/cockpit/github.html"):
+        for p in ("/_editor/x.py", "/api/computers/cockpit/github.html"):
             assert _wants_content_sandbox(_req(p), _resp()) is False, p
+
+    def test_home_aliases_are_content(self):
+        # SHE-144: /_files/ and /_ls/ alias the whole home dir; a raw HTML file
+        # opened there ran unsandboxed as the dashboard (shell via /_api/write).
+        for p in ("/_files/tmp/evil.html", "/_ls/tmp/evil.html", "/_api/read"):
+            assert _wants_content_sandbox(_req(p), _resp()) is True, p
+
+    def test_svg_and_xml_are_sandboxed(self):
+        # SHE-144: `<svg><script>` runs when the SVG is opened as a page.
+        for ctype in ("image/svg+xml", "application/xhtml+xml", "text/xml",
+                      "application/xml; charset=utf-8", "application/rss+xml"):
+            assert _wants_content_sandbox(_req("/tmp/x"), _resp(ctype)) is True, ctype
+        assert _wants_content_sandbox(_req("/tmp/x.pdf"), _resp("application/pdf")) is False
 
     def test_non_html_not_sandboxed(self):
         assert _wants_content_sandbox(_req("/tmp/chart.png"), _resp("image/png")) is False
         assert _wants_content_sandbox(_req("/api/x"), _resp("application/json")) is False
 
     def test_subdomain_content_not_sandboxed_here(self):
-        # Content subdomains are cookie-isolated already; this main-host header
-        # doesn't apply to them.
+        # The file subdomain is sandboxed in the proxy instead
+        # (_sandbox_file_response, SHE-144); this main-host check skips it.
         assert _wants_content_sandbox(_req("/reports/r.html", host="alice.localhost"), _resp()) is False
 
     def test_sandbox_csp_withholds_same_origin(self):
@@ -290,7 +302,7 @@ class TestSinkOriginGates:
         route = respx.post(f"{FILE_ORIGIN}/_api/save").mock(return_value=httpx.Response(200))
         with TestClient(app) as client:
             resp = client.post("/_api/save", headers={**LOCAL, **BEARER, "origin": "null"})
-        assert resp.status_code == 401  # login-required, never forwarded
+        assert resp.status_code == 403  # refused by the cross-site guard (SHE-145), never forwarded
         assert not route.called
 
     def test_terminal_ws_rejects_cross_origin(self):

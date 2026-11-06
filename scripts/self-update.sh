@@ -127,6 +127,20 @@ if [ "$FROM" = "$TARGET" ]; then
     write_state ok "up to date at $TAG"
     exit 0
 fi
+# Only a release signed by ShellTeam's release key is installed (SHE-148).
+# Tags come from GitHub; without this, anyone who got push access there (a
+# stolen token) could push v9.9.9 and run code on every auto-updating box.
+# The trusted signers come from the version ALREADY installed (HEAD), never
+# from what was just fetched, so a forged release can't vouch for itself.
+SIGNERS="$(mktemp)"; trap 'rm -f "$SHELLTEAM_UPDATE_REEXEC" "$SIGNERS"' EXIT
+if git show "HEAD:deploy/release-signers" >"$SIGNERS" 2>/dev/null; then
+    git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$SIGNERS" verify-tag "$TAG" >/dev/null 2>&1 \
+        || fail "$TAG is not signed by a ShellTeam release key (deploy/release-signers) - refusing to install it"
+    log "$TAG signature verified."
+else
+    log "WARNING: this version predates signed releases; $TAG is installed without a signature check (the next update checks it)." >&2
+fi
+
 # The release lineage can be restarted upstream (the public history collapsed
 # to a fresh root). Following that is safe exactly when this checkout sits AT a
 # release tag: there is nothing local on it to lose. Anything else (local

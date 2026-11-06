@@ -48,6 +48,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
+from api.config import child_env
 from api.services import knowledge_tree as kt
 from api.services import llm_gateway
 
@@ -496,7 +497,7 @@ def _engine_launch(
     subscription every metered key is stripped; when a company gateway is
     configured the run goes through it instead, exactly like the cockpit's
     agents (llm_gateway mirrors session.mjs)."""
-    env = dict(os.environ)
+    env = child_env()
     family = "claude" if engine == "claude" else "codex"
     gateway = llm_gateway.apply_gateway(env, family, home)
     if not gateway:

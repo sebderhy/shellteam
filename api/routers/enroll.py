@@ -25,8 +25,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from api.config import APP_DOMAIN, OWNER_TOKEN
 from api.dependencies import get_current_user, require_trusted_origin
-from api.services import enrollment
-from api.services.auth import start_session
+from api.services import enrollment, sessions
+from api.services.auth import MASTER_COOKIE, start_session, token_is_owner
 from api.services.ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -71,7 +71,13 @@ async def create_enrollment(
             status_code=409,
             detail="No OWNER_TOKEN set — this box is in localhost-trust mode, nothing to enroll.",
         )
-    code, ttl = enrollment.mint_code()
+    # Minted from a session (not the master): the new device inherits that
+    # session's proof time and end date, and is revoked with it (SHE-147).
+    bearer = request.headers.get("Authorization", "")
+    parent = None
+    if not (bearer.startswith("Bearer ") and token_is_owner(bearer[7:])):
+        parent = sessions.lookup(request.cookies.get(MASTER_COOKIE))
+    code, ttl = enrollment.mint_code(parent)
     url = f"{_request_origin(request)}/enroll?code={code}"
     # Inline SVG QR (CSP-safe: no external asset, rendered straight into the modal).
     # omitsize=True drops the fixed width/height and emits a viewBox instead, so the
@@ -144,14 +150,18 @@ async def redeem_enrollment(
     request: Request, code: str = Form(""), _rl=Depends(_redeem_limit)
 ):
     """Redeem a one-time link: consume the code, set the session cookie, bounce home."""
-    if not enrollment.redeem_code(code):
+    ok, parent = enrollment.redeem_code(code)
+    if not ok:
+        return HTMLResponse(_REDEEM_FAIL_HTML, status_code=400)
+    if parent is not None and sessions.lookup_id(parent["id"]) is None:
+        log.warning("Enrollment link refused: the session that made it (%s) is gone", parent["id"])
         return HTMLResponse(_REDEEM_FAIL_HTML, status_code=400)
 
     resp = RedirectResponse(url="/", status_code=303)
     # A fresh, revocable session (api/services/sessions.py), never the master:
     # HttpOnly host-only session cookie + HttpOnly domain-wide read-only files
     # credential bound to it. No page JavaScript anywhere can read either.
-    start_session(resp, request, kind="enroll")
+    start_session(resp, request, kind="enroll", parent=parent)
     client = request.headers.get("x-forwarded-for", "") or (request.client.host if request.client else "?")
     log.info("Device enrolled via one-time link (client=%s)", client.split(",")[-1].strip())
     return resp

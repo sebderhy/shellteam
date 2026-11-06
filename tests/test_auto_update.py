@@ -284,3 +284,51 @@ def test_update_units_exist_and_are_wired():
     assert "shellteam-update.timer" in uninstall
     assert "shellteam-update" in (REPO_ROOT / "docs/FOOTPRINT.md").read_text()
     assert "AUTO_UPDATE=off" in (REPO_ROOT / ".env.example").read_text()
+
+
+# --- SHE-148: only releases signed by the release key are installed -----------------
+
+@pytest.fixture
+def signed_box(tmp_path):
+    """A box whose installed version trusts one release key, and an origin that
+    publishes the next tag either signed (good) or not (forged)."""
+    key = tmp_path / "release_key"
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+    pub = key.with_suffix(".pub").read_text().split()
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "-b", "main")
+    (origin / "deploy").mkdir()
+    (origin / "deploy" / "release-signers").write_text(f't@t namespaces="git" {pub[0]} {pub[1]}\n')
+    (origin / "VERSION").write_text("0.1.0\n")
+    _git(origin, "add", "."); _git(origin, "commit", "-qm", "v0.1.0")
+    _git(origin, "tag", "v0.1.0")
+    clone = tmp_path / "box"
+    _git(tmp_path, "clone", "-q", str(origin), str(clone))
+    (origin / "VERSION").write_text("0.2.0\n")
+    _git(origin, "add", "."); _git(origin, "commit", "-qm", "v0.2.0")
+    return origin, clone, key
+
+
+class TestSignedReleases:
+    def test_a_signed_release_installs(self, signed_box, tmp_path):
+        origin, clone, key = signed_box
+        _git(origin, "-c", "gpg.format=ssh", "-c", f"user.signingkey={key}", "tag", "-s", "v0.2.0", "-m", "v0.2.0")
+        result, state = _run_update(clone, tmp_path)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (clone / "VERSION").read_text() == "0.2.0\n"
+        assert "signature verified" in result.stdout
+
+    def test_an_unsigned_or_foreign_release_is_refused(self, signed_box, tmp_path):
+        origin, clone, _key = signed_box
+        other = tmp_path / "attacker_key"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(other)], check=True)
+        _git(origin, "-c", "gpg.format=ssh", "-c", f"user.signingkey={other}", "tag", "-s", "v0.2.0", "-m", "x")
+        result, state = _run_update(clone, tmp_path)
+        assert result.returncode != 0
+        assert (clone / "VERSION").read_text() == "0.1.0\n"
+        assert "not signed by a ShellTeam release key" in result.stdout + result.stderr
+        _git(origin, "tag", "-d", "v0.2.0"); _git(origin, "tag", "v0.2.0")  # lightweight
+        _git(clone, "tag", "-d", "v0.2.0")
+        result, _ = _run_update(clone, tmp_path)
+        assert result.returncode != 0 and (clone / "VERSION").read_text() == "0.1.0\n"
