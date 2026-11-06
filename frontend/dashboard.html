@@ -289,7 +289,7 @@
         .ai-divider { text-align: center; color: var(--text-tertiary); font-size: var(--text-xs); margin: 16px 0; }
         .ai-key-row { display: flex; gap: 8px; }
         .ai-key-row + .ai-key-row { margin-top: 8px; }
-        .ai-key-row input {
+        .ai-key-row input, .sv-add input {
             flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--border);
             border-radius: var(--radius-md); background: var(--surface-0); color: var(--text-primary);
             font-size: var(--text-sm); font-family: var(--font-mono);
@@ -347,6 +347,51 @@
         /* Auto-update frequency: a segmented control — only the active mode is brand-filled. */
         .au-mode, .de-engine { background: var(--surface-2); color: var(--text-primary); }
         .au-mode.active, .de-engine.active { background: var(--brand); color: #0a0a0a; }
+        /* ── Secrets vault (SHE-135): names + where used, never values ── */
+        .sv-add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; gap: 8px; margin-top: 12px; }
+        .sv-add input { min-width: 0; }
+        .sv-uses { margin: 6px 0 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.6; }
+        .sv-uses code { font-size: var(--text-xs); overflow-wrap: anywhere; }
+        .sv-result { margin-top: 8px; font-size: var(--text-xs); line-height: 1.6; }
+        .sv-result .ok { color: var(--positive); }
+        .sv-result .bad { color: var(--negative); }
+        .sv-row .ai-key-row { display: none; margin-top: 8px; }
+        .sv-row .fk-label code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sv-row .sv-replace { color: var(--text-secondary); }
+        .sv-row .sv-replace:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+        .sv-row.replacing .ai-key-row { display: flex; }
+        @media (max-width: 640px) { .sv-add { grid-template-columns: 1fr; } }
+        .sv-warn { margin-top: 6px; font-size: var(--text-xs); color: var(--brand); line-height: 1.5; }
+        .sv-warn button { margin-left: 6px; }
+        .sv-name-wrap { position: relative; min-width: 0; }
+        .sv-name-wrap input { width: 100%; box-sizing: border-box; }
+        .sv-ac {
+            position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px;
+            list-style: none; background: var(--surface-1); border: 1px solid var(--border);
+            border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,.4); max-height: 300px; overflow-y: auto;
+        }
+        .sv-ac[hidden] { display: none; }
+        .sv-ac li { padding: 7px 9px; border-radius: var(--radius-sm, 4px); cursor: pointer; }
+        .sv-ac li.active, .sv-ac li:hover { background: var(--surface-2); }
+        .sv-ac code { font-size: var(--text-xs); color: var(--text-primary); }
+        .sv-ac span { display: block; font-size: var(--text-xs); color: var(--text-tertiary); }
+        .sv-guess { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: var(--text-xs); color: var(--text-tertiary); }
+        .sv-guess[hidden] { display: none; }
+        .sv-guess button { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 9px; text-align: left; }
+        .sv-guess button.on { border-color: var(--brand); color: var(--text-primary); }
+        .sv-guess code { font-size: var(--text-xs); }
+        .sv-suggest { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+        .sv-suggest summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-secondary); }
+        .sv-suggest summary:hover { color: var(--text-primary); }
+        .sv-group { margin-top: 12px; font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; }
+        .sv-sug { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+        .sv-sug:last-child { border-bottom: 0; }
+        .sv-sug-main { min-width: 0; }
+        .sv-sug-service { font-size: var(--text-sm); }
+        .sv-sug-meta { font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.5; overflow-wrap: anywhere; }
+        .sv-sug a, .sv-sug button { font-size: var(--text-xs); white-space: nowrap; }
+        .sv-sug a { color: var(--brand); text-decoration: none; }
+        .sv-sug a:hover { text-decoration: underline; }
         .fk-restart { display: none; margin-top: 10px; font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.6; }
         .fk-restart code {
             display: block; margin-top: 5px; padding: 7px 10px; border: 1px solid var(--border);
@@ -653,6 +698,34 @@
                         browser. You can add or change these anytime.
                     </p>
                     <div id="feature-keys-root"></div>
+                </div>
+
+                <div class="card" id="secrets-card">
+                    <h2>Secrets</h2>
+                    <p class="muted" style="margin-top:0;margin-bottom:4px">
+                        API keys for your own apps (Stripe, Supabase, OpenAI…). Add each one once:
+                        agents put them where your apps need them by name, so the values never
+                        show in a chat. Replace a key here and every app using it gets the new
+                        value and restarts.
+                    </p>
+                    <div id="secrets-root"></div>
+                    <div class="sv-add">
+                        <div class="sv-name-wrap">
+                            <input type="text" id="sv-name" class="fk-input" placeholder="NAME, e.g. STRIPE_SECRET_KEY"
+                                autocomplete="off" spellcheck="false" autocapitalize="characters"
+                                role="combobox" aria-autocomplete="list" aria-controls="sv-ac" aria-expanded="false">
+                            <ul class="sv-ac" id="sv-ac" role="listbox" hidden></ul>
+                        </div>
+                        <input type="password" id="sv-value" class="fk-input" placeholder="Paste the key (we'll guess its name)…" autocomplete="off">
+                        <button class="ai-btn" id="sv-save" disabled>Add</button>
+                    </div>
+                    <div class="sv-guess" id="sv-guess" hidden></div>
+                    <div class="fk-err" id="sv-err"></div>
+                    <div class="sv-result" id="sv-result"></div>
+                    <details class="sv-suggest" id="sv-suggest">
+                        <summary>Not sure what to add? Common keys and where to get them</summary>
+                        <div id="sv-suggest-root"></div>
+                    </details>
                 </div>
 
                 <div class="card">
@@ -1859,6 +1932,275 @@
             renderFeatureKeys(root, resp.keys || {});
         }
 
+        // ─── Secrets vault (Settings → Secrets, SHE-135) ─────────────────────
+        // The server never returns values: rows show the name, when it was last
+        // set and where agents wrote it. Saving = rotating: the response lists
+        // every file / app / command that received the new value.
+        const SV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+        function renderSecretResults(results) {
+            const box = document.getElementById('sv-result');
+            if (!results.length) { box.innerHTML = ''; return; }
+            box.innerHTML = results.map(r =>
+                `<div class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} <code>${escapeHtml(r.target)}</code>: ${escapeHtml(r.detail)}</div>`
+            ).join('');
+        }
+
+        function renderSecrets(rows) {
+            const root = document.getElementById('secrets-root');
+            renderSecretSuggestions(rows);
+            if (!rows.length) {
+                root.innerHTML = '<div class="ai-hint" style="padding:10px 0">No secrets yet.</div>';
+                return;
+            }
+            root.innerHTML = rows.map(r => {
+                const uses = r.uses.map(u => u.kind === 'file'
+                    ? `<li>in <code>${escapeHtml(u.file)}</code>${u.restart ? ` · restarts <code>${escapeHtml(u.restart)}</code>` : ''}</li>`
+                    : `<li>runs <code>${escapeHtml(u.command)}</code></li>`).join('');
+                return `
+                <div class="fk-row sv-row" data-name="${escapeHtml(r.name)}">
+                    <div class="fk-head">
+                        <span class="fk-label"><code>${escapeHtml(r.name)}</code></span>
+                        <span class="fk-badge on" title="${escapeHtml(r.updated_at)}"><span class="dot"></span>Set ${escapeHtml(new Date(r.updated_at).toLocaleDateString())}</span>
+                        <button type="button" class="fk-clear sv-replace">Replace</button>
+                        <button type="button" class="fk-clear sv-delete">Delete</button>
+                    </div>
+                    <ul class="sv-uses">${uses || '<li>Not used by any app yet.</li>'}</ul>
+                    ${r.warning ? `<div class="sv-warn">⚠ ${escapeHtml(r.warning.message)}<button type="button" class="fk-clear sv-rename" data-to="${escapeHtml(r.warning.rename_to)}">Rename to ${escapeHtml(r.warning.rename_to)}</button></div>` : ''}
+                    <div class="ai-key-row">
+                        <input type="password" class="fk-input" placeholder="New value…" autocomplete="off">
+                        <button class="ai-btn sv-replace-save" disabled>Save</button>
+                    </div>
+                </div>`;
+            }).join('');
+            root.querySelectorAll('.sv-row').forEach(row => {
+                const name = row.dataset.name;
+                const input = row.querySelector('.ai-key-row input');
+                const save = row.querySelector('.sv-replace-save');
+                row.querySelector('.sv-replace').addEventListener('click', () => {
+                    row.classList.toggle('replacing'); input.focus();
+                });
+                input.addEventListener('input', () => { save.disabled = !input.value.trim(); });
+                input.addEventListener('keydown', e => { if (e.key === 'Enter' && input.value.trim()) saveSecret(name, input.value.trim(), save); });
+                save.addEventListener('click', () => saveSecret(name, input.value.trim(), save));
+                row.querySelector('.sv-rename')?.addEventListener('click', async (e) => {
+                    const resp = await apiFetch(`/api/settings/secrets/${encodeURIComponent(name)}/rename`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ to: e.target.dataset.to }),
+                    });
+                    if (resp.error) return showSecretError(resp.error);
+                    showSecretError('');
+                    renderSecrets(resp.secrets);
+                });
+                row.querySelector('.sv-delete').addEventListener('click', async () => {
+                    const where = row.querySelectorAll('.sv-uses code').length
+                        ? ' Apps that already hold it keep their copy.' : '';
+                    if (!confirm(`Delete ${name} from the vault?${where}`)) return;
+                    const resp = await apiFetch(`/api/settings/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                    if (resp.error) return showSecretError(resp.error);
+                    renderSecretResults([]);
+                    renderSecrets(resp.secrets);
+                });
+            });
+        }
+
+        function showSecretError(msg) {
+            const err = document.getElementById('sv-err');
+            err.textContent = msg; err.style.display = msg ? 'block' : 'none';
+        }
+
+        async function saveSecret(name, value, button) {
+            showSecretError('');
+            const label = button.textContent;
+            button.disabled = true; button.textContent = 'Saving…';
+            const resp = await apiFetch('/api/settings/secrets', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, value }),
+            });
+            button.textContent = label;
+            if (resp.error) { button.disabled = false; return showSecretError(resp.error); }
+            renderSecrets(resp.secrets);
+            renderSecretResults(resp.results);
+            return true;
+        }
+
+        // Name autocomplete (SHE-140): typing "supa" or "claude" offers the usual
+        // names from the suggestions catalog, matched on the name or the service.
+        // Arrow keys move, Enter/Tab picks, Escape closes.
+        function matchSecretSuggestions(typed) {
+            const q = typed.toLowerCase().replace(/_/g, ' ').trim();
+            if (q.length < 2) return [];
+            const words = q.split(/\s+/);
+            const have = new Set([...document.querySelectorAll('.sv-row')].map(r => r.dataset.name));
+            const hay = sug => `${sug.name.replace(/_/g, ' ')} ${sug.service}`.toLowerCase();
+            const hits = secretSuggestions.filter(sug => !have.has(sug.name) && words.every(w => hay(sug).includes(w)));
+            // Names that START with what was typed come first.
+            const starts = sug => sug.name.toLowerCase().replace(/_/g, ' ').startsWith(q) ? 0 : 1;
+            return hits.sort((a, b) => starts(a) - starts(b)).slice(0, 8);
+        }
+
+        // Paste first, name second (SHE-142): guess the name from the key's
+        // shape, in the browser (the value is not sent anywhere until Add).
+        // The longest matching prefix wins; ties (AIza = Gemini or Maps) are
+        // all offered.
+        function guessSecretNames(value) {
+            const v = value.trim();
+            if (v.length < 4) return [];
+            let best = 0, hits = [];
+            for (const sug of secretSuggestions) {
+                let score = Math.max(0, ...(sug.prefixes || []).filter(p => v.startsWith(p)).map(p => p.length));
+                if ((sug.patterns || []).some(re => new RegExp(re).test(v))) score = 1000;
+                if (!score || score < best) continue;
+                if (score > best) { best = score; hits = []; }
+                hits.push(sug);
+            }
+            return hits;
+        }
+
+        function wireSecretGuess(nameEl, valueEl) {
+            const box = document.getElementById('sv-guess');
+            let autoFilled = false;  // only ever overwrite a name WE guessed
+            const choose = (name) => {
+                nameEl.value = name;
+                nameEl.dispatchEvent(new Event('input'));
+                document.getElementById('sv-ac').hidden = true;
+                render();
+            };
+            const render = () => {
+                const guesses = guessSecretNames(valueEl.value);
+                if (!guesses.length) { box.hidden = true; return; }
+                box.innerHTML = `<span>Looks like:</span>` + guesses.map(g =>
+                    `<button type="button" class="fk-clear${g.name === nameEl.value ? ' on' : ''}" data-name="${escapeHtml(g.name)}">
+                        <span>${escapeHtml(g.service)}</span><code>${escapeHtml(g.name)}</code></button>`).join('');
+                box.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { autoFilled = false; choose(b.dataset.name); }));
+                box.hidden = false;
+            };
+            valueEl.addEventListener('input', () => {
+                const guesses = guessSecretNames(valueEl.value);
+                if (guesses.length === 1 && (!nameEl.value.trim() || autoFilled)) {
+                    autoFilled = true;
+                    choose(guesses[0].name);
+                } else {
+                    if (autoFilled && !guesses.some(g => g.name === nameEl.value)) {
+                        nameEl.value = ''; nameEl.dispatchEvent(new Event('input')); autoFilled = false;
+                    }
+                    render();
+                }
+            });
+            nameEl.addEventListener('input', (e) => { if (e.isTrusted) autoFilled = false; render(); });
+        }
+
+        function wireSecretNameAutocomplete(nameEl, valueEl) {
+            const list = document.getElementById('sv-ac');
+            let items = [], active = -1;
+            const close = () => { list.hidden = true; nameEl.setAttribute('aria-expanded', 'false'); active = -1; };
+            const highlight = () => list.querySelectorAll('li').forEach((li, i) => li.classList.toggle('active', i === active));
+            const pick = (sug) => {
+                nameEl.value = sug.name;
+                nameEl.dispatchEvent(new Event('input'));
+                close();
+                valueEl.focus();
+            };
+            const open = () => {
+                items = matchSecretSuggestions(nameEl.value);
+                if (!items.length || items.some(sug => sug.name === nameEl.value)) return close();
+                list.innerHTML = items.map((sug, i) => `<li role="option" data-i="${i}"><code>${escapeHtml(sug.name)}</code><span>${escapeHtml(sug.service)}</span></li>`).join('');
+                list.querySelectorAll('li').forEach(li => li.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); // keep focus; blur would close first
+                    pick(items[+li.dataset.i]);
+                }));
+                active = 0; highlight();
+                list.hidden = false; nameEl.setAttribute('aria-expanded', 'true');
+            };
+            nameEl.addEventListener('input', open);
+            nameEl.addEventListener('blur', close);
+            nameEl.addEventListener('keydown', (e) => {
+                if (list.hidden) return;
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    active = (active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+                    highlight();
+                } else if ((e.key === 'Enter' || e.key === 'Tab') && active >= 0) {
+                    e.preventDefault(); e.stopImmediatePropagation();
+                    pick(items[active]);
+                } else if (e.key === 'Escape') {
+                    close();
+                }
+            });
+        }
+
+        function wireSecretsForm() {
+            const nameEl = document.getElementById('sv-name');
+            const valueEl = document.getElementById('sv-value');
+            const add = document.getElementById('sv-save');
+            const sync = () => { add.disabled = !(SV_NAME_RE.test(nameEl.value.trim()) && valueEl.value.trim()); };
+            nameEl.addEventListener('input', () => {
+                nameEl.value = nameEl.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+                sync();
+            });
+            wireSecretNameAutocomplete(nameEl, valueEl);
+            wireSecretGuess(nameEl, valueEl);
+            valueEl.addEventListener('input', sync);
+            const submit = async () => {
+                if (add.disabled) return;
+                if (await saveSecret(nameEl.value.trim(), valueEl.value.trim(), add)) {
+                    nameEl.value = ''; valueEl.value = ''; sync(); document.getElementById('sv-guess').hidden = true; nameEl.focus();
+                }
+            };
+            add.addEventListener('click', submit);
+            [nameEl, valueEl].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }));
+        }
+
+        // Common keys (SHE-139): the usual name + the page where each is made, so
+        // a non-developer knows what to fetch. Keys already saved drop out.
+        let secretSuggestions = [];
+        let secretSuggestionsShown = false;
+
+        function renderSecretSuggestions(saved) {
+            const root = document.getElementById('sv-suggest-root');
+            const have = new Set(saved.map(r => r.name));
+            const groups = {};
+            for (const sug of secretSuggestions) {
+                if (!have.has(sug.name)) (groups[sug.group] ||= []).push(sug);
+            }
+            root.innerHTML = Object.entries(groups).map(([group, items]) => `
+                <div class="sv-group">${escapeHtml(group)}</div>
+                ${items.map(sug => `
+                <div class="sv-sug">
+                    <div class="sv-sug-main">
+                        <div class="sv-sug-service">${escapeHtml(sug.service)}</div>
+                        <div class="sv-sug-meta"><code>${escapeHtml(sug.name)}</code>${sug.hint ? ` · ${escapeHtml(sug.hint)}` : ''}</div>
+                    </div>
+                    <a href="${escapeHtml(sug.url)}" target="_blank" rel="noopener">Get it →</a>
+                    <button type="button" class="fk-clear sv-use" data-name="${escapeHtml(sug.name)}">Add</button>
+                </div>`).join('')}`).join('');
+            root.querySelectorAll('.sv-use').forEach(btn => btn.addEventListener('click', () => {
+                const nameEl = document.getElementById('sv-name');
+                nameEl.value = btn.dataset.name;
+                nameEl.dispatchEvent(new Event('input'));
+                nameEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                document.getElementById('sv-value').focus({ preventScroll: true });
+            }));
+            // Open on first load when the vault is empty; later renders (after an
+            // add) leave it as the owner set it, so adding several in a row works.
+            if (!secretSuggestionsShown) {
+                document.getElementById('sv-suggest').open = saved.length === 0;
+                secretSuggestionsShown = true;
+            }
+        }
+
+        async function refreshSecrets() {
+            const root = document.getElementById('secrets-root');
+            if (!root) return;
+            const resp = await apiFetch('/api/settings/secrets');
+            if (resp.error) {
+                root.innerHTML = `<div class="fk-err" style="display:block">Could not load secrets: ${escapeHtml(resp.error)}</div>`;
+                return;
+            }
+            secretSuggestions = resp.suggestions || [];
+            renderSecrets(resp.secrets || []);
+        }
+
         // ─── Automatic updates (Settings → Automatic updates) ────────────────
         // Mode lives in .env (AUTO_UPDATE); the self-update timer re-reads it
         // every tick, so a change here applies with no restart. "last" is the
@@ -1972,6 +2314,8 @@
             await refreshAIStatus();
             renderAIPanel();
             refreshFeatureKeys();
+            wireSecretsForm();
+            refreshSecrets();
             refreshAutoUpdate();
             refreshDreamEngine();
             await knowledgeProbe;

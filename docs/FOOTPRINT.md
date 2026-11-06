@@ -34,6 +34,7 @@ already covers — the edits are unnecessary). Pinned by
 | Knowledge layer (your accumulated memory, incl. the per-folder `tree/`) | `~/.shellteam/knowledge/` | `uninstall.sh --purge` |
 | Dream run artifacts (audit trail: prompts, deltas, reports) | `~/.shellteam/dream/` | `uninstall.sh --purge` |
 | Images pasted into the chat for Codex, OpenCode and Antigravity (kept 7 days) | `~/.shellteam/attachments/` | `uninstall.sh --purge` |
+| Secrets vault: your API keys (Settings -> Secrets), owner-only `0600`, plus where agents wrote each one | `~/.shellteam/secrets.json` | `uninstall.sh --purge` |
 | Steel browser (opt-in: part of `--full`) | Docker container `shellteam-steel` on its own network `shellteam-browser-net` (inter-container traffic off) | `uninstall.sh` |
 
 ## Tier 2 — the agent layer (additive; **never your dotfiles**)

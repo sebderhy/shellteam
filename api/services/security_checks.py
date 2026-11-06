@@ -17,6 +17,7 @@ is cached for ``CACHE_SECONDS``; ``sudo -n`` never prompts.
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -67,16 +68,20 @@ def _network_icc(name: str) -> str:
 def _compute() -> list[dict]:
     warnings: list[dict] = []
     if sudo_output_is_passwordless(_sudo_listing()):
-        warnings.append({
-            "id": "passwordless-sudo",
-            "severity": "high",
-            "message": (
-                "This account has passwordless sudo, so every agent and every terminal "
-                "session on this box runs as root. ShellTeam does not need it after the "
-                "install: remove the NOPASSWD rule (often /etc/sudoers.d/90-cloud-init-users, "
-                "edit with sudo visudo -f <file>), or keep it knowingly."
-            ),
-        })
+        if os.environ.get("PASSWORDLESS_SUDO_OK") == "1":
+            log.info("Security check passwordless-sudo: kept on purpose (PASSWORDLESS_SUDO_OK=1)")
+        else:
+            warnings.append({
+                "id": "passwordless-sudo",
+                "severity": "high",
+                "message": (
+                    "This account has passwordless sudo, so every agent and every terminal "
+                    "session on this box runs as root. ShellTeam does not need it after the "
+                    "install: remove the NOPASSWD rule (often /etc/sudoers.d/90-cloud-init-users, "
+                    "edit with sudo visudo -f <file>), or keep it on purpose with "
+                    "PASSWORDLESS_SUDO_OK=1 in .env."
+                ),
+            })
     nets = _steel_networks()
     if nets is not None:
         isolated = nets == [STEEL_NETWORK] and _network_icc(STEEL_NETWORK) == "false"

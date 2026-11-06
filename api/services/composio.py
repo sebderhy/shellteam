@@ -71,17 +71,33 @@ GOOGLESUPER_COVERED_SUBTOOLKITS = (
 )
 
 
-def _fetch_active_toolkit_slugs(user_id: str) -> set[str]:
-    """Return the set of toolkit slugs the user currently has ACTIVE connections for.
+def _fetch_active_connections(user_id: str) -> list[dict]:
+    """The user's ACTIVE connected accounts.
 
-    Returns an empty set if the Composio API is unreachable — the caller should
-    treat that as "no filtering" so container startup never blocks on Composio.
+    Returns [] if the Composio API is unreachable (logged): the session is then
+    built without filters or pins, so agent startup never blocks on Composio.
     """
     try:
-        return {c["toolkit"] for c in list_connections(user_id)}
+        return list_connections(user_id)
     except Exception:
         log.warning("Failed to list Composio connections for %s", user_id, exc_info=True)
-        return set()
+        return []
+
+
+def _pin_existing_connections(connections: list[dict]) -> tuple[dict, dict]:
+    """Toolkit -> auth config / connected account of the newest ACTIVE connection.
+
+    SHE-141: without these, a Tool Router session uses its OWN auth config per
+    toolkit, so it can't see accounts connected from the Apps tab: the agent was
+    sent to sign in to Google again while a working connection existed.
+    """
+    auth_configs: dict[str, str] = {}
+    accounts: dict[str, str] = {}
+    for conn in sorted(connections, key=lambda c: c.get("created_at") or ""):
+        if conn.get("auth_config_id") and conn.get("id"):
+            auth_configs[conn["toolkit"]] = conn["auth_config_id"]
+            accounts[conn["toolkit"]] = conn["id"]
+    return auth_configs, accounts
 
 
 def _subtoolkits_shadowed_by_googlesuper(connected: set[str]) -> list[str]:
@@ -101,7 +117,13 @@ def _build_session_kwargs(user_id: str) -> dict:
         "user_id": user_id,
         "manage_connections": {"enable": True, "wait_for_connections": True},
     }
-    shadowed = _subtoolkits_shadowed_by_googlesuper(_fetch_active_toolkit_slugs(user_id))
+    connections = _fetch_active_connections(user_id)
+    auth_configs, accounts = _pin_existing_connections(connections)
+    if auth_configs:
+        kwargs["auth_configs"] = auth_configs
+        kwargs["connected_accounts"] = accounts
+        log.info("Tool Router for %s: using existing connections for %s", user_id, sorted(accounts))
+    shadowed = _subtoolkits_shadowed_by_googlesuper({c["toolkit"] for c in connections})
     if shadowed:
         kwargs["toolkits"] = {"disable": shadowed}
         log.info("Tool Router for %s: disabling %s (shadowed by googlesuper)", user_id, shadowed)
@@ -166,6 +188,7 @@ def list_connections(user_id: str) -> list[dict]:
         {
             "id": item.id,
             "toolkit": item.toolkit.slug if hasattr(item.toolkit, "slug") else str(item.toolkit),
+            "auth_config_id": getattr(item.auth_config, "id", None),
             "status": item.status,
             "created_at": str(item.created_at) if item.created_at else None,
         }

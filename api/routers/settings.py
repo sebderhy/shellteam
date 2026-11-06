@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import get_current_user
 from api import config
-from api.services import dreaming, feature_keys, security_checks
+from api.services import dreaming, feature_keys, secrets_vault, security_checks
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -64,6 +64,52 @@ async def set_feature_key(
 # every timer tick, so flipping it here takes effect without any restart.
 
 AUTO_UPDATE_MODES = ("off", "daily", "weekly")
+
+
+class SecretRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    value: str = Field(..., min_length=1)
+
+
+@router.get("/secrets")
+async def get_secrets(user: dict = Depends(get_current_user)) -> dict:
+    """Vault names, last update and where each is used. Never values (SHE-135).
+    ``suggestions``: common keys with their usual name and where to get them."""
+    return {"secrets": await asyncio.to_thread(secrets_vault.status),
+            "suggestions": secrets_vault.SUGGESTIONS}
+
+
+@router.post("/secrets")
+async def set_secret(body: SecretRequest, user: dict = Depends(get_current_user)) -> dict:
+    """Store a secret and push it to every file/app/command that uses it."""
+    try:
+        results = await asyncio.to_thread(secrets_vault.set_secret, body.name, body.value)
+    except secrets_vault.SecretsError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"name": body.name, "results": results,
+            "secrets": await asyncio.to_thread(secrets_vault.status)}
+
+
+class RenameRequest(BaseModel):
+    to: str = Field(..., min_length=1)
+
+
+@router.post("/secrets/{name}/rename")
+async def rename_secret(name: str, body: RenameRequest, user: dict = Depends(get_current_user)) -> dict:
+    try:
+        await asyncio.to_thread(secrets_vault.rename_secret, name, body.to)
+    except secrets_vault.SecretsError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"secrets": await asyncio.to_thread(secrets_vault.status)}
+
+
+@router.delete("/secrets/{name}")
+async def delete_secret(name: str, user: dict = Depends(get_current_user)) -> dict:
+    try:
+        await asyncio.to_thread(secrets_vault.delete_secret, name)
+    except secrets_vault.SecretsError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"secrets": await asyncio.to_thread(secrets_vault.status)}
 
 
 def _update_state_path() -> Path:

@@ -115,6 +115,7 @@ import {
   jsonResponse as sharedJsonResponse,
 } from "../shared/media-handlers.mjs";
 import { internalCallerAuthorized } from "./lib/internal-auth.mjs";
+import { maskSocket } from "./lib/secret-mask.mjs";
 import { createLiveDelegationBroker } from "./lib/delegation-broker.mjs";
 import { collectUsageCached } from "./lib/usage.mjs";
 import { aiAvailability, startAiAvailabilityPolling } from "./lib/ai-availability.mjs";
@@ -846,6 +847,7 @@ server.on("upgrade", (req, socket, head) => {
 // =============================================================
 
 chatWSS.on("connection", (ws, req) => {
+  maskSocket(ws); // SHE-135: vault values never reach a browser
   const url = new URL(req.url, "http://localhost");
   ws._clientType = url.searchParams.get("client") === "ma" ? "broker" : "browser";
   ws._brokerSlots = new Set();

@@ -413,6 +413,18 @@ class TestPasswordlessSudoWarning:
         ids = [w["id"] for w in r.json()["warnings"]]
         assert "passwordless-sudo" in ids
 
+    def test_owner_can_keep_passwordless_sudo_knowingly(self, monkeypatch):
+        """PASSWORDLESS_SUDO_OK=1 records the owner's choice: no banner, one
+        INFO line, so a box that keeps sudo on purpose isn't red forever."""
+        from api.services import security_checks
+
+        monkeypatch.setenv("PASSWORDLESS_SUDO_OK", "1")
+        with patch.object(security_checks, "_sudo_listing", return_value="    (ALL) NOPASSWD: ALL\n"), patch.object(
+            security_checks, "_steel_networks", return_value=None
+        ):
+            ids = [w["id"] for w in security_checks.refresh()]
+        assert "passwordless-sudo" not in ids
+
     def test_steel_on_the_default_bridge_is_a_warning(self):
         from api.services import security_checks
 

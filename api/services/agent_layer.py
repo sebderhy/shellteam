@@ -52,11 +52,16 @@ API_BASE = f"http://127.0.0.1:{os.environ.get('API_PORT', '8000')}"
 
 PLUGIN_NAME = "shellteam"
 
+# The vault CLI agents call by absolute path (SHE-135): no PATH change, so the
+# purity gate holds and nothing is installed outside the repo.
+SECRETS_CLI = Path(__file__).resolve().parents[2] / "bin" / "shellteam-secrets"
+
 
 def _hydrate(text: str, username: str) -> str:
     """Substitutions applied to every rendered template (persona + skills)."""
     text = text.replace("{username}", username)
     text = text.replace("{api_base}", API_BASE)
+    text = text.replace("{shellteam_secrets}", str(SECRETS_CLI))
     # Legacy Cloud literal — rewrite so stale templates still work natively.
     return text.replace("http://host.docker.internal:8000", API_BASE)
 

@@ -28,6 +28,7 @@ os.environ["API_PORT"] = "8000"
 os.environ["AI_CHAT_PORT"] = "3456"
 os.environ["RUNTIME"] = "native"  # the OSS default; docker-backend tests import containers directly
 os.environ["MODULES"] = ""  # pure core — tests opt into modules explicitly (purity gate)
+os.environ["PASSWORDLESS_SUDO_OK"] = ""  # the dev box sets it; tests assert the warning
 
 # Single-user (OSS) owner identity. Pinning OWNER_TOKEN here means the suite
 # exercises the real token gate (auth ON), and pinning the id/email/username to

@@ -135,6 +135,27 @@ cover the workflow around it.)
   abstractions for imagined future needs — a little duplication beats the
   wrong abstraction.
 
+<!-- BEGIN:secrets -->
+## API keys and secrets
+
+The owner keeps their API keys in ShellTeam's vault (dashboard: Settings ->
+Secrets). Use them **by name** with `{shellteam_secrets}`, so values never
+appear in this chat:
+
+- `{shellteam_secrets} list` shows the names and where each is used.
+- `{shellteam_secrets} write ./.env STRIPE_SECRET_KEY DB_URL=SUPABASE_DB_URL --restart app-myapp`
+  writes the keys into the app's env file (VAR=SECRET renames). Pass `--restart`
+  with the app's systemd unit. When the owner replaces a key, every file is
+  rewritten and the unit restarts on its own.
+- `{shellteam_secrets} run VERCEL_TOKEN --remember -- vercel env add ...` runs one
+  command with the keys in its environment and masks them in its output.
+  `--remember` re-runs it whenever a key changes (hosting dashboards, CI secrets).
+
+Never print a secret: don't `cat`, `grep` or `echo` env files or vault values,
+and never ask the owner to paste a key into the chat. If a key is missing, ask
+them to add it in Settings -> Secrets under the name you need.
+<!-- END:secrets -->
+
 <!-- BEGIN:browser -->
 ## Browser
 

@@ -5,6 +5,41 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.49] - 2026-11-06
+
+### Added
+- **Secrets vault (Settings -> Secrets).** Enter each API key once. Agents
+  put keys where your apps need them by name (`bin/shellteam-secrets write`),
+  so the values never show in a chat. Replacing a key rewrites every file that
+  holds it, restarts the apps registered with it, and re-runs remembered
+  commands (e.g. pushing the key to a hosting CLI). The cockpit also hides any
+  vault value that slips into a chat as `[secret NAME]`.
+- **Common keys, with where to get them.** Settings -> Secrets lists about 30
+  common services (OpenAI, Anthropic, Stripe, Supabase, Resend, GitHub,
+  Vercel…) with the usual key name, a hint on what the key looks like and a
+  direct link to the page where you create it. When an agent asks for a
+  missing key, it gets the same link to pass on.
+- **Key names autocomplete.** Typing in the name box ("supa", "claude",
+  "stripe") offers the usual names; arrow keys and Enter pick one.
+- **Wrong-name check.** A well-known name holding a different kind of key
+  (e.g. a Supabase account token `sbp_` saved as the service-role key) shows a
+  warning with a one-click Rename. Files that use the key keep working.
+- **Paste first, we guess the name.** Paste a key and Secrets suggests its
+  name from the key's shape (`sbp_` -> `SUPABASE_ACCESS_TOKEN`, `AIza` ->
+  Gemini or Google Maps). One match fills the name; several show as choices.
+  The guess happens in your browser; the key is sent only when you click Add.
+- **`PASSWORDLESS_SUDO_OK=1` hides the passwordless-sudo warning** on a box
+  that keeps it on purpose, so the dashboard isn't red forever.
+
+### Fixed
+- **Apps connected in the Apps tab now work for agents.** Agents' Composio
+  session uses the connections you made in the Apps tab. Before, it used its
+  own setup, missed them, and asked you to sign in again (e.g. Gmail showed
+  Connected but the agent couldn't read mail).
+- **Composio key field names the right key.** Pasting a Composio Connect
+  (`ck_`) or user (`uak_`) key now says ShellTeam needs a project key
+  (`ak_`) and where to find it, instead of "rejected (HTTP 401)".
+
 ## [0.1.48] - 2026-11-05
 
 ### Added

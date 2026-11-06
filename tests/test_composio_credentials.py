@@ -114,6 +114,30 @@ class TestBuildSessionKwargs:
         assert "toolkits" not in kwargs
 
 
+class TestSessionUsesExistingConnections:
+    """SHE-141: the Apps tab said Google was connected, but the agents' session
+    used its own auth config, missed the account and asked for a new sign-in."""
+
+    @patch("api.services.composio.list_connections")
+    def test_session_is_pinned_to_the_newest_active_connection(self, mock_list):
+        mock_list.return_value = [
+            {"toolkit": "googlesuper", "id": "ca_old", "auth_config_id": "ac_old", "created_at": "2026-11-01"},
+            {"toolkit": "googlesuper", "id": "ca_new", "auth_config_id": "ac_new", "created_at": "2026-11-05"},
+            {"toolkit": "slack", "id": "ca_s", "auth_config_id": "ac_s", "created_at": "2026-11-02"},
+        ]
+        from api.services.composio import _build_session_kwargs
+        kwargs = _build_session_kwargs("owner")
+        assert kwargs["auth_configs"] == {"googlesuper": "ac_new", "slack": "ac_s"}
+        assert kwargs["connected_accounts"] == {"googlesuper": "ca_new", "slack": "ca_s"}
+
+    @patch("api.services.composio.list_connections")
+    def test_no_connections_means_no_pins(self, mock_list):
+        mock_list.return_value = []
+        from api.services.composio import _build_session_kwargs
+        kwargs = _build_session_kwargs("owner")
+        assert "auth_configs" not in kwargs and "connected_accounts" not in kwargs
+
+
 class TestGenerateMcpConfig:
     @patch("api.services.composio.list_connections")
     @patch("api.services.composio._get_client")

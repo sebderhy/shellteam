@@ -80,7 +80,23 @@ async def validate_elevenlabs(key: str) -> str | None:
     )
 
 
+# Composio issues several key kinds; only a project key (ak_) drives the SDK and
+# REST API the composio module uses. The others are valid keys for other doors,
+# so "rejected" would send the owner looking for a typo (SHE-137).
+COMPOSIO_WRONG_KEY_KINDS = {
+    "ck_": "a Composio Connect key (it only works for Composio's own hosted assistant link)",
+    "uak_": "a Composio user key (from `composio login`)",
+}
+COMPOSIO_PROJECT_KEY_HELP = (
+    "ShellTeam needs a project API key, which starts with ak_. In the Composio "
+    "dashboard: switch to Platform, pick your project, then Settings -> API Keys."
+)
+
+
 async def validate_composio(key: str) -> str | None:
+    for prefix, kind in COMPOSIO_WRONG_KEY_KINDS.items():
+        if key.startswith(prefix):
+            return f"This is {kind}. {COMPOSIO_PROJECT_KEY_HELP}"
     # Same REST base + x-api-key auth the composio SDK and
     # composio.get_required_fields() use; /toolkits is a cheap authenticated
     # list (verified: 401 without a valid key).
@@ -143,8 +159,9 @@ FEATURE_KEYS: dict[str, FeatureKey] = {
         validate=validate_composio,
         needs_restart=True,
         module="composio",
-        hint="Unlocks app connections (Gmail, Slack, Notion, …) for agents.",
-        hint_url="https://composio.dev",
+        hint="Unlocks app connections (Gmail, Slack, Notion, …) for agents. "
+        "Use a project API key (starts with ak_): Platform, your project, Settings -> API Keys.",
+        hint_url="https://dashboard.composio.dev",
     ),
 }
 

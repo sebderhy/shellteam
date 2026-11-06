@@ -153,6 +153,17 @@ class TestComposioModuleToggle:
         assert resp.status_code == 400
         assert env_file.read_text() == before
 
+    @respx.mock  # no routes: any outbound call would fail the test
+    @pytest.mark.parametrize("key,kind", [("ck_LWQnIpiLX6MF", "Composio Connect key"), ("uak_abc123def", "user key")])
+    def test_other_composio_key_kinds_say_which_key_to_get(self, client, auth_header, env_file, key, kind):
+        # SHE-137: a valid Connect key used to come back as "rejected (HTTP 401)".
+        before = env_file.read_text()
+        resp = client.post(ENDPOINT, headers=auth_header, json={"name": "composio", "key": key})
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert kind in detail and "ak_" in detail and "rejected" not in detail
+        assert env_file.read_text() == before
+
     @respx.mock
     def test_clear_removes_module_again(self, client, auth_header, env_file, monkeypatch):
         monkeypatch.setenv("COMPOSIO_API_KEY", "comp-old")
