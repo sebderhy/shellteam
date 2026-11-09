@@ -26,14 +26,14 @@ import { contextLimitForId } from "../lib/model-catalog.mjs";
 // With the stale window cleared, contextWindowForSlot falls back to the shared
 // catalog window. Pin that Fable 5 genuinely resolves to 1M (not the 200k/258k
 // defaults) so the meter denominator is right.
-test("SHE-92: claude-fable-5-1 resolves to its 1M catalog window", () => {
-  assert.equal(contextLimitForId("claude-fable-5-1"), 1_000_000);
+test("SHE-92: claude-fable-5-2 resolves to its 1M catalog window", () => {
+  assert.equal(contextLimitForId("claude-fable-5-2"), 1_000_000);
 });
 
 test("SHE-92: a Codex operative window is NOT what a Claude model resolves to", () => {
   // The stale value that used to poison the Fable meter.
-  assert.notEqual(contextLimitForId("claude-fable-5-1"), 258_400);
-  assert.notEqual(contextLimitForId("claude-fable-5-1"), 200_000);
+  assert.notEqual(contextLimitForId("claude-fable-5-2"), 258_400);
+  assert.notEqual(contextLimitForId("claude-fable-5-2"), 200_000);
 });
 
 // --- Source contract: the per-model window is cleared on model change ---------

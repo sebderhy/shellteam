@@ -3,6 +3,7 @@ check sorts the record into unusual/normal, and the command log is wired so it
 records logins other than ShellTeam's own."""
 
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -115,8 +116,8 @@ def test_the_command_log_is_read_by_session(monkeypatch):
     sw._save_state({"ssh_networks": [], "scheduled": []})
     s = sw.summarize(1762426000, update_known=True)
     assert "SSH login as seb from 203.0.113.7 at" in s["unusual"][0] and "1 command(s) (bash)" in s["unusual"][0]
+    assert "1 as root (sudo), e.g. `sudo id`" in s["unusual"][0]  # root commands belong to their login
     assert any("new-job" in u and "not seen before" in u for u in s["unusual"])
-    assert "Root command in the ssh session of seb: `sudo id`" in s["normal"]
     assert any("1 root command(s) run by your agents" in n for n in s["normal"]) is False  # `sudo -n -l` is skipped
     assert not any("rule" in line for line in s["unusual"] + s["normal"])  # config changes aren't commands
     again = sw.summarize(1762426000)
@@ -144,3 +145,69 @@ def test_install_wires_the_command_log_and_the_daily_check():
     timer = (ROOT / "deploy/systemd/shellteam-security.timer").read_text()
     assert "Persistent=true" in timer
     assert "--notify" in (ROOT / "deploy/systemd/shellteam-security.service").read_text()
+
+
+def test_jobs_scheduled_in_the_first_week_are_learned_not_flagged(monkeypatch):
+    """2026-11-07: the first morning email flagged the owner's own nightly cron
+    jobs, because the baseline was taken at midday before they had ever run."""
+    monkeypatch.setattr(sw.subprocess, "run", _fake_ausearch)
+    monkeypatch.setattr(sw, "journal_events", lambda since: [])
+    monkeypatch.setattr(sw, "command_log_enabled", lambda: True)
+    monkeypatch.setattr(sw, "shellteam_session", lambda: "7437")
+    monkeypatch.setattr(sw, "command_log_started", lambda: 0.0)
+    monkeypatch.setattr(sw, "past_signin_networks", lambda: set())
+    monkeypatch.setattr(sw, "ssh_logins_from_last", lambda since: [])
+    sw._save_state({"ssh_networks": ["203.0.*.*"], "scheduled": [], "learn_scheduled_until": time.time() + 3600})
+    s = sw.summarize(1762426000, update_known=True)
+    assert not any("new-job" in u for u in s["unusual"])
+    assert any("Learned a scheduled job" in n and "new-job" in n for n in s["normal"])
+    sw._save_state({**sw._load_state(), "learn_scheduled_until": 0, "scheduled": []})
+    assert any("new-job" in u for u in sw.summarize(1762426000)["unusual"])  # after the week: flagged
+
+
+def test_the_first_check_opens_the_learning_week(monkeypatch):
+    monkeypatch.setattr(sw, "journal_events", lambda since: [])
+    monkeypatch.setattr(sw, "command_log_enabled", lambda: False)
+    monkeypatch.setattr(sw, "ssh_logins_from_last", lambda since: [])
+    monkeypatch.setattr(sw, "past_signin_networks", lambda: set())
+    sw.summarize(0, update_known=True)
+    assert sw._load_state()["learn_scheduled_until"] > time.time() + 7 * 86400
+
+
+def _ssh_then_sudo(n_logins):
+    """n SSH logins from one address, each running sudo, the way an agent on a
+    laptop works (one SSH connection per command)."""
+    starts, roots = [], []
+    for i in range(n_logins):
+        ses, ts = 50000 + i, 1762426600 + 60 * i
+        starts.append(f'type=USER_START msg=audit({ts}.000:{9000 + 3 * i}): pid=1 uid=0 auid=1001 ses={ses} msg=\'op=PAM:session_open '
+                      f'acct="serge" exe="/usr/sbin/sshd" hostname=203.0.113.9 addr=203.0.113.9 terminal=ssh res=success\'')
+        starts.append(f'type=USER_START msg=audit({ts}.500:{9001 + 3 * i}): pid=2 uid=0 auid=1001 ses={ses} msg=\'op=PAM:session_open '
+                      f'acct="root" exe="/usr/bin/sudo" hostname=? addr=? terminal=? res=success\'')
+        roots += [f'type=SYSCALL msg=audit({ts}.400:{9002 + 3 * i}): arch=c000003e syscall=59 success=yes exit=0 auid=1001 uid=1001 '
+                  f'ses={ses} comm="sudo" exe="/usr/bin/sudo" key="shellteam-root"',
+                  f'type=EXECVE msg=audit({ts}.400:{9002 + 3 * i}): argc=2 a0="sudo"',
+                  f'type=PROCTITLE msg=audit({ts}.400:{9002 + 3 * i}): proctitle=7375646F006964']
+    def run(cmd, **kw):
+        out = "\n".join(starts) if "USER_START" in cmd else "\n".join(roots) if "shellteam-root" in cmd else ""
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+    return run
+
+
+def test_sudo_from_an_ssh_login_is_reported_as_that_login(monkeypatch):
+    """2026-11-08: Serge's laptop agent logged in 23 times and ran sudo; the
+    email listed ~50 lines 'Root command in the sudo session of root' and
+    '0 command(s)' on every SSH line. It looked like an unknown root session."""
+    monkeypatch.setattr(sw.subprocess, "run", _ssh_then_sudo(3))
+    monkeypatch.setattr(sw, "journal_events", lambda since: [])
+    monkeypatch.setattr(sw, "command_log_enabled", lambda: True)
+    monkeypatch.setattr(sw, "shellteam_session", lambda: "7437")
+    monkeypatch.setattr(sw, "command_log_started", lambda: 0.0)
+    sw._save_state({"ssh_networks": ["203.0.*.*"], "scheduled": []})
+    s = sw.summarize(1762426000)
+    lines = s["normal"] + s["unusual"]
+    assert s["unusual"] == []
+    assert not any("session of root" in line for line in lines)
+    ssh = [line for line in lines if "SSH login" in line]
+    assert len(ssh) == 1 and ssh[0].startswith("3 SSH logins as serge from 203.0.113.9 between")
+    assert "3 as root (sudo), e.g. `sudo id`" in ssh[0]

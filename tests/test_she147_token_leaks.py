@@ -68,3 +68,14 @@ def test_agents_never_inherit_the_master(monkeypatch):
     assert "OWNER_TOKEN" not in child_env()
     assert "OWNER_TOKEN" not in secrets_vault.command_env([], {"secrets": {}, "uses": []})
     assert os.environ["OWNER_TOKEN"] == "MASTER_VALUE_123456"  # the API keeps it
+
+
+def test_access_log_redacts_any_credential_named_parameter():
+    """SHE-152: `gsig=` printed in full because the pattern needed a word boundary."""
+    rec = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                            ("203.0.113.7", "GET", "/guest?guest=a&gsig=SIG1&exp=9&api_key=K2&access_token=T3",
+                             "1.1", 401), None)
+    _RedactSecretQueries().filter(rec)
+    line = rec.getMessage()
+    assert not any(s in line for s in ("SIG1", "K2", "T3")), line
+    assert "guest=a&gsig=[redacted]&exp=9" in line

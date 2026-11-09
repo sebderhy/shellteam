@@ -35,7 +35,9 @@ from api.services.auth import origin_is_trusted  # noqa: E402
 log = logging.getLogger(__name__)
 
 
-_SECRET_QUERY_RE = re.compile(r"(?i)\b(token|sig|code|key)=[^&\s\"]+")
+# Any parameter NAME ending in one of these (token, sig, gsig, api_key, ...) is
+# a credential. Suffix match, not a word boundary: `gsig=` slipped through (SHE-152).
+_SECRET_QUERY_RE = re.compile(r"(?i)\b([a-z_]*(?:token|sig|code|key))=[^&\s\"]+")
 
 
 class _RedactSecretQueries(logging.Filter):

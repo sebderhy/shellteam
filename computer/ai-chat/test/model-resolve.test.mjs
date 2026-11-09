@@ -19,7 +19,7 @@ test("orphaned Claude model resolves to the Claude default", () => {
 
 test("known models pass through untouched (by id and by cli form)", () => {
   // catalog id
-  assert.equal(resolveModelId("claude-fable-5-1"), "claude-fable-5-1");
+  assert.equal(resolveModelId("claude-fable-5-2"), "claude-fable-5-2");
   assert.equal(resolveModelId("claude-sonnet-5-5"), "claude-sonnet-5-5");
   // the current default is itself a known model
   assert.equal(resolveModelId(DEFAULT_CLAUDE_MODEL), DEFAULT_CLAUDE_MODEL);
@@ -40,6 +40,9 @@ test("a retired model moves to the model that replaced it, not the family flagsh
   assert.equal(isKnownModel("claude-haiku-4-5-20251001"), false);
   assert.equal(resolveModelId("claude-haiku-4-5-20251001"), "claude-haiku-5-5");
   assert.equal(resolveModelId("claude-haiku-4-5"), "claude-haiku-5-5");
+  // Fable 5.1 -> Fable 5.2 (SHE-154): the flagship tab stays on the flagship.
+  assert.equal(isKnownModel("claude-fable-5-1"), false);
+  assert.equal(resolveModelId("claude-fable-5-1"), "claude-fable-5-2");
 });
 
 test("orphans resolve within their own family, not always Claude", () => {

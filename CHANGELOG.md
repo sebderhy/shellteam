@@ -5,6 +5,24 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.53] - 2026-11-09
+
+### Added
+- **Fable 5.2 replaces Fable 5.1** as the Claude flagship (ID
+  `claude-fable-5-2`, verified against the live Models API; 1M context, 128K
+  output, $8/$40 per 1M tokens). Tabs on Fable 5.1 move to 5.2 on their own.
+  Claude Code 2.1.319 flags the name as unknown but answers; 2.1.321 knows it
+  (`claude update`).
+
+### Fixed
+- Rotating the owner token now tells you that every guest link stopped
+  working, with the call to mint new ones. Guest link signatures (`gsig=`) are
+  no longer written in full to the access log.
+- The daily security check spends its first week learning your scheduled jobs
+  instead of flagging your own nightly cron as new.
+- sudo is reported under the SSH login it came from, one line per person and
+  address, instead of dozens of "sudo session of root" lines.
+
 ## [0.1.52] - 2026-11-06
 
 ### Added

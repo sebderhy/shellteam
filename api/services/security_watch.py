@@ -272,6 +272,34 @@ def audit_logins(since: float) -> list[dict]:
     return rows
 
 
+def session_origins(logins: list[dict]) -> dict[str, dict]:
+    """Where each audit session started. sudo and su open a record of their own
+    inside the session they run in, so only the first non-sudo record counts:
+    otherwise an SSH user's `sudo cat x` reads as "the sudo session of root"."""
+    origin: dict[str, dict] = {}
+    for lg in sorted(logins, key=lambda lg: lg["ts"]):
+        if lg["via"] not in ("sudo", "su"):
+            origin.setdefault(lg["ses"], lg)
+    return origin
+
+
+def _sample(cmds: list[dict], n: int = 3) -> str:
+    return "; ".join(f"`{c}`" for c in sorted({c["cmd"][:80] for c in cmds})[:n])
+
+
+def _ssh_group_line(user: str, ip: str, group: list[dict], by_ses: dict, root_by_ses: dict) -> str:
+    cmds = [c for lg in group for c in by_ses.get(lg["ses"], [])]
+    roots = [c for lg in group for c in root_by_ses.get(lg["ses"], [])]
+    when = lambda lg: time.strftime("%H:%M", time.localtime(lg["ts"]))
+    head = (f"SSH login as {user} from {ip} at {when(group[0])}" if len(group) == 1 else
+            f"{len(group)} SSH logins as {user} from {ip} between {when(group[0])} and {when(group[-1])}")
+    progs = Counter(Path(c["exe"]).name for c in cmds).most_common(4)
+    line = head + f", {len(cmds)} command(s)" + (f" ({', '.join(p for p, _ in progs)})" if progs else "")
+    if roots:
+        line += f", {len(roots)} as root (sudo), e.g. {_sample(roots)}"
+    return line
+
+
 _SUDO_LIST_RE = re.compile(r"^sudo( -n)? -l$")  # lists permissions, runs nothing (ShellTeam's own health probe)
 
 
@@ -301,6 +329,11 @@ def shellteam_session() -> str | None:
     if not pid or pid == "0":
         return None
     return Path(f"/proc/{pid}/sessionid").read_text().strip()
+
+
+#: How long after the first check new scheduled jobs are learned, not flagged.
+#: A week plus a day covers weekly jobs.
+SCHEDULED_LEARNING_SECONDS = 8 * 86400
 
 
 def command_log_started() -> float | None:
@@ -368,30 +401,33 @@ def summarize(since: float, update_known: bool = False) -> dict:
         # open): find where each one started up to a week back.
         all_logins = audit_logins(since - 7 * 86400)
         logins = [lg for lg in all_logins if lg["ts"] >= since]
-        origin = {lg["ses"]: lg for lg in all_logins}
+        origin = session_origins(all_logins)
         commands = audit_commands(since)
-        by_ses = defaultdict(list)
+        by_ses, root_by_ses = defaultdict(list), defaultdict(list)
         for c in commands:
-            if c["key"] == "shellteam-login":
-                by_ses[c["ses"]].append(c)
+            (by_ses if c["key"] == "shellteam-login" else root_by_ses)[c["ses"]].append(c)
+        ssh_groups = defaultdict(list)  # an agent on a laptop logs in once per command: one line per person+address
         for lg in logins:
-            if lg["via"] == "ssh" and lg["ok"]:
-                cmds = by_ses.get(lg["ses"], [])
-                progs = Counter(Path(c["exe"]).name for c in cmds).most_common(4)
-                line = (f"SSH login as {lg['user']} from {lg['ip']} at {time.strftime('%H:%M', time.localtime(lg['ts']))}"
-                        f", {len(cmds)} command(s)" + (f" ({', '.join(p for p, _ in progs)})" if progs else ""))
-                if lg["ip"] and network_of(lg["ip"]) not in known_ssh:
-                    new_ssh.add(network_of(lg["ip"]))
-                    unusual.append(line + " (new network)")
-                else:
-                    normal.append(line)
+            if lg["via"] == "ssh" and lg["ok"] and origin.get(lg["ses"]) is lg:
+                ssh_groups[(lg["user"], lg["ip"])].append(lg)
+        for (user, ip), group in ssh_groups.items():
+            line = _ssh_group_line(user, ip, group, by_ses, root_by_ses)
+            if ip and network_of(ip) not in known_ssh:
+                new_ssh.add(network_of(ip))
+                unusual.append(line + " (new network)")
+            else:
+                normal.append(line)
         failed_ssh = [lg for lg in logins if lg["via"] == "ssh" and not lg["ok"]]
         if failed_ssh:
             normal.append(f"{len(failed_ssh)} failed SSH login attempt(s)")
         scheduled = {c["cmd"][:160] for lg in logins if lg["via"] == "cron" for c in by_ses.get(lg["ses"], [])}
+        learning = time.time() < state.get("learn_scheduled_until", 0)
         for cmd in sorted(scheduled - known_scheduled):
             new_scheduled.add(cmd)
-            unusual.append(f"A scheduled job ran a command not seen before: `{cmd}`")
+            if learning:  # nightly jobs haven't run yet when the baseline is taken
+                normal.append(f"Learned a scheduled job (first day of the command log): `{cmd}`")
+            else:
+                unusual.append(f"A scheduled job ran a command not seen before: `{cmd}`")
         if scheduled & known_scheduled:
             normal.append(f"{len(scheduled & known_scheduled)} known scheduled command(s) ran")
         ours = shellteam_session()
@@ -420,14 +456,16 @@ def summarize(since: float, update_known: bool = False) -> dict:
         if mine:
             sample = "; ".join(sorted({c["cmd"][:60] for c in mine})[:3])
             normal.append(f"{len(mine)} root command(s) run by your agents or ShellTeam (sudo), e.g. {sample}")
-        for c in roots:
-            if c["ses"] == ours:
+        grouped = {lg["ses"] for g in ssh_groups.values() for lg in g}  # already counted on their login line
+        for ses, cs in root_by_ses.items():
+            if ses == ours or ses in grouped:
                 continue
-            lg = origin.get(c["ses"])
+            lg = origin.get(ses)
             if lg is None:
-                unusual.append(f"Root command from a session with no known start: `{c['cmd'][:120]}`")
+                unusual += [f"Root command from a session with no known start: `{c['cmd'][:120]}`" for c in cs]
             else:
-                normal.append(f"Root command in the {lg['via']} session of {lg['user']}: `{c['cmd'][:120]}`")
+                normal.append(f"{len(cs)} root command(s) in the {lg['via']} session of {lg['user']}"
+                              f"{' from ' + lg['ip'] if lg['ip'] else ''}, e.g. {_sample(cs)}")
     else:
         for lg in ssh_logins_from_last(since):
             line = f"SSH login as {lg['user']} from {lg['ip']} at {lg['when']}"
@@ -447,6 +485,9 @@ def summarize(since: float, update_known: bool = False) -> dict:
         new_ssh |= {network_of(lg["ip"]) for lg in ssh_logins_from_last(0) if lg["ip"]}
         # ...and every network the dashboard was signed in from (60 days of journal).
         state["signin_networks"] = sorted(set(state.get("signin_networks", [])) | past_signin_networks())
+        # Scheduled jobs run nightly or weekly, so the first check rarely sees
+        # them: anything scheduled in the next 8 days joins the baseline quietly.
+        state["learn_scheduled_until"] = time.time() + SCHEDULED_LEARNING_SECONDS
         normal.append("First check on this box: today's addresses and scheduled jobs are now the known baseline.")
     if update_known and (new_ssh or new_scheduled or first_run):
         state["ssh_networks"] = sorted(known_ssh | new_ssh)
