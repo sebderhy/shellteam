@@ -202,6 +202,14 @@ function renameLocalSlot(fromId, toId) {
     renderSessionTabs();
 }
 
+// A link an agent wrote is followed only to the web, mail, or a path on this
+// box. A deny-list of schemes missed "java\tscript:" (browsers drop the tab).
+function isSafeLinkHref(href) {
+    const h = String(href || '').replace(/[\u0000-\u0020]/g, '');
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(h);
+    return !scheme || ['http', 'https', 'mailto'].includes(scheme[1].toLowerCase());
+}
+
 // --- Box identity (real $HOME + where files get URLs) ---
 // Served by /api/box. HOME holds a placeholder for the few ms until the boot
 // fetch lands (it resolves before the socket connects — see the Boot section).
@@ -447,10 +455,7 @@ marked.use({
         },
         link({ href, title, tokens }) {
             const text = this.parser.parseInline(tokens);
-            const lower = (href || '').toLowerCase().trim();
-            if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
-                return `<code>${text}</code>`;
-            }
+            if (!isSafeLinkHref(href)) return `<code>${text}</code>`;
             const titleAttr = title ? ` title="${escHtml(title)}"` : '';
             return `<a href="${escHtml(href)}" target="_blank" rel="noopener"${titleAttr}>${text}</a>`;
         }
@@ -522,8 +527,11 @@ const ReportPanel = {
         if (this.isBoxApp(u, here)) return true;
         if (!/\.html?$/i.test(u.pathname)) return false;
         if (h === 'localhost' || h.endsWith('.localhost') || h === '127.0.0.1') return true;
-        const base = (host) => host.split('.').slice(-2).join('.');
-        return here.includes('.') && base(h) === base(here);
+        // This box's own domain, not every box under the same parent domain
+        // (another customer's page on *.shellteam.sh opened in the panel).
+        const labels = here.split('.');
+        const appDomain = labels.length >= 3 ? labels.slice(1).join('.') : here;
+        return here.includes('.') && (h === appDomain || h.endsWith('.' + appDomain));
     },
 
     // An app the agent serves on this box: `<name>.<APP_DOMAIN>` or
@@ -2924,7 +2932,10 @@ async function copyToClipboard(text) {
 // in the quote tray as a pointer the agent can act on. Parent frame only.
 window.addEventListener('message', (e) => {
     const d = e.data;
-    if (e.source !== window.parent || !d || d.source !== 'shellteam-dashboard') return;
+    // From the dashboard itself: a page that framed the cockpit is also
+    // "the parent" (SHE-162).
+    if (e.source !== window.parent || e.origin !== fileBaseUrl()) return;
+    if (!d || d.source !== 'shellteam-dashboard') return;
     if (d.kind === 'report-comment') window.QuoteReview?.addFromReport(d);
 });
 

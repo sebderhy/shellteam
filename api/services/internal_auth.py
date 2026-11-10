@@ -22,8 +22,15 @@ _SECRET = os.environ.get("SHELLTEAM_AI_TOKEN", "").encode()
 
 
 def make_token(user_id: str) -> str:
-    """Derive a per-container token from the master secret + user_id."""
-    return hmac.new(_SECRET, user_id.encode(), hashlib.sha256).hexdigest()
+    """Derive a per-container token from the master secret + user_id.
+
+    The ``user-v1:`` prefix keeps this family apart from the scoped tokens
+    below (``notify-v1``, ``ship:<guest>``, ...). They were all a bare HMAC of a
+    string, and the user id comes from a request header: a guest's notify
+    token sent with ``X-Shellteam-User-Id: notify-v1`` passed as a full
+    internal credential (SHE-164).
+    """
+    return hmac.new(_SECRET, b"user-v1:" + user_id.encode(), hashlib.sha256).hexdigest()
 
 
 def verify_token(token: str, user_id: str) -> bool:

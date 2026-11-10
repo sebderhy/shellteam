@@ -2532,9 +2532,11 @@
             function onReportMessage(d) {
                 if (d.kind === 'review-ready') {
                     commentBtn.hidden = editBtn.hidden = false;
-                } else if (d.kind === 'review-pick') {
+                // The page in the panel is not trusted: it gets a pick or an
+                // edit through only while the owner has that mode switched on.
+                } else if (d.kind === 'review-pick' && reviewMode === 'comment') {
                     sendToChat(d);
-                } else if (d.kind === 'review-edit') {
+                } else if (d.kind === 'review-edit' && reviewMode === 'edit') {
                     saveTextEdit(d);
                 } else if (d.kind === 'review-mode') {
                     setReviewMode('off');

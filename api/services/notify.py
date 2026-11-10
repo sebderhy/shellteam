@@ -64,15 +64,17 @@ async def send_notification(title: str, body: str, url: str | None = None) -> di
 async def _send_telegram(title: str, body: str, url: str | None) -> dict:
     token = os.environ["NOTIFY_TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["NOTIFY_TELEGRAM_CHAT_ID"]
-    text = f"*{title}*\n{body}"
+    # Plain text, no parse_mode: with Markdown, Telegram rejects (400) any
+    # message holding a lone "_" or "*", and security alerts name OWNER_TOKEN,
+    # commands and branch names. Those alerts never arrived (SHE-164).
+    text = f"{title}\n{body}"
     if url:
         text += f"\n{url}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown",
-                      "disable_web_page_preview": True},
+                json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
             )
         if resp.status_code == 200:
             log.info("notify: sent via Telegram (%s)", title)

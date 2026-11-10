@@ -117,8 +117,36 @@ cd "$REPO"
     fail "working tree has local changes - refusing to update (commit or stash them)"
 git fetch --tags --quiet origin || fail "git fetch failed (network or remote problem)"
 
-TAG="$(git tag -l 'v*' --sort=-version:refname | head -1)"
-[ -n "$TAG" ] || fail "no v* release tags found on the remote"
+# Only a release signed by ShellTeam's release key is installed (SHE-148).
+# Tags come from GitHub; without this, anyone who got push access there (a
+# stolen token) could push v9.9.9 and run code on every auto-updating box.
+# The trusted signers come from the version ALREADY installed (HEAD), never
+# from what was just fetched, so a forged release can't vouch for itself.
+SIGNERS="$(mktemp)"; trap 'rm -f "$SHELLTEAM_UPDATE_REEXEC" "$SIGNERS"' EXIT
+
+# A release is the tag ref vX whose signed tag object ALSO says "tag vX". The
+# signature covers that inner name, not the ref: without the comparison, the
+# signed v0.1.50 object re-pushed as v9.9.9 verified, and boxes went back to
+# v0.1.50 and stayed there (SHE-161).
+is_release() { # <tag>
+    [ "$(git cat-file tag "refs/tags/$1" 2>/dev/null | sed -n '1,/^$/s/^tag //p')" = "$1" ] \
+        && git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$SIGNERS" verify-tag "$1" >/dev/null 2>&1
+}
+
+TAG=""
+if git show "HEAD:deploy/release-signers" >"$SIGNERS" 2>/dev/null; then
+    # The highest tag that IS a release: a forged or unsigned higher tag is
+    # skipped out loud instead of blocking every later update.
+    for candidate in $(git tag -l 'v*' --sort=-version:refname); do
+        if is_release "$candidate"; then TAG="$candidate"; break; fi
+        log "WARNING: ignoring tag $candidate: not a release signed by a ShellTeam release key (deploy/release-signers)." >&2
+    done
+    [ -n "$TAG" ] || fail "no release tag signed by a ShellTeam release key (deploy/release-signers) found on the remote"
+else
+    TAG="$(git tag -l 'v*' --sort=-version:refname | head -1)"
+    [ -n "$TAG" ] || fail "no v* release tags found on the remote"
+    log "WARNING: this version predates signed releases; $TAG is installed without a signature check (the next update checks it)." >&2
+fi
 TARGET="$(git rev-parse "${TAG}^{commit}")"
 FROM="$(git rev-parse HEAD)"; TO="$TAG"
 
@@ -127,19 +155,14 @@ if [ "$FROM" = "$TARGET" ]; then
     write_state ok "up to date at $TAG"
     exit 0
 fi
-# Only a release signed by ShellTeam's release key is installed (SHE-148).
-# Tags come from GitHub; without this, anyone who got push access there (a
-# stolen token) could push v9.9.9 and run code on every auto-updating box.
-# The trusted signers come from the version ALREADY installed (HEAD), never
-# from what was just fetched, so a forged release can't vouch for itself.
-SIGNERS="$(mktemp)"; trap 'rm -f "$SHELLTEAM_UPDATE_REEXEC" "$SIGNERS"' EXIT
-if git show "HEAD:deploy/release-signers" >"$SIGNERS" 2>/dev/null; then
-    git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$SIGNERS" verify-tag "$TAG" >/dev/null 2>&1 \
-        || fail "$TAG is not signed by a ShellTeam release key (deploy/release-signers) - refusing to install it"
-    log "$TAG signature verified."
-else
-    log "WARNING: this version predates signed releases; $TAG is installed without a signature check (the next update checks it)." >&2
+# Never backwards: the newest release being behind this checkout means the
+# box runs something newer than any release (a dev checkout), not an update.
+if git merge-base --is-ancestor "$TARGET" "$FROM"; then
+    log "Checkout is already ahead of $TAG; nothing to install."
+    write_state ok "ahead of $TAG"
+    exit 0
 fi
+log "$TAG signature verified."
 
 # The release lineage can be restarted upstream (the public history collapsed
 # to a fresh root). Following that is safe exactly when this checkout sits AT a

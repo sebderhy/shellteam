@@ -1,5 +1,6 @@
 """Shared configuration constants — single source of truth."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -225,6 +226,16 @@ GUEST_DENIED_HTML = NOT_FOUND_HTML.replace(
 ).replace('<a href="/">Back to ShellTeam</a>', "").replace(
     "<title>404 \u2014 ShellTeam</title>", "<title>Guest access \u2014 ShellTeam</title>"
 )
+
+
+def lock_state_dir() -> None:
+    """Keep ``~/.shellteam`` owner-only. Files inside (the agent layer's MCP
+    config, the guest registry) are written group/world-readable and rely on
+    this directory mode, which until SHE-164 was only set by a vault save."""
+    state = Path.home() / ".shellteam"
+    if state.is_dir() and (state.stat().st_mode & 0o077):
+        state.chmod(0o700)
+        logging.getLogger(__name__).info("Set %s to owner-only (0700)", state)
 
 
 def child_env() -> dict[str, str]:

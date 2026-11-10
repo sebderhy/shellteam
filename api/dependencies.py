@@ -25,7 +25,7 @@ def require_trusted_origin(request: Request) -> None:
     (``Origin: null``) or any other non-dashboard origin can never drive it. See
     ``auth.origin_is_trusted``.
     """
-    if not origin_is_trusted(request.headers.get("origin")):
+    if not origin_is_trusted(request.headers.get("origin"), request.headers.get("host")):
         log.warning("Cross-origin request refused: %s → %s", request.headers.get("origin"), request.url.path)
         raise HTTPException(status_code=403, detail="Cross-origin request refused")
 

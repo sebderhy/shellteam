@@ -53,6 +53,10 @@ class _RedactSecretQueries(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(_RedactSecretQueries())
+# httpx logs every URL the proxy forwards at INFO, query string included: share
+# signatures (?sig=) reached the journal that way (SHE-163). Failures still log.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Global rate limit — 120 req/min per IP (catch-all safety net)
 _global_limit = RateLimiter(rate=120, period=60)
@@ -64,7 +68,8 @@ async def lifespan(app: FastAPI):
     # /data/users default before the seeders read it (no-op unless a legacy dir
     # exists and DATA_DIR is unset).
     migrate_legacy_state_dir()
-    from api.config import validate_modules
+    from api.config import lock_state_dir, validate_modules
+    lock_state_dir()
     validate_modules()
     # Fail closed on a public deployment with no auth boundary. When APP_DOMAIN is
     # anything but localhost the box is meant to be reachable off-machine, and an
@@ -429,7 +434,7 @@ async def cross_site_guard(request: Request, call_next):
         )
     if request.method not in _SAFE_METHODS and is_main_host(request):
         origin = request.headers.get("origin")
-        if not origin_is_trusted(origin):
+        if not origin_is_trusted(origin, request.headers.get("host")):
             log.warning("Cross-site %s %s refused (Origin %r)", request.method, request.url.path, origin)
             return JSONResponse(status_code=403, content={"detail": "Cross-origin request refused"})
     return await call_next(request)

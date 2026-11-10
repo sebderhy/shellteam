@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 from fastapi import Request, HTTPException, Response
 
-from api.config import APP_DOMAIN, MAIN_HOSTS, OWNER_ID, OWNER_EMAIL, OWNER_USERNAME, OWNER_TOKEN, DATA_DIR
+from api.config import API_PORT, APP_DOMAIN, MAIN_HOSTS, OWNER_ID, OWNER_EMAIL, OWNER_USERNAME, OWNER_TOKEN, DATA_DIR
 from api.services import sessions
 from api.services.exposure_policy import public_sharing_enabled
 
@@ -288,25 +288,41 @@ def clear_session_cookies(response: Response, secure: bool) -> None:
     )
 
 
-def origin_is_trusted(origin: str | None) -> bool:
+def origin_is_trusted(origin: str | None, host: str | None = None) -> bool:
     """CSRF guard for capability endpoints (terminal WS, enroll, share, file writes).
 
-    Returns True when the browser ``Origin`` header names a dashboard (main) host,
-    or is absent. An absent Origin means a non-browser client (curl, in-box
+    Returns True when the browser ``Origin`` header is the dashboard, or is
+    absent. An absent Origin means a non-browser client (curl, in-box
     tooling): the ambient-master-cookie attack this guards against *requires* a
     browser, and browsers always send Origin on these state-changing requests, so
     allowing absent-Origin keeps programmatic use working without opening the hole.
 
-    A *present* Origin that is not a main host is refused: a content-sandboxed
+    A *present* Origin that is not the dashboard is refused: a content-sandboxed
     report sends ``Origin: null``, a file/port subdomain sends ``owner.APP_DOMAIN``,
     and an external site sends its own host — none may drive these sinks. This is
     the second layer behind the served-content sandbox (api/main.py): even if the
     sandbox header were ever bypassed, the opaque origin is refused here.
+
+    The dashboard is a main host ON THE DASHBOARD'S PORT: the exact ``host`` the
+    request came to, the control plane's own port, or https on the default port
+    (behind a TLS proxy). The hostname
+    alone let any page on another local port (an agent-built app on
+    ``localhost:3000``) open the terminal of a token-less box (SHE-163).
     """
     if not origin:
         return True
-    host = urlparse(origin).hostname or ""
-    return host in MAIN_HOSTS
+    try:
+        url = urlparse(origin)
+        port = url.port
+    except ValueError:
+        return False
+    if (url.hostname or "") not in MAIN_HOSTS:
+        return False
+    return (
+        url.netloc.lower() == (host or "").lower()
+        or port == API_PORT
+        or (port is None and url.scheme == "https")
+    )
 
 
 def verify_token(token: str) -> dict:

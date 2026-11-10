@@ -13,15 +13,19 @@
 // the user's GitHub settings. See project_no_composio_github.md.
 
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
 
-const LOG = join(tmpdir(), "shellteam-gh-login.log");
-const PIDFILE = join(tmpdir(), "shellteam-gh-login.pid");
+// A private directory, not shared /tmp: another local user could plant the
+// pid file (the cockpit then signalled that pid) or the log (their device
+// code shown to the owner).
+const RUN_DIR = mkdtempSync(join(tmpdir(), "shellteam-gh-"));
+const LOG = join(RUN_DIR, "login.log");
+const PIDFILE = join(RUN_DIR, "login.pid");
 
 // `! First copy your one-time code: ABCD-1234`
 const CODE_RE = /one-time code:\s*([A-Z0-9-]+)/i;
@@ -37,7 +41,10 @@ const USER_RE = /Logged in to github\.com account (\S+)(?: \(([^)]*)\))?/i;
 
 function killPending() {
   if (!existsSync(PIDFILE)) return;
-  try { process.kill(-Number(readFileSync(PIDFILE, "utf8").trim())); } catch {}
+  const pid = Number(readFileSync(PIDFILE, "utf8").trim());
+  if (Number.isInteger(pid) && pid > 1) {
+    try { process.kill(-pid); } catch {}
+  }
   rmSync(PIDFILE, { force: true });
 }
 

@@ -25,8 +25,8 @@ async def terminal_websocket(ws: WebSocket):
     # CSRF layer: a browser always sends Origin on a WS upgrade. Refuse any origin
     # that is not a dashboard host — a content-sandboxed report is `Origin: null`,
     # so it cannot open this shell even though it shares the APP_DOMAIN site.
-    if not origin_is_trusted(ws.headers.get("origin")):
-        log.warning("Terminal WS refused: cross-origin %s", ws.headers.get("origin"))
+    if not origin_is_trusted(ws.headers.get("origin"), ws.headers.get("host")):
+        log.warning("Terminal WS refused: cross-origin %r", ws.headers.get("origin"))
         await ws.accept()
         await ws.close(code=4403, reason="Cross-origin refused")
         return

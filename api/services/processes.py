@@ -305,6 +305,9 @@ async def open_shell(user_id: str = "") -> PtyShell:
     pid, fd = pty.fork()
     if pid == 0:  # child
         os.environ["TERM"] = "xterm-256color"
+        # The owner's shell does not need the master token, and one `env`
+        # typed in it shows it on screen (child_env, SHE-147).
+        os.environ.pop("OWNER_TOKEN", None)
         try:
             os.chdir(str(HOME_DIR))
         except OSError:

@@ -12,8 +12,8 @@
  * no checksums or crypto validation exist in any of them.
  */
 
-import { writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, mkdtempSync, existsSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
@@ -220,8 +220,9 @@ async function exportToOpenCode(csf, { model = opencodeDefaultModel() } = {}) {
     messages,
   };
 
-  const tmpfile = join(tmpdir(), `portable-oc-${sesId}.json`);
-  writeFileSync(tmpfile, JSON.stringify(doc));
+  // The whole conversation: a private directory, never a guessable name in /tmp.
+  const tmpfile = join(mkdtempSync(join(tmpdir(), "portable-oc-")), `${sesId}.json`);
+  writeFileSync(tmpfile, JSON.stringify(doc), { mode: 0o600 });
   try {
     const { stdout, stderr } = await execFileP("opencode", ["import", tmpfile], { cwd });
     // opencode import may mint its own session id; prefer any ses_ it reports.
@@ -230,7 +231,7 @@ async function exportToOpenCode(csf, { model = opencodeDefaultModel() } = {}) {
     return { nativeSessionId, file: tmpfile, synthesized, toolCalls };
   } finally {
     // `opencode import` copies the doc into its own store — the temp is spent.
-    rmSync(tmpfile, { force: true });
+    rmSync(dirname(tmpfile), { recursive: true, force: true });
   }
 }
 

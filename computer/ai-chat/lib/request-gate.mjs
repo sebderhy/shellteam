@@ -97,3 +97,25 @@ export function refuseCrossSite(req, port, { upgrade = false } = {}) {
   if (origin && !originIsCockpit(origin, req.headers.host, port)) return `cross-site Origin ${origin}`;
   return null;
 }
+
+/**
+ * Who may put the cockpit in a frame: the dashboard, nothing else (SHE-162).
+ *
+ * Without it any page could load the live cockpit invisibly and get the owner
+ * to click in it. The dashboard is `APP_DOMAIN` on a domain install, and the
+ * control plane's port on the same hostname otherwise (localhost, a tailnet
+ * name or IP; `tailscale serve` puts it on 443). Behind the proxy the Host is
+ * loopback, so both forms are always listed; `'self'` covers the cockpit
+ * opened on its own.
+ */
+export function frameAncestors(hostHeader, apiPort) {
+  const names = new Set([appDomain(), ...extraHosts()]);
+  const direct = hostnameOf(hostHeader);
+  const sources = ["'self'"];
+  for (const name of names) sources.push(`https://${name}`, `http://${name}:${apiPort}`);
+  if (direct && !names.has(direct)) {
+    const h = direct.includes(":") ? `[${direct}]` : direct;
+    sources.push(`https://${h}`, `http://${h}:${apiPort}`, `https://${h}:${apiPort}`);
+  }
+  return sources;
+}

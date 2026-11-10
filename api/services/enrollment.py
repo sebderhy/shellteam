@@ -68,7 +68,8 @@ def _match(code: str | None) -> str | None:
     if not code:
         return None
     for candidate in _codes:
-        if hmac.compare_digest(candidate, code):
+        # Bytes: compare_digest on a non-ASCII str raises (a 500 on /enroll).
+        if hmac.compare_digest(candidate.encode(), code.encode()):
             return candidate
     return None
 

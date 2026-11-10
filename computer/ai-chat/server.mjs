@@ -122,7 +122,7 @@ scrubMasterToken();
 import { createLiveDelegationBroker } from "./lib/delegation-broker.mjs";
 import { collectUsageCached } from "./lib/usage.mjs";
 import { aiAvailability, startAiAvailabilityPolling } from "./lib/ai-availability.mjs";
-import { refuseCrossSite } from "./lib/request-gate.mjs";
+import { refuseCrossSite, frameAncestors } from "./lib/request-gate.mjs";
 
 // --- State ---
 const browserSockets = new Set();
@@ -302,6 +302,18 @@ const sessionListRecord = (s) => ({
 const readBody = sharedReadBody;
 const jsonResponse = sharedJsonResponse;
 
+// A header value must be Latin-1: a folder named in Hebrew threw here and
+// took the process down. ASCII fallback plus the RFC 5987 UTF-8 form.
+function attachmentHeader(filename) {
+  const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+// Only the dashboard may frame the cockpit (SHE-162).
+const FRAME_HEADERS = (req) => ({
+  "Content-Security-Policy": `frame-ancestors ${frameAncestors(req.headers.host, Number(process.env.API_PORT || 8000)).join(" ")}`,
+});
+
 function handleFileAPI(req, res) {
   const forwarded = req.headers["x-forwarded-by"];
   if (forwarded !== "nginx") {
@@ -323,7 +335,7 @@ function handleFileAPI(req, res) {
     if (stat.isDirectory()) {
       res.writeHead(200, {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${name}.zip"`,
+        "Content-Disposition": attachmentHeader(`${name}.zip`),
       });
       const proc = spawn("zip", ["-r", "-", "."], { cwd: abs, stdio: ["ignore", "pipe", "ignore"] });
       proc.stdout.pipe(res);
@@ -332,7 +344,7 @@ function handleFileAPI(req, res) {
       const parent = dirname(abs);
       res.writeHead(200, {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${name}.zip"`,
+        "Content-Disposition": attachmentHeader(`${name}.zip`),
       });
       const proc = spawn("zip", ["-", name], { cwd: parent, stdio: ["ignore", "pipe", "ignore"] });
       proc.stdout.pipe(res);
@@ -423,7 +435,7 @@ const handleUpload = sharedHandleUpload;
 
 // --- HTTP Server ---
 
-const server = createServer((req, res) => {
+function handleRequest(req, res) {
   const refused = refuseCrossSite(req, PORT);
   if (refused) {
     console.warn(`[ai-chat] refused ${req.method} ${req.url}: ${refused}`);
@@ -806,10 +818,10 @@ const server = createServer((req, res) => {
     return;
   }
 
-  if (!existsSync(fullPath)) {
+  if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
     const indexPath = join(PUBLIC_DIR, "index.html");
     if (existsSync(indexPath)) {
-      res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
+      res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store", ...FRAME_HEADERS(req) });
       res.end(readFileSync(indexPath));
       return;
     }
@@ -826,8 +838,22 @@ const server = createServer((req, res) => {
   const cacheControl = filePath.startsWith("/vendor/")
     ? "public, max-age=604800, immutable"
     : "no-store";
-  res.writeHead(200, { "Content-Type": ct, "Cache-Control": cacheControl });
+  res.writeHead(200, { "Content-Type": ct, "Cache-Control": cacheControl, ...FRAME_HEADERS(req) });
   res.end(readFileSync(fullPath));
+}
+
+// The cockpit holds every running agent. A request that throws (a URL the
+// parser rejects, a path that is a directory) answers 500 for THAT request;
+// before SHE-162 it ended the process, so one GET from any page stopped
+// every agent.
+const server = createServer((req, res) => {
+  try {
+    handleRequest(req, res);
+  } catch (err) {
+    console.error(`[ai-chat] ${req.method} ${req.url} threw:`, err);
+    if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Internal error");
+  }
 });
 
 // --- WebSocket Servers ---
@@ -843,7 +869,13 @@ server.on("upgrade", (req, socket, head) => {
     socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     return;
   }
-  const url = new URL(req.url, "http://localhost");
+  let url;
+  try {
+    url = new URL(req.url, "http://localhost");
+  } catch {
+    socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+    return;
+  }
   if (url.pathname === "/ws") {
     chatWSS.handleUpgrade(req, socket, head, (ws) => chatWSS.emit("connection", ws, req));
   } else if (url.pathname === "/ws/terminal") {

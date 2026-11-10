@@ -327,8 +327,35 @@ class TestSignedReleases:
         result, state = _run_update(clone, tmp_path)
         assert result.returncode != 0
         assert (clone / "VERSION").read_text() == "0.1.0\n"
-        assert "not signed by a ShellTeam release key" in result.stdout + result.stderr
+        assert "signed by a ShellTeam release key" in result.stdout + result.stderr
         _git(origin, "tag", "-d", "v0.2.0"); _git(origin, "tag", "v0.2.0")  # lightweight
         _git(clone, "tag", "-d", "v0.2.0")
         result, _ = _run_update(clone, tmp_path)
         assert result.returncode != 0 and (clone / "VERSION").read_text() == "0.1.0\n"
+
+    def test_an_old_signed_release_reposted_as_a_higher_version_is_ignored(self, signed_box, tmp_path):
+        # SHE-161: the signature covers the name INSIDE the tag, not the ref.
+        # The signed v0.2.0 object pushed again as v9.9.9 verified, and boxes
+        # on v0.3.0 went back to v0.2.0 and stayed there.
+        origin, clone, key = signed_box
+        sign = ("-c", "gpg.format=ssh", "-c", f"user.signingkey={key}", "tag", "-s")
+        _git(origin, *sign, "v0.2.0", "-m", "v0.2.0")
+        (origin / "VERSION").write_text("0.3.0\n")
+        _git(origin, "commit", "-qam", "0.3.0")
+        _git(origin, *sign, "v0.3.0", "-m", "v0.3.0")
+        result, _ = _run_update(clone, tmp_path)
+        assert result.returncode == 0 and (clone / "VERSION").read_text() == "0.3.0\n"
+
+        old = _git(origin, "rev-parse", "refs/tags/v0.2.0")  # the signed tag object
+        _git(origin, "update-ref", "refs/tags/v9.9.9", old)
+        result, state = _run_update(clone, tmp_path)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (clone / "VERSION").read_text() == "0.3.0\n"
+        assert "ignoring tag v9.9.9" in result.stdout + result.stderr
+
+        # ...and it does not block the next real release either.
+        (origin / "VERSION").write_text("0.4.0\n")
+        _git(origin, "commit", "-qam", "0.4.0")
+        _git(origin, *sign, "v0.4.0", "-m", "v0.4.0")
+        result, _ = _run_update(clone, tmp_path)
+        assert result.returncode == 0 and (clone / "VERSION").read_text() == "0.4.0\n"

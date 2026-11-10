@@ -19,7 +19,7 @@ const MIN_MASK_LEN = 8; // same floor as secrets_vault.MIN_MASK_LEN
 // The master is also removed from the environment agents inherit
 // (scrubMasterToken); it is captured here first so it can still be masked.
 const BOX_SECRET_NAMES = ["OWNER_TOKEN", "SHELLTEAM_AI_TOKEN"];
-const BOX_SECRET_RE = /(_API_KEY|_TOKEN|_SECRET|_PASSWORD)$/;
+const BOX_SECRET_RE = /(_KEY|_TOKEN|_SECRET|_PASSWORD|_PASSWD|_DSN|DATABASE_URL)$/;
 const boxSecrets = new Map();
 
 function captureBoxSecrets() {

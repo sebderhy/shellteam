@@ -5,6 +5,40 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.55] - 2026-11-10
+
+Security release: fixes from a full audit of the code (five reviewers, every
+finding checked by hand before fixing). Update, then restart ShellTeam.
+
+### Security
+- **A stranger could talk to private apps on the box.** A request dressed as
+  a browser "preflight" skipped the sign-in check on app ports, body and
+  response included. A preflight now gets the app's CORS answer and nothing
+  else (SHE-159).
+- **The read-only files cookie could download the whole home folder** as a
+  zip, hidden files included. The editor's file API now needs the owner's
+  sign-in. A published folder whose `index.html` is a link to a hidden file is
+  refused too (SHE-160).
+- **Auto-update could be sent backwards.** An old signed release pushed again
+  under a higher version number passed the signature check, and the box went
+  back to it and stayed there. The updater now checks that the signed name is
+  the tag's name, never goes backwards, and skips a forged tag instead of
+  stopping on it (SHE-161).
+- **The Agents page** could be loaded inside another page, and one crafted
+  address stopped the service and every running agent. Only the dashboard may
+  frame it now, a bad request fails alone, agent links are limited to web,
+  mail and box paths, and the report panel accepts comments and edits only
+  while you have that mode on (SHE-162).
+- **On a box without an owner token** (localhost, Tailscale), a page on
+  another local port could open the terminal. The origin check now compares
+  the port as well as the name. Share-link signatures no longer reach the
+  logs (SHE-163).
+- **Security alerts on Telegram** were rejected whenever the text held an
+  underscore, which every sign-in alert did. They are sent as plain text now.
+  One unauthenticated request could crash the daily security check or plant
+  fake entries in it. The nightly knowledge run no longer has tools. The
+  web terminal no longer inherits the owner token (SHE-164).
+
 ## [0.1.54] - 2026-11-10
 
 ### Added

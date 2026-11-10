@@ -469,7 +469,10 @@ def engine_label(engine: str) -> str:
 
 
 def _claude_argv(model: str) -> list[str]:
-    return ["claude", "-p", "--model", model, "--output-format", "json", "--max-turns", "1"]
+    # --tools "": the run reads transcripts (text anyone the owner talked to
+    # could have written) and only has to answer in JSON. With the owner's
+    # allowed Bash patterns loaded it could have been steered into acting.
+    return ["claude", "-p", "--model", model, "--output-format", "json", "--max-turns", "1", "--tools", ""]
 
 
 def _codex_argv(model: str | None, run_cwd: Path, response_file: Path) -> list[str]:

@@ -477,6 +477,36 @@ def _copy_upstream_headers(resp: httpx.Response, response: Response, exclude: tu
         response.headers.append(k, v)
 
 
+_PREFLIGHT_REQUEST_HEADERS = (
+    "origin", "access-control-request-method", "access-control-request-headers",
+    "access-control-request-private-network",
+)
+
+
+async def _answer_preflight(request: Request, target_url: str) -> Response:
+    """Ask the app for its CORS policy on behalf of an unauthenticated caller.
+
+    The caller is anyone on the internet, so the app sees only what a preflight
+    is made of (the Origin and the Access-Control-Request-* headers; no body,
+    no query string, no other header) and the caller gets back only the status
+    and the app's Access-Control-* answer, never its body. Before SHE-159 the
+    whole request went through and the whole response came back, which let a
+    stranger talk to any service listening on a loopback port.
+    """
+    headers = {h: request.headers[h] for h in _PREFLIGHT_REQUEST_HEADERS if h in request.headers}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.request("OPTIONS", target_url, headers=headers)
+    except httpx.HTTPError as e:
+        log.warning("Preflight could not reach %s: %s", target_url, e)
+        return Response(status_code=502)
+    answer = {
+        k: v for k, v in resp.headers.items()
+        if k.lower().startswith("access-control-") or k.lower() == "vary"
+    }
+    return Response(status_code=resp.status_code, headers=answer)
+
+
 async def _forward_http(
     request: Request, target_url: str, stream: bool = False
 ) -> tuple[Response, bool]:
@@ -500,7 +530,15 @@ async def _forward_http(
     from starlette.responses import StreamingResponse
 
     if request.url.query:
-        target_url += f"?{request.url.query}"
+        query = request.url.query
+        if not stream:
+            # The file server has no use for the share signature we already
+            # checked, and its access log would keep it.
+            query = "&".join(
+                kv for kv in query.split("&") if kv.split("=", 1)[0] not in ("sig", "exp")
+            )
+        if query:
+            target_url += f"?{query}"
     body = await request.body()
     headers = _sanitize_forwarded_headers(request)
 
@@ -597,7 +635,12 @@ def _escapes_home(path: str) -> bool:
     folder (``reports/bundle/a.txt -> ../../.env``, or one a cloned repo ships)
     served its target to the world. The request-path dotfile check can't see it.
     """
-    rel = unquote(path).lstrip("/")
+    # The path reaches here decoded once on the main host and raw on the file
+    # subdomain, so a name holding a literal %XX reads two ways: check both.
+    return any(_one_escapes_home(rel, path) for rel in {path.lstrip("/"), unquote(path).lstrip("/")})
+
+
+def _one_escapes_home(rel: str, path: str) -> bool:
     if rel.startswith(_NOT_HOME_PREFIXES):
         return False
     for prefix in _HOME_ALIAS_PREFIXES:
@@ -608,18 +651,22 @@ def _escapes_home(path: str) -> bool:
     target = home / rel
     if not os.path.lexists(target):
         return False  # nothing there: nginx answers 404 on its own
-    try:
-        real = target.resolve()
-    except OSError:
-        return True
-    if real == home:
-        return False
-    if home not in real.parents:
-        log.warning("File /%s resolves outside the home dir; refused", path)
-        return True
-    if _is_dotfile_path(str(real.relative_to(home))):
-        log.warning("File /%s resolves to a dotfile; refused", path)
-        return True
+    # For a directory nginx serves its index.html, which can itself be a link.
+    index = target / "index.html"
+    candidates = [target, index] if os.path.lexists(index) else [target]
+    for candidate in candidates:
+        try:
+            real = candidate.resolve()
+        except OSError:
+            return True
+        if real == home:
+            continue
+        if home not in real.parents:
+            log.warning("File /%s resolves outside the home dir; refused", path)
+            return True
+        if _is_dotfile_path(str(real.relative_to(home))):
+            log.warning("File /%s resolves to a dotfile; refused", path)
+            return True
     return False
 
 
@@ -799,7 +846,16 @@ async def serve_owner_file(request: Request, path: str) -> Response:
     is_public = is_published_report
     via_share_sig = False
     if not is_public:
-        if request.method in READ_METHODS:
+        if p.startswith("_api/"):
+            # The cockpit's file API is the editor's backend, not a file: its
+            # zip route archives a whole directory, dotfiles included. Only the
+            # owner session reaches it, reads too. The read-only files
+            # credential downloaded the whole home with it (SHE-160).
+            allowed = request_is_owner(request) and (
+                request.method in READ_METHODS
+                or origin_is_trusted(request.headers.get("origin"), request.headers.get("host"))
+            )
+        elif request.method in READ_METHODS:
             allowed = request_grants_files_read(request)
             if not allowed:
                 via_share_sig = verify_share_sig(
@@ -814,7 +870,7 @@ async def serve_owner_file(request: Request, path: str) -> Response:
             # CSRF layer: a content-sandboxed report (Origin: null) or any other
             # non-dashboard origin can never drive a write even if it somehow held
             # the master cookie.
-            if not origin_is_trusted(request.headers.get("origin")):
+            if not origin_is_trusted(request.headers.get("origin"), request.headers.get("host")):
                 log.warning("Main-host write refused: cross-origin %s /%s", request.headers.get("origin"), p)
                 return _login_required_response()
             allowed = request_is_owner(request)
@@ -969,19 +1025,18 @@ async def proxy_subdomain(request: Request, path: str):
                 )
                 return _forbidden_response()
 
-    # A CORS preflight to an app port carries no credentials and has no side
-    # effects — it only asks the app for its CORS policy. Blocking it with our
-    # auth gate would 401 the preflight before the app could answer, breaking
-    # every cross-origin call in a two-port app. Let OPTIONS through to app
-    # ports (never the file host or reserved services); the real request that
-    # follows is still authorized normally.
-    # Only a real preflight (it names the method it asks about) skips auth; a
-    # bare OPTIONS reached any local service and returned its body (SHE-148).
+    # A CORS preflight to an app port carries no credentials: the browser sends
+    # it before the real call of a two-port app, so it cannot pass our auth
+    # gate. The stranger who fakes one (the header that marks a preflight is
+    # the client's to set) gets a preflight and nothing more: see
+    # _answer_preflight (SHE-159). The real request that follows is still
+    # authorized normally.
     if (
         not allow and is_app_port and request.method == "OPTIONS"
         and request.headers.get("access-control-request-method")
+        and _get_client_ip(request) != ip
     ):
-        allow = True
+        return await _answer_preflight(request, f"http://{ip}:{port}/{path}")
 
     if not allow and _get_client_ip(request) != ip:
         decision = _authorize(

@@ -109,8 +109,9 @@ there is no client-side profile fetch). It does **not** redirect to the cockpit.
   (SHE-136, `docs/decisions/20261104-sessions-not-the-master-token.md`). Every
   request check goes through `auth.request_is_owner` (cookie = session only);
   content subdomains carry only `shellteam_files`, an HMAC credential bound to
-  one session that can read files and nothing else (cockpit-port access is
-  additionally Origin-gated). The web terminal opens on any live session, like
+  one session. In a browser it reads files and nothing else; it also opens the
+  owner's app ports, the cockpit included, and only an Origin check keeps other
+  pages off the cockpit, so a STOLEN files cookie is owner-equivalent (SHE-163). The web terminal opens on any live session, like
   the Agents tab (no token re-ask: `docs/decisions/20261110-no-terminal-token-reask.md`). Sharing mints signed expiring `?sig=&exp=` links
   (`GET /api/auth/share`). `?token=` is NOT a general auth param — it is redeemed
   exactly once on `GET /` into cookies and scrubbed. All compares are

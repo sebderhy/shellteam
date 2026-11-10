@@ -187,15 +187,34 @@ def journal_events(since: float) -> list[dict]:
     )
     if out.returncode != 0:
         raise RuntimeError(f"journalctl failed: {out.stderr.strip()[:300]}")
+    return _events_from(out.stdout.splitlines())
+
+
+# "<date> <time> api.services.security_watch <LEVEL> SECURITY {...}": the tag
+# counts only at the start of a message THIS module logged. Any other line can
+# carry text an outsider chose (the terminal logs a refused Origin header), and
+# "SECURITY {}" inside one crashed the daily check or planted fake events
+# (SHE-164).
+_EVENT_LINE_RE = re.compile(
+    r"^\S+ \S+ api\.services\.security_watch \w+ " + re.escape(EVENT_TAG) + r"(\{.*)$"
+)
+
+
+def _events_from(lines: list[str]) -> list[dict]:
     events = []
-    for line in out.stdout.splitlines():
-        i = line.find(EVENT_TAG + "{")
-        if i < 0:
+    for line in lines:
+        m = _EVENT_LINE_RE.match(line)
+        if not m:
             continue
         try:
-            events.append(json.loads(line[i + len(EVENT_TAG):]))
+            event = json.loads(m.group(1))
         except ValueError:
             log.warning("Unreadable security event line skipped: %r", line[:200])
+            continue
+        if isinstance(event, dict) and isinstance(event.get("event"), str):
+            events.append(event)
+        else:
+            log.warning("Security event without a name skipped: %r", line[:200])
     return events
 
 

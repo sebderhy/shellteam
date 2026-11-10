@@ -33,10 +33,23 @@ class TestOriginIsTrusted:
         assert origin_is_trusted(None) is True
         assert origin_is_trusted("") is True
 
-    def test_main_hosts_allowed(self):
-        assert origin_is_trusted("http://localhost") is True
-        assert origin_is_trusted("http://localhost:8000") is True
-        assert origin_is_trusted("http://127.0.0.1:3456") is True
+    def test_the_dashboard_origin_is_allowed(self):
+        from api.config import API_PORT
+        assert origin_is_trusted(f"http://localhost:{API_PORT}") is True
+        assert origin_is_trusted("https://localhost") is True  # behind a TLS proxy
+        # Whatever host and port the request itself came to.
+        assert origin_is_trusted("http://127.0.0.1:9123", "127.0.0.1:9123") is True
+
+    def test_another_port_on_a_main_host_is_refused(self):
+        # SHE-163: only the hostname was compared, so an agent-built app on
+        # localhost:3000 (or the file server on :80) could open the terminal
+        # socket of a token-less box.
+        from api.config import API_PORT
+        host = f"localhost:{API_PORT}"
+        assert origin_is_trusted("http://localhost:3000", host) is False
+        assert origin_is_trusted("http://127.0.0.1:3456", host) is False
+        assert origin_is_trusted("http://localhost", host) is False
+        assert origin_is_trusted("http://localhost:notaport", host) is False
 
     def test_sandboxed_null_origin_refused(self):
         # A content-sandboxed report sends exactly this.

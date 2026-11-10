@@ -92,3 +92,34 @@ def test_main_host_files_alias_html_is_sandboxed(client, auth_header):
         resp = client.get("/_files/tmp/evil.html", headers=auth_header)
     assert resp.status_code == 200
     assert resp.headers.get("content-security-policy") == CONTENT_SANDBOX_CSP
+
+
+# ── SHE-160 ──────────────────────────────────────────────────────────────────
+
+
+def test_files_credential_cannot_use_the_cockpit_file_api(client, auth_header):
+    # GET /_api/zip?path=/ with only the read-only files cookie downloaded the
+    # whole home, dotfiles and OWNER_TOKEN included.
+    from tests._owner_session import files_token
+
+    with respx.mock(assert_all_called=False) as mock:
+        route = mock.get(url__regex=r"http://127\.0\.0\.1(:\d+)?/_api/zip.*").mock(
+            return_value=httpx.Response(200, content=b"PK"))
+        client.cookies.set("shellteam_files", files_token())
+        refused = client.get("/_api/zip?path=/")
+        client.cookies.clear()
+        assert refused.status_code == 401 and not route.called
+        assert client.get("/_api/zip?path=/", headers=auth_header).status_code == 200
+
+
+def test_symlinked_index_and_percent_names_are_refused(home):
+    (home / "reports" / "site").mkdir()
+    (home / "reports" / "site" / "index.html").symlink_to("../../.ssh/id")
+    assert proxy._escapes_home("reports/site")
+    assert proxy._escapes_home("reports/site/")
+    # A link whose NAME holds a literal %XX: the path arrives decoded once.
+    (home / "reports" / "bundle" / "a%2Eb.txt").symlink_to("../../.ssh/id")
+    assert proxy._escapes_home("reports/bundle/a%2Eb.txt")
+    (home / "reports" / "plain").mkdir()
+    (home / "reports" / "plain" / "index.html").write_text("ok")
+    assert not proxy._escapes_home("reports/plain")
