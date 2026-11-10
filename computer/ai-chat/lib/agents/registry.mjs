@@ -17,6 +17,7 @@ import {
   antigravityLayerArgs,
   claudeLayerArgs,
   codexHarnessEnv,
+  codexSecretEnv,
   codexLayerArgs,
 } from "../agent-layer.mjs";
 import { agentIdForModel, cliModelForId, configArgsForId } from "../model-catalog.mjs";
@@ -118,8 +119,8 @@ export function terminalSpawn(model, opts = {}) {
 }
 
 /** Apply any per-family launch environment without changing the user's shell. */
-export function agentLaunchEnv(model, env) {
-  return pickAgent(model).id === "codex" ? codexHarnessEnv(env) : env;
+export function agentLaunchEnv(model, env, cwd) {
+  return pickAgent(model).id === "codex" ? { ...codexHarnessEnv(env), ...codexSecretEnv(cwd) } : env;
 }
 
 function commandOnPath(cmd) {

@@ -5,6 +5,23 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.56] - 2026-11-10
+
+Second part of the security audit fixes.
+
+### Security
+- **The one-line installer installs only a signed release.** It carries the
+  public half of the release key and moves the checkout to the newest tag
+  signed with it, so code changed on GitHub alone is never run. To update by
+  hand, run the installer again instead of `git pull`.
+- **The file editor loads its code from your box**, not from a public CDN.
+  That page runs with your sign-in, so its scripts must come from the
+  signed release.
+- **Composio and Linear keys no longer appear in the process list** while
+  Codex runs. Codex now reads them from its environment.
+- **Install-time root access is always taken back.** An install interrupted
+  halfway used to leave the owner account with passwordless sudo.
+
 ## [0.1.55] - 2026-11-10
 
 Security release: fixes from a full audit of the code (five reviewers, every

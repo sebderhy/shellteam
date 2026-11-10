@@ -41,17 +41,22 @@ before it was accepted. Tickets: SHE-159 to SHE-164. Shipped in v0.1.55.
   the cockpit and the file server on 127.0.0.1. SECURITY.md says the box is
   single-user. A real fix is Unix sockets or a per-install hop secret; it
   touches nginx, the proxy and the cockpit and needs its own design.
-- **The one-line installer and `git pull` follow unsigned `main`.** Only the
-  timer path checks signatures. Fix: ship the signer key in the installer and
-  check out the highest release.
-- **Monaco is loaded from a CDN in `/_editor`** with no integrity check, on the
-  dashboard origin. Fix: vendor it.
-- **Composio and Linear keys appear in Codex's argv** (`-c` overrides). Fix
-  needs the env-based header options checked against the supported Codex
-  versions.
-- Small items: backoff on three master-token guess paths, `--create-owner`
-  without a trap, unpinned global npm installs as root, tokens in a few
-  scripts' argv.
+- Small items: backoff on three master-token guess paths, unpinned global npm
+  installs as root, tokens in a few scripts' argv.
+
+## Fixed the same evening (v0.1.56)
+
+- **The one-line installer** carries the signer key and installs the newest
+  signed release (the script is served by shellteam.sh, the code by GitHub:
+  two places an attacker must hold). The checkout must end ON the release,
+  not merely contain it, because the branch itself is not signed.
+- **Monaco** is staged by install.sh from the pinned `monaco-editor` npm
+  package (integrity in package-lock.json) into the editor's directory.
+- **MCP header values reach Codex through `env_http_headers`** and its
+  environment (`codex/env.json`, 0600, in the agent layer), checked against a
+  real Codex 0.159 run.
+- **`--create-owner`** removes its sudoers file from a trap.
+- **Public repo:** a ruleset forbids updating or deleting `v*` tags.
 
 ## What would make us revisit
 

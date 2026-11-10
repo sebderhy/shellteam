@@ -448,7 +448,9 @@
 <!-- drag overlay text is updated dynamically -->
 <div class="toast" id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+<!-- Monaco is served by this box (install.sh stages it from the pinned npm
+     package), never a CDN: this page runs on the dashboard origin (SHE-165). -->
+<script src="/_editor/vs/loader.js"></script>
 <script>
 // --- State ---
 let editor = null;
@@ -635,7 +637,7 @@ function getLanguage(name) {
 }
 
 // --- Monaco setup ---
-require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
+require.config({ paths: { vs: '/_editor/vs' } });
 
 require(['vs/editor/editor.main'], function () {
     monaco.editor.defineTheme('shellteam-dark', {

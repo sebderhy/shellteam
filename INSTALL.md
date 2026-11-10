@@ -476,8 +476,9 @@ with a migration report of what mapped and what didn't.
 ## 6. Day-2 operations
 
 ```bash
-# Update to the latest code (install.sh is idempotent):
-git pull && ./install.sh
+# Update to the latest signed release (the installer checks the release
+# signature before it runs anything; install.sh is idempotent):
+curl -fsSL https://shellteam.sh/install | bash
 ```
 
 **Automatic updates (opt-in):** set `AUTO_UPDATE=daily` (or `weekly`) in `.env`

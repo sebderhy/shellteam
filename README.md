@@ -57,7 +57,8 @@ On a fresh Ubuntu/Debian VPS, as your normal (non-root) user:
 curl -fsSL https://shellteam.sh/install | bash
 ```
 
-That clones this repo into `~/shellteam` and runs its `./install.sh`; pass flags
+That clones this repo into `~/shellteam`, moves it to the latest release after
+checking its signature, and runs its `./install.sh`; pass flags
 with `| bash -s -- --full`. [Read the script first](https://shellteam.sh/install)
 if you like: it is short. Its download is the only way we count installs;
 nothing else is sent. Prefer to do it by hand:

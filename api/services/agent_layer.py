@@ -233,6 +233,26 @@ def _toml_value(v) -> str:
     return json.dumps(v)
 
 
+def _codex_header_env_name(server: str, header: str) -> str:
+    """Env var carrying one MCP header value into Codex. Keep in sync with
+    ``headerEnvName`` in computer/ai-chat/lib/agent-layer.mjs."""
+    return re.sub(r"[^A-Z0-9]", "_", f"SHELLTEAM_MCP_{server}_{header}_SECRET".upper())
+
+
+def codex_header_env(mcp_servers: dict) -> dict[str, str]:
+    """The MCP header values Codex needs in its environment at spawn."""
+    return {
+        _codex_header_env_name(name, header): value
+        for name, cfg in mcp_servers.items()
+        if "url" in cfg
+        for header, value in (cfg.get("headers") or {}).items()
+    }
+
+
+def codex_env_file(home_dir: Path) -> Path:
+    return layer_dir(home_dir) / "codex" / "env.json"
+
+
 def build_codex_overrides(
     home_dir: Path,
     mcp_servers: dict,
@@ -265,7 +285,11 @@ def build_codex_overrides(
         if "url" in cfg:
             overrides.append(f"mcp_servers.{name}.url={_toml_value(cfg['url'])}")
             if cfg.get("headers"):
-                overrides.append(f"mcp_servers.{name}.http_headers={_toml_value(cfg['headers'])}")
+                # Header values are keys. Codex reads them from its environment
+                # (codex_header_env), never from argv, where `ps` shows them to
+                # every local user for the life of the process (SHE-165).
+                names = {h: _codex_header_env_name(name, h) for h in cfg["headers"]}
+                overrides.append(f"mcp_servers.{name}.env_http_headers={_toml_value(names)}")
         elif "command" in cfg:
             overrides.append(f"mcp_servers.{name}.command={_toml_value(cfg['command'])}")
             if cfg.get("args"):
@@ -650,6 +674,15 @@ def build_agent_layer(
         codex_file.write_text(json.dumps(codex_overrides, indent=2))
     else:
         _remove_artifact(codex_file)
+    header_env = codex_header_env(mcp_servers) if codex_overrides else {}
+    env_file = codex_env_file(home_dir)
+    if header_env:
+        env_file.touch(mode=0o600, exist_ok=True)
+        env_file.chmod(0o600)
+        env_file.write_text(json.dumps(header_env, indent=2))
+    else:
+        _remove_artifact(env_file)
+    if not codex_overrides:
         _remove_artifact(codex_file.parent)
 
     # OpenCode layer — config the cockpit points OPENCODE_CONFIG at (merges with

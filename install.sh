@@ -256,6 +256,12 @@ bootstrap_owner() {
     fi
     printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user" > "/etc/sudoers.d/$user"
     chmod 0440 "/etc/sudoers.d/$user"
+    # Taken back however this run ends: an install interrupted halfway (Ctrl-C,
+    # a dropped SSH session) used to leave every agent on the box with root.
+    if [ "${KEEP_SUDO:-0}" != 1 ]; then
+        # shellcheck disable=SC2064  # expand $user now: it is local to this function
+        trap "rm -f '/etc/sudoers.d/$user'" EXIT INT TERM HUP
+    fi
     leaf="$(basename "$REPO")"; dest="$home/$leaf"
     if [ "$REPO" != "$dest" ]; then
         if [ -e "$dest" ]; then
@@ -991,6 +997,13 @@ install -D -m 0644 "$REPO/computer/file-editor.html" "$STATE/file-editor/index.h
 # loads nothing from a third party (and works with no outbound network).
 install -d -m 0755 "$STATE/file-editor/fonts"
 install -m 0644 "$REPO/frontend/static/vendor/fonts/"* "$STATE/file-editor/fonts/"
+# Monaco itself, from the pinned npm package (integrity-checked by the lock
+# file) instead of a CDN: the editor runs on the dashboard origin, so whoever
+# controls that script controls the box (SHE-165).
+MONACO_SRC="$REPO/computer/ai-chat/node_modules/monaco-editor/min/vs"
+[ -f "$MONACO_SRC/loader.js" ] || die "monaco-editor is missing from computer/ai-chat/node_modules (npm ci failed?)"
+rm -rf "$STATE/file-editor/vs"
+cp -r "$MONACO_SRC" "$STATE/file-editor/vs"
 
 UNIT_DIR="$HOME/.config/systemd/user"
 mkdir -p "$UNIT_DIR"

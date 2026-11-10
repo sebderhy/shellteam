@@ -3,7 +3,7 @@ import { splitContent } from "./attachments.mjs";
 import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { CodingAgent } from "./coding-agent.mjs";
-import { codexHarnessEnv, codexLayerArgs } from "./agent-layer.mjs";
+import { codexHarnessEnv, codexLayerArgs, codexSecretEnv } from "./agent-layer.mjs";
 import { cliModelForId, configArgsForId, contextLimitForId } from "./model-catalog.mjs";
 
 const STRIP_ENV_VARS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
@@ -366,7 +366,7 @@ export class CodexAgent extends CodingAgent {
     this._turnHeard = false;
     this._process = spawn("codex", args, {
       cwd: this._cwd,
-      env: this._env,
+      env: { ...this._env, ...codexSecretEnv(this._cwd) }, // the keys codexLayerArgs names
       stdio: ["pipe", "pipe", "pipe"],
       // Own process group, so interrupt()/stop() can signal codex AND every
       // tool/MCP subprocess it spawns (kill(-pid)), not just the parent.

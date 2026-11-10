@@ -44,7 +44,7 @@ export function spawn_(killChatCLI, opts = {}) {
 
   const model = opts.model || loadModel();
   const cwd = opts.cwd || HOME;
-  const env = agentLaunchEnv(model, getCliEnv(cwd));
+  const env = agentLaunchEnv(model, getCliEnv(cwd), cwd);
   env.TERM = "xterm-256color";
   const { cmd, args } = terminalSpawn(model, { sessionId: opts.sessionId, cwd, env });
 

@@ -21,6 +21,7 @@ const CLAUDE_PLUGIN_DIR = join(LAYER_DIR, "claude");
 const CLAUDE_MCP_CONFIG = join(LAYER_DIR, "claude-mcp.json");
 const CLAUDE_SYSTEM_PROMPT = join(LAYER_DIR, "system-prompt.md");
 const CODEX_OVERRIDES = join(LAYER_DIR, "codex", "overrides.json");
+const CODEX_ENV = join(LAYER_DIR, "codex", "env.json");
 const CODEX_SESSION_HOME = join(LAYER_DIR, "codex-home");
 const ANTIGRAVITY_WORKSPACE = join(LAYER_DIR, "antigravity-workspace");
 const ANTIGRAVITY_PLUGIN = join(ANTIGRAVITY_WORKSPACE, ".agents", "plugins", "shellteam");
@@ -118,8 +119,30 @@ function dynamicCodexLinearOverrides(manifest, cwd) {
   if (!linear) return [];
   return [
     `mcp_servers.linear.url=${JSON.stringify(linear.url)}`,
-    `mcp_servers.linear.http_headers={ "Authorization" = ${JSON.stringify(linear.headers.Authorization)} }`,
+    `mcp_servers.linear.env_http_headers={ "Authorization" = ${JSON.stringify(headerEnvName("linear", "Authorization"))} }`,
   ];
+}
+
+// MCP header values are keys. Codex reads them from its environment
+// (env_http_headers), never from argv, where `ps` shows them to every local
+// user for the life of the process (SHE-165). Keep the name in sync with
+// _codex_header_env_name in api/services/agent_layer.py.
+function headerEnvName(server, header) {
+  return `SHELLTEAM_MCP_${server}_${header}_SECRET`.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+}
+
+/** The environment that goes with codexLayerArgs(cwd): the header values. */
+export function codexSecretEnv(cwd = HOME) {
+  const manifest = readManifest();
+  const env = {};
+  if (artifactEnabled(manifest, "codex_overrides", CODEX_OVERRIDES, "ShellTeam Codex overrides") && existsSync(CODEX_ENV)) {
+    Object.assign(env, JSON.parse(readFileSync(CODEX_ENV, "utf8")));
+  }
+  if (linearModuleEnabled(manifest)) {
+    const linear = linearServerForCwd(cwd);
+    if (linear) env[headerEnvName("linear", "Authorization")] = linear.headers.Authorization;
+  }
+  return env;
 }
 
 function isLinearCodexOverride(o) {

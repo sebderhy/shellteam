@@ -18,7 +18,7 @@ process.env.HOME = FAKE_HOME;
 
 const LAYER = join(FAKE_HOME, ".shellteam", "agent-layer");
 
-let agentLaunchEnv, antigravityLayerArgs, claudeLayerArgs, codexHarnessEnv, codexLayerArgs, harnessPromptPath, opencodeConfigPath, terminalSpawn;
+let agentLaunchEnv, antigravityLayerArgs, claudeLayerArgs, codexHarnessEnv, codexLayerArgs, codexSecretEnv, harnessPromptPath, opencodeConfigPath, terminalSpawn;
 
 before(async () => {
   ({
@@ -26,6 +26,7 @@ before(async () => {
     claudeLayerArgs,
     codexHarnessEnv,
     codexLayerArgs,
+    codexSecretEnv,
     harnessPromptPath,
     opencodeConfigPath,
   } = await import("../lib/agent-layer.mjs"));
@@ -206,8 +207,13 @@ test("linear MCP follows the active project cwd", () => {
   assert.equal(mcp.mcpServers.context7.command, "context7-mcp");
 
   const codexArgs = codexLayerArgs(join(FAKE_HOME, "acmeproj"));
-  assert.ok(codexArgs.includes('mcp_servers.linear.http_headers={ "Authorization" = "Bearer lin_api_acmeproj" }'));
-  assert.ok(!codexArgs.some((a) => a.includes("lin_api_global")));
+  // The key travels in Codex's environment, never in argv (SHE-165).
+  assert.ok(codexArgs.includes('mcp_servers.linear.env_http_headers={ "Authorization" = "SHELLTEAM_MCP_LINEAR_AUTHORIZATION_SECRET" }'));
+  assert.ok(!codexArgs.some((a) => a.includes("lin_api_")), "no key in argv");
+  assert.equal(
+    codexSecretEnv(join(FAKE_HOME, "acmeproj")).SHELLTEAM_MCP_LINEAR_AUTHORIZATION_SECRET,
+    "Bearer lin_api_acmeproj",
+  );
 
   const ocPath = opencodeConfigPath(join(FAKE_HOME, "acmeproj"));
   const oc = JSON.parse(readFileSync(ocPath, "utf8"));
