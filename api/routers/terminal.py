@@ -5,15 +5,11 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from api.services import activity, runtime, security_watch, sessions
+from api.services import activity, runtime, security_watch
 from api.services.auth import MASTER_COOKIE, origin_is_trusted, verify_token
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["terminal"])
-
-# Close code the terminal page answers with a "re-enter your token" prompt.
-CLOSE_NEEDS_CONFIRM = 4401
-
 
 @router.websocket("/api/terminal")
 async def terminal_websocket(ws: WebSocket):
@@ -53,19 +49,6 @@ async def terminal_websocket(ws: WebSocket):
     user_id = payload.get("sub")
     if not user_id:
         await ws.close(code=4001, reason="Invalid token: missing subject")
-        return
-
-    # Step-up (SHE-136): a shell needs a RECENT proof of the master, not just a
-    # cookie. A stolen or long-lived session cookie alone no longer opens it.
-    if not sessions.is_fresh(payload):
-        log.warning(
-            "Terminal WS refused from %s: session %s needs a fresh confirmation",
-            ip, payload.get("sid"),
-        )
-        await ws.close(
-            code=CLOSE_NEEDS_CONFIRM,
-            reason="Confirm it is you: re-enter your token to open the terminal",
-        )
         return
 
     status = await runtime.get_status(user_id)

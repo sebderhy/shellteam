@@ -5,6 +5,26 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.54] - 2026-11-10
+
+### Added
+- **Restart ShellTeam from Settings.** One button restarts the agents and the
+  control plane (to load a new model after an update, or a setting that asks
+  for a restart) and reloads the page when they are back. The feature-key and
+  Composio "needs a restart" notes show the same button instead of a command
+  to paste in the terminal (SHE-156).
+- **"Restart to apply update" in the header**, only when it is needed: after
+  an update or a pull changed code that the running agents or control plane
+  have not loaded yet (docs and tests don't count). One tap restarts (SHE-157).
+
+### Changed
+- **The Terminal tab no longer asks for your owner token** 15 minutes after
+  you signed in. The Agents tab already runs any command on the same sign-in,
+  so the extra prompt cost you the token every time and stopped nobody. Every
+  terminal session is still logged and sent to your notification channel, and
+  sign-ins still expire and can be logged out everywhere. `TERMINAL_FRESH_MINUTES`
+  is gone (SHE-155).
+
 ## [0.1.53] - 2026-11-09
 
 ### Added

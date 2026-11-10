@@ -93,8 +93,8 @@
         .restart { display: none; margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md);
             background: var(--brand-subtle); border: 1px solid color-mix(in oklch, var(--brand) 35%, transparent);
             font-size: var(--text-sm); line-height: 1.6; }
-        .restart code { display: block; margin-top: 6px; font-family: var(--font-mono); font-size: var(--text-xs);
-            background: var(--surface-0); padding: 8px 10px; border-radius: var(--radius-sm); user-select: all; }
+        .restart .restart-btn { display: block; margin-top: 8px; }
+        .restart-status { margin-top: 6px; font-size: var(--text-xs); color: var(--text-secondary); min-height: 1.2em; }
         @media (max-width: 640px) { .setup { grid-template-columns: 1fr; } body { padding: 20px 16px 40px; } }
 
         /* ── Ask-an-agent callout ───────────────────────────────────────── */
@@ -194,9 +194,10 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="/static/github-frame.js?v=__ASSET_VERSION__"></script>
+<script src="/static/restart.js?v=__ASSET_VERSION__"></script>
 <script>
     const ASSET_VERSION = "__ASSET_VERSION__";
-    const RESTART_CMD = 'systemctl --user restart shellteam-api shellteam-ai-chat';
+    const RESTART_BLOCK = '<button type="button" class="btn go restart-btn">Restart ShellTeam</button><div class="restart-status"></div>';
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -305,14 +306,14 @@
             <div>
                 <h3>${pending ? 'Almost there: one restart to go' : 'Unlock 500+ apps for your agents'}</h3>
                 ${pending
-                    ? `<p>Your Composio key is saved. The control plane loads the app module on its next start, so run this on the box, then reload this tab.</p>
-                       <div class="restart" style="display:block;margin-top:12px">On the box:<code>${RESTART_CMD}</code></div>`
+                    ? `<p>Your Composio key is saved. The control plane loads the app module on its next start.</p>
+                       <div class="restart" style="display:block;margin-top:12px">${RESTART_BLOCK}</div>`
                     : `<p>ShellTeam signs you in to apps through <a href="https://composio.dev" target="_blank" rel="noopener">Composio</a>,
                           which hosts the OAuth apps for Slack, Notion, Google, Jira and hundreds more. One free key turns this page on.</p>
                        <ol>
                            <li>Create a free account at <a href="https://composio.dev" target="_blank" rel="noopener">composio.dev</a> and copy your API key.</li>
                            <li>Paste it here. ShellTeam validates it and saves it to <code>.env</code> on the box.</li>
-                           <li>Restart the services once (the command appears after saving).</li>
+                           <li>Restart ShellTeam once (the button appears after saving).</li>
                        </ol>`}
             </div>
             ${pending ? '' : `<div>
@@ -321,7 +322,7 @@
                     <button class="btn go" id="ck-save" disabled>Save</button>
                 </div>
                 <div class="err" id="ck-err"></div>
-                <div class="restart" id="ck-restart">Saved. Now restart the services on the box, then reload this tab:<code>${RESTART_CMD}</code></div>
+                <div class="restart" id="ck-restart">Saved. One restart turns it on.${RESTART_BLOCK}</div>
             </div>`}
         </div>`;
     }

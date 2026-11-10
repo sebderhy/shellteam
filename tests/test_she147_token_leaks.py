@@ -1,5 +1,5 @@
 """SHE-147: the master token stays out of logs and agent environments, and a
-stolen session can't turn itself into a fresh, longer-lived one by enrolling."""
+stolen session can't turn itself into a longer-lived one by enrolling."""
 
 import logging
 import os
@@ -35,21 +35,11 @@ def _enroll_from(token: str) -> dict:
 
 
 def test_an_enrolled_device_inherits_the_sessions_age_and_dies_with_it():
-    stolen = sessions.mint("migrated", fresh=False)  # an old cookie, not fresh
+    stolen = sessions.mint("migrated")
     child = _enroll_from(stolen.token)
-    assert not sessions.is_fresh(child)          # no terminal without the token
     assert child["expires"] <= stolen.expires    # no lifetime extension
     sessions.revoke(stolen.id)
     assert sessions.lookup_id(child["id"]) is None  # revoking the stolen one ends it
-
-
-def test_enrolling_with_the_master_still_gives_a_fresh_device():
-    with TestClient(app) as c:
-        r = c.post("/api/auth/enroll", headers={**LOCAL, "Authorization": f"Bearer {MASTER}"})
-        code = r.json()["url"].split("code=")[1]
-    with TestClient(app) as phone:
-        phone.post("/enroll", data={"code": code}, headers=LOCAL, follow_redirects=False)
-        assert sessions.is_fresh(sessions.lookup(phone.cookies.get(auth.MASTER_COOKIE)))
 
 
 def test_access_log_never_prints_a_token_query():

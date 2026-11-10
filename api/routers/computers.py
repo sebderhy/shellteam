@@ -1,9 +1,10 @@
+import asyncio
 import json
 import logging
 import os
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -58,6 +59,27 @@ async def stop_computer(user: dict = Depends(get_current_user)):
     """Stop the user's cloud computer."""
     result = await containers.stop_computer(user["id"])
     return {"status": result["status"]}
+
+
+@router.post("/restart", dependencies=[Depends(require_trusted_origin)])
+async def restart_services(
+    background: BackgroundTasks, request: Request, user: dict = Depends(get_current_user)
+):
+    """Restart the cockpit and the control plane (Settings button, SHE-156).
+
+    Queued after the response is sent: this API is one of the services it
+    restarts, and the page needs the 202 before the API goes away.
+    """
+    log.info("Restart requested from Settings by %s (%s)", user["id"],
+             request.client.host if request.client else "?")
+    background.add_task(containers.restart_services)
+    return Response(status_code=202)
+
+
+@router.get("/restart-needed")
+async def restart_needed(user: dict = Depends(get_current_user)) -> dict:
+    """Whether a running service is older than the code on disk (header chip, SHE-157)."""
+    return await asyncio.to_thread(containers.pending_restart)
 
 
 @router.get("/status", response_model=ComputerStatus)

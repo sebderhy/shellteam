@@ -16,6 +16,7 @@ import fcntl
 import logging
 import os
 import pty
+import re
 import socket
 import struct
 import termios
@@ -138,6 +139,93 @@ async def stop_computer(user_id: str = "") -> dict:
 async def recreate_container(user_id: str = "", username: str = "", email: str = "") -> dict:
     _systemctl("restart")
     return await start_computer(user_id, username, email)
+
+
+# What the Settings "Restart ShellTeam" button restarts (SHE-156): the cockpit
+# (new models, agent layer) and the control plane (MODULES, feature keys).
+RESTART_UNITS = ("shellteam-ai-chat", "shellteam-api")
+
+
+def restart_services() -> None:
+    """Ask systemd to restart the cockpit and the control plane.
+
+    The ``systemctl restart`` runs in its own transient unit, not as a child
+    of this API: stopping shellteam-api kills everything in the API's cgroup,
+    and a direct child was killed mid-call (the restart happened, but the API
+    logged a false "refused"). ``--no-block`` returns once the unit is queued.
+    Raises when systemd refuses to start it.
+    """
+    proc = subprocess.run(
+        ["systemd-run", "--user", "--no-block", "--collect", "--quiet",
+         "--description=ShellTeam restart from Settings",
+         "systemctl", "--user", "restart", *RESTART_UNITS],
+        capture_output=True, text=True, timeout=10,
+    )
+    if proc.returncode != 0:
+        log.error("Restart of %s refused by systemd: %s", " ".join(RESTART_UNITS), proc.stderr.strip())
+        raise RuntimeError(proc.stderr.strip() or f"systemd-run exited {proc.returncode}")
+    log.info("Restart of %s handed to systemd", " ".join(RESTART_UNITS))
+
+
+# ── Is a restart pending? (SHE-157) ─────────────────────────────────────────
+# A service runs the code that was checked out when it started. The header
+# chip asks for a restart when the checkout has since moved (an update, a
+# pull, a commit) and the change touches something a running service loads.
+REPO_DIR = Path(__file__).resolve().parents[2]
+_NO_RESTART = re.compile(r"^(docs/|tests/|computer/ai-chat/test/|scripts/qa/)|\.md$")
+
+
+def _git(*args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(REPO_DIR), *args],
+        capture_output=True, text=True, check=True, timeout=10,
+    ).stdout
+
+
+def _unit_started_at(unit: str) -> int | None:
+    """Unix time the unit last became active, or None when it is not running."""
+    out = subprocess.run(
+        ["systemctl", "--user", "show", unit, "-p", "ActiveEnterTimestamp", "--timestamp=unix"],
+        capture_output=True, text=True, timeout=10,
+    ).stdout.strip()
+    value = out.partition("=")[2].lstrip("@")
+    return int(value) if value.isdigit() else None
+
+
+def _head_at(ts: int) -> str | None:
+    """The commit HEAD pointed at, at unix time ``ts`` (from HEAD's reflog)."""
+    for line in _git("reflog", "show", "--date=unix", "--format=%H %gd", "HEAD").splitlines():
+        sha, _, selector = line.partition(" ")  # selector: HEAD@{1794292110}
+        if int(selector[selector.index("{") + 1:-1]) <= ts:
+            return sha
+    return None
+
+
+def pending_restart() -> dict:
+    """Which services run older code than the checkout, and which files changed."""
+    head = _git("rev-parse", "HEAD").strip()
+    stale: dict[str, list[str]] = {}
+    for unit in RESTART_UNITS:
+        started = _unit_started_at(unit)
+        if started is None:
+            log.warning("pending_restart: %s is not running under systemd; skipped", unit)
+            continue
+        booted = _head_at(started)
+        if booted is None:
+            log.warning("pending_restart: no reflog entry before %s started (%d); skipped", unit, started)
+            continue
+        if booted == head:
+            continue
+        files = [f for f in _git("diff", "--name-only", booted, head).splitlines() if not _NO_RESTART.search(f)]
+        if files:
+            stale[unit] = files
+    if stale:
+        log.info("Restart pending: %s run code older than %s", ", ".join(sorted(stale)), head[:9])
+    return {
+        "needed": bool(stale),
+        "services": sorted(stale),
+        "files": sorted({f for changed in stale.values() for f in changed}),
+    }
 
 
 async def get_container_ip(user_id: str = "") -> str | None:

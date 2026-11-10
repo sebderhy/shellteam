@@ -27,42 +27,10 @@
             background: #110f0d;
         }
         .xterm { height: 100%; }
-        /* Step-up prompt (SHE-136): shown when the server closes with 4401. */
-        #confirm-overlay {
-            position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
-            background: rgba(10, 10, 10, .82); z-index: 10;
-        }
-        #confirm-overlay.open { display: flex; }
-        #confirm-overlay form {
-            width: min(360px, 92vw); padding: 22px; border-radius: 12px;
-            background: #141414; border: 1px solid #2a2a2a; color: #e5e5e5;
-        }
-        #confirm-overlay h2 { margin: 0 0 8px; font-size: 1.05rem; }
-        #confirm-overlay p { margin: 0 0 14px; color: #999; font-size: .88rem; line-height: 1.5; }
-        #confirm-overlay input {
-            width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333;
-            background: #0a0a0a; color: #e5e5e5; font-size: .95rem;
-        }
-        #confirm-overlay button {
-            margin-top: 12px; width: 100%; padding: 10px; border: 0; border-radius: 8px;
-            background: #f59e0b; color: #0a0a0a; font-weight: 600; font-size: .92rem; cursor: pointer;
-        }
-        #confirm-error { color: #f87171; min-height: 1.2em; margin-top: 8px; font-size: .82rem; }
     </style>
 </head>
 <body>
     <div id="terminal-container"></div>
-    <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-        <form id="confirm-form">
-            <h2 id="confirm-title">Confirm it is you</h2>
-            <p>The terminal is a shell on this box, so it needs a recent sign-in.
-               Re-enter your <code>OWNER_TOKEN</code> to open it.</p>
-            <input id="confirm-token" type="password" placeholder="OWNER_TOKEN"
-                   autocomplete="current-password" aria-label="Owner token" required>
-            <button type="submit">Open the terminal</button>
-            <div id="confirm-error" aria-live="polite"></div>
-        </form>
-    </div>
 
     <script src="/static/vendor/xterm-5.5.0.min.js"></script>
     <script src="/static/vendor/xterm-addon-fit-0.10.0.min.js"></script>
@@ -182,12 +150,6 @@
 
             ws.onclose = (event) => {
                 console.log('[terminal] WebSocket closed (code ' + event.code + ')');
-                if (event.code === 4401) {
-                    // Session too old for a shell: ask for the token, then retry.
-                    terminal.write('\r\n\x1b[33mConfirm it is you to open the terminal.\x1b[0m\r\n');
-                    askForConfirmation();
-                    return;
-                }
                 if (event.code === 4001) {
                     terminal.write('\r\n\x1b[31mAuthentication failed.\x1b[0m Your session expired — reload the dashboard and sign in again.\r\n');
                     return;
@@ -212,37 +174,6 @@
 
             ws.onerror = () => { /* onclose handles reconnect */ };
         }
-
-        // Step-up confirmation (SHE-136): POST the token once to re-confirm this
-        // session, then reconnect. The token only travels in the POST body.
-        function askForConfirmation() {
-            const overlay = document.getElementById('confirm-overlay');
-            const input = document.getElementById('confirm-token');
-            overlay.classList.add('open');
-            input.value = '';
-            input.focus();
-        }
-        document.getElementById('confirm-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const input = document.getElementById('confirm-token');
-            const err = document.getElementById('confirm-error');
-            err.textContent = '';
-            const r = await fetch('/api/auth/confirm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: input.value }),
-            });
-            input.value = '';
-            if (r.ok) {
-                document.getElementById('confirm-overlay').classList.remove('open');
-                reconnectAttempt = 0;
-                connectTerminalWS();
-                return;
-            }
-            err.textContent = r.status === 401
-                ? 'That token is not right, or your sign-in expired (reload the dashboard).'
-                : 'Could not confirm (HTTP ' + r.status + '). Try again.';
-        });
 
         initTerminal();
     </script>

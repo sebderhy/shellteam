@@ -237,12 +237,12 @@ def _client_ip(request: Request) -> str:
 
 
 def start_session(
-    response: Response, request: Request, kind: str, fresh: bool = True, parent: dict | None = None
+    response: Response, request: Request, kind: str, parent: dict | None = None
 ) -> sessions.Minted:
     """Mint a session for this browser and set its cookies (login, enrollment,
     ``?token=`` redemption, legacy-cookie migration): the DRY entry point."""
     minted = sessions.mint(
-        kind, ip=_client_ip(request), ua=request.headers.get("user-agent"), fresh=fresh, parent=parent
+        kind, ip=_client_ip(request), ua=request.headers.get("user-agent"), parent=parent
     )
     apply_session_cookies(response, minted, secure=request_is_https(request))
     return minted
@@ -314,16 +314,15 @@ def verify_token(token: str) -> dict:
 
     Used for cookie-borne credentials (terminal WS, subdomain proxy): only a
     live session token passes, never the master. The payload carries the
-    session ``sid`` and ``auth_at`` (the terminal's freshness gate). In
-    localhost-trust mode (OWNER_TOKEN unset) every caller is the owner and
-    counts as fresh. Raises HTTPException(401) otherwise.
+    session ``sid``. In localhost-trust mode (OWNER_TOKEN unset) every caller
+    is the owner. Raises HTTPException(401) otherwise.
     """
     if not OWNER_TOKEN:
-        return {"sub": OWNER_ID, "email": OWNER_EMAIL, "sid": None, "auth_at": time.time()}
+        return {"sub": OWNER_ID, "email": OWNER_EMAIL, "sid": None}
     rec = sessions.lookup(token)
     if rec is None:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
-    return {"sub": OWNER_ID, "email": OWNER_EMAIL, "sid": rec["id"], "auth_at": rec["auth_at"]}
+    return {"sub": OWNER_ID, "email": OWNER_EMAIL, "sid": rec["id"]}
 
 
 def get_token_from_request(request: Request) -> str:

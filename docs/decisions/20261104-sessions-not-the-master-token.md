@@ -6,6 +6,8 @@
   `tests/test_split_credentials.py`, `tests/test_proxy.py`, `tests/test_app_routes.py`.
 - **Deciders:** Seb + Claude
 - **Amends:** [20260702-split-credentials.md](20260702-split-credentials.md)
+- **Amended by:** [20261110-no-terminal-token-reask.md](20261110-no-terminal-token-reask.md)
+  (point 2, the terminal's fresh confirmation, was removed on 2026-11-10)
 
 ## Context
 

@@ -110,8 +110,8 @@ there is no client-side profile fetch). It does **not** redirect to the cockpit.
   request check goes through `auth.request_is_owner` (cookie = session only);
   content subdomains carry only `shellteam_files`, an HMAC credential bound to
   one session that can read files and nothing else (cockpit-port access is
-  additionally Origin-gated). The web terminal also needs a fresh sign-in
-  (`TERMINAL_FRESH_MINUTES`, else close 4401 and the page asks for the token). Sharing mints signed expiring `?sig=&exp=` links
+  additionally Origin-gated). The web terminal opens on any live session, like
+  the Agents tab (no token re-ask: `docs/decisions/20261110-no-terminal-token-reask.md`). Sharing mints signed expiring `?sig=&exp=` links
   (`GET /api/auth/share`). `?token=` is NOT a general auth param — it is redeemed
   exactly once on `GET /` into cookies and scrubbed. All compares are
   constant-time (`api/services/auth.py`). When `OWNER_TOKEN` is **empty**, the box

@@ -19,6 +19,14 @@ async def stop_computer(user_id: str = ""):
     return await _backend().stop_computer(user_id)
 
 
+def restart_services() -> None:
+    _backend().restart_services()
+
+
+def pending_restart() -> dict:
+    return _backend().pending_restart()
+
+
 async def recreate_container(user_id: str = "", username: str = "", email: str = ""):
     return await _backend().recreate_container(user_id, username, email)
 

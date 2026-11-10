@@ -632,10 +632,9 @@ if FRONTEND_DIR.exists():
             return bounce
         resp = _render("dashboard.html", request)
         # Migrate a pre-SHE-136 browser whose cookie still holds the master:
-        # replace it with a session. Not "fresh": the browser replayed a stored
-        # cookie, nobody typed the token, so the terminal still asks to confirm.
+        # replace it with a session.
         if OWNER_TOKEN and token_is_owner(request.cookies.get(MASTER_COOKIE)):
-            start_session(resp, request, kind="migrated", fresh=False)
+            start_session(resp, request, kind="migrated")
             logging.getLogger(__name__).warning(
                 "Migrated a legacy master-token cookie to a session (rotate OWNER_TOKEN "
                 "if any browser that held it may have been exposed)"

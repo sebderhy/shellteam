@@ -84,33 +84,6 @@ def _current_session(request: Request) -> dict | None:
     return sessions.lookup(request.cookies.get(MASTER_COOKIE))
 
 
-@router.post("/confirm")
-async def confirm_identity(
-    body: LoginRequest,
-    request: Request,
-    user: dict = Depends(get_current_user),
-    _origin=Depends(require_trusted_origin),
-    _rl=Depends(_login_limit),
-):
-    """Step-up: re-enter OWNER_TOKEN to make this session fresh again.
-
-    The web terminal only opens on a session whose last login (or confirm) is
-    younger than TERMINAL_FRESH_MINUTES; the terminal page calls this when the
-    socket closes with 4401.
-    """
-    if not OWNER_TOKEN:
-        raise HTTPException(status_code=409, detail="No OWNER_TOKEN set, nothing to confirm.")
-    rec = _current_session(request)
-    if rec is None:
-        raise HTTPException(status_code=401, detail="Sign in from the dashboard first.")
-    if not token_is_owner(body.token.strip()):
-        note_auth_failure(request)
-        log.warning("Session %s confirm failed (bad token)", rec["id"])
-        raise HTTPException(status_code=401, detail="Invalid token")
-    sessions.confirm(rec["id"])
-    return {"confirmed": True, "fresh_for_seconds": sessions.TERMINAL_FRESH_SECONDS}
-
-
 @router.get("/sessions")
 async def list_sessions(request: Request, user: dict = Depends(get_current_user)):
     """The live sign-ins (Settings, Devices). Never returns a credential."""

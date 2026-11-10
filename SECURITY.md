@@ -101,10 +101,10 @@ Two things follow from taking that seriously:
      revoked by "Log out everywhere" or by rotating `OWNER_TOKEN`. The token
      itself only signs you in and works as a Bearer header for in-box tooling.
      ([decision](docs/decisions/20261104-sessions-not-the-master-token.md))
-   - **The web terminal needs a fresh sign-in.** A session older than
-     `TERMINAL_FRESH_MINUTES` must re-enter the token before a shell opens, and
-     every terminal session is logged with its IP and sent to your notification
-     channel (`NOTIFY_*`).
+   - **Every web terminal session is logged** with its IP and sent to your
+     notification channel (`NOTIFY_*`). It opens on any live sign-in, like the
+     Agents tab, whose agents already run any command
+     ([decision](docs/decisions/20261110-no-terminal-token-reask.md)).
    - Content origins (file/port subdomains) carry only a **derived, read-only
      credential** (`HMAC(master, session id)`, also HttpOnly, dies with its session). A compromised
      served page downgrades from "owns the box" to "can read files the owner can

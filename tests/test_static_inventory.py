@@ -26,6 +26,7 @@ APPROVED = {
     "favicon.svg",
     "feedback.js",
     "github-frame.js",   # the shared GitHub-card mount (wizard + Apps tab)
+    "restart.js",        # the shared "Restart ShellTeam" button (Settings + Apps tab, SHE-156)
     "icon-192.png",
     "icon-512.png",
     "icons/figma.svg",

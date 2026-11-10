@@ -40,8 +40,7 @@ class FakeShell:
 
 def _mock_verify_token(payload=None):
     if payload is None:
-        # A fresh session (SHE-136: the terminal needs a recent login).
-        payload = {"sub": "user-1", "email": "test@example.com", "sid": "s", "auth_at": time.time()}
+        payload = {"sub": "user-1", "email": "test@example.com", "sid": "s"}
     return patch("api.routers.terminal.verify_token", return_value=payload)
 
 

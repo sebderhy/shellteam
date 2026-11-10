@@ -16,9 +16,7 @@ in-box tooling. Every login mints a random session here:
   - sessions expire (``SESSION_TTL_DAYS``, default 14) and can be revoked one
     by one (log out) or all at once (log out everywhere);
   - the store is bound to the current master by an HMAC "epoch": rotating
-    ``OWNER_TOKEN`` revokes every session on the next lookup;
-  - ``auth_at`` records when the master (or an enrollment code) was last
-    presented, which is what the terminal's fresh-confirmation gate reads.
+    ``OWNER_TOKEN`` revokes every session on the next lookup.
 
 This module is the single owner of ``DATA_DIR/<owner>/sessions.json`` (0600).
 The OSS control plane is one uvicorn process; a process lock serialises
@@ -42,8 +40,6 @@ from api.config import DATA_DIR, OWNER_ID
 log = logging.getLogger(__name__)
 
 SESSION_TTL = int(float(os.environ.get("SESSION_TTL_DAYS", "14")) * 86400)
-# How recent a login (or re-entered token) must be to open the web terminal.
-TERMINAL_FRESH_SECONDS = int(float(os.environ.get("TERMINAL_FRESH_MINUTES", "15")) * 60)
 
 _TOKEN_PREFIX = "s1"
 _FILES_PREFIX = "f1"
@@ -145,15 +141,13 @@ def files_cred_for(sid: str) -> str:
 
 
 def mint(
-    kind: str, ip: str | None = None, ua: str | None = None, fresh: bool = True,
-    parent: dict | None = None,
+    kind: str, ip: str | None = None, ua: str | None = None, parent: dict | None = None,
 ) -> Minted:
-    """Create a session. ``fresh`` = the master was presented just now, so the
-    session may open the terminal right away.
+    """Create a session.
 
     ``parent`` is the session that minted an enrollment link (SHE-147): the new
-    device inherits its proof time and end date and dies with it, so a stolen
-    cookie can't launder itself into a fresh, longer-lived, unrevocable one.
+    device inherits its end date and dies with it, so a stolen cookie can't
+    launder itself into a longer-lived, unrevocable one.
     """
     if not _master():
         raise RuntimeError("sessions need OWNER_TOKEN (localhost-trust mode has no logins)")
@@ -165,13 +159,11 @@ def mint(
         "kind": kind,
         "created": now,
         "expires": now + SESSION_TTL,
-        "auth_at": now if fresh else 0,
         "ip": (ip or "")[:64],
         "ua": (ua or "")[:200],
     }
     if parent is not None:
         record["expires"] = min(record["expires"], int(parent["expires"]))
-        record["auth_at"] = int(parent.get("auth_at", 0))
         record["parent"] = parent["id"]
     with _lock:
         data = _live()
@@ -227,32 +219,6 @@ def lookup_files_cred(cred: str | None) -> dict | None:
     with _lock:
         rec = _live()["sessions"].get(sid)
     return None if rec is None else {"id": sid, **rec}
-
-
-def is_fresh(record: dict | None, window: int | None = None) -> bool:
-    """True when the session's last master/enrollment proof is recent enough."""
-    if not record:
-        return False
-    window = TERMINAL_FRESH_SECONDS if window is None else window
-    return time.time() - record.get("auth_at", 0) <= window
-
-
-def _set_auth_at(sid: str, ts: float) -> bool:
-    with _lock:
-        data = _live()
-        rec = data["sessions"].get(sid)
-        if rec is None:
-            return False
-        rec["auth_at"] = int(ts)
-        _write(data)
-    return True
-
-
-def confirm(sid: str) -> bool:
-    """Step-up: the owner re-entered the master on this session."""
-    ok = _set_auth_at(sid, time.time())
-    log.info("Session %s re-confirmed with the owner token (ok=%s)", sid, ok)
-    return ok
 
 
 def revoke(sid: str) -> bool:

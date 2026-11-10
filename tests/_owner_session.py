@@ -4,9 +4,9 @@ never OWNER_TOKEN, so tests that need a signed-in browser mint one here."""
 from api.services import sessions
 
 
-def session_token(fresh: bool = True) -> str:
+def session_token() -> str:
     """A live session-cookie value (``shellteam_token``)."""
-    return sessions.mint("test", fresh=fresh).token
+    return sessions.mint("test").token
 
 
 def files_token() -> str:

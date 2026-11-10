@@ -211,53 +211,45 @@ def _open_terminal(cookie: str):
             return ws.receive()
 
 
-class TestTerminalFreshConfirmation:
-    def test_stale_session_is_refused_with_4401(self, monkeypatch):
-        minted = sessions.mint("login")
-        real = time.time
-        monkeypatch.setattr(
-            sessions.time, "time", lambda: real() + sessions.TERMINAL_FRESH_SECONDS + 60
-        )
-        msg = _open_terminal(minted.token)
-        assert msg["type"] == "websocket.close" and msg["code"] == 4401
-        assert "confirm" in msg.get("reason", "").lower()
-
+class TestTerminalSession:
     def test_master_cookie_cannot_open_terminal(self):
         msg = _open_terminal(MASTER)
         assert msg["type"] == "websocket.close" and msg["code"] == 4001
 
-    def test_migrated_session_is_not_fresh(self):
-        minted = sessions.mint("migrated", fresh=False)
+    def test_old_session_opens_without_reentering_the_token(self, monkeypatch):
+        # SHE-155: the 15-minute re-ask is gone. The Agents tab already runs any
+        # command on the same sign-in, so re-asking only for the terminal cost
+        # the owner the token every time and stopped nobody.
+        minted = sessions.mint("migrated")
+        real = time.time
+        monkeypatch.setattr(sessions.time, "time", lambda: real() + 13 * 86400)
         msg = _open_terminal(minted.token)
-        assert msg["code"] == 4401
+        assert msg["type"] != "websocket.close" or msg.get("code") not in (4001, 4401)
 
-    def test_fresh_session_opens_logs_ip_and_notifies(self, caplog):
+    def test_expired_session_still_cannot_open_terminal(self, monkeypatch):
+        minted = sessions.mint("login")
+        real = time.time
+        monkeypatch.setattr(sessions.time, "time", lambda: real() + sessions.SESSION_TTL + 60)
+        msg = _open_terminal(minted.token)
+        assert msg["type"] == "websocket.close" and msg["code"] == 4001
+
+    def test_session_opens_logs_ip_and_notifies(self, caplog):
         minted = sessions.mint("login")
         sent = AsyncMock(return_value={"channel": "ntfy", "ok": True})
         with patch("api.services.security_watch.notify.send_notification", sent), patch(
             "api.services.security_watch.notify.notify_channel", return_value="ntfy"
         ), caplog.at_level("INFO"):
             msg = _open_terminal(minted.token)
-        assert msg["type"] != "websocket.close" or msg.get("code") not in (4001, 4401)
+        assert msg["type"] != "websocket.close" or msg.get("code") != 4001
         assert any("Terminal shell opened" in r.message and "testclient" in r.message for r in caplog.records)
         assert sent.await_count == 1
         title, body = sent.await_args.args[:2]
         assert "testclient" in body and "terminal" in (title + body).lower()
 
-    def test_confirm_reenters_token_and_makes_session_fresh(self, monkeypatch):
-        with TestClient(app, base_url="http://localhost") as c:
-            _login(c)
-            sid = sessions.lookup(c.cookies.get(auth.MASTER_COOKIE))["id"]
-            sessions._set_auth_at(sid, 0)  # long ago
-            assert c.post("/api/auth/confirm", json={"token": "wrong"}, headers=LOCAL).status_code == 401
-            assert sessions.is_fresh(sessions.lookup(c.cookies.get(auth.MASTER_COOKIE))) is False
-            r = c.post("/api/auth/confirm", json={"token": MASTER}, headers=LOCAL)
-            assert r.status_code == 200
-            assert sessions.is_fresh(sessions.lookup(c.cookies.get(auth.MASTER_COOKIE))) is True
-
-    def test_terminal_page_handles_4401_with_a_confirm_prompt(self):
+    def test_no_token_reask_left_in_terminal_page_or_api(self):
         html = (REPO / "frontend" / "terminal.html").read_text()
-        assert "4401" in html and "/api/auth/confirm" in html
+        assert "4401" not in html and "/api/auth/confirm" not in html
+        assert "/api/auth/confirm" not in {getattr(r, "path", "") for r in app.routes}
 
 
 # ── 1. Steel on its own isolated Docker network ─────────────────────────────
