@@ -141,6 +141,44 @@
         .panel.active { display: flex; flex-direction: column; }
         .panel iframe { width: 100%; height: 100%; border: none; background: var(--surface-0); }
 
+        /* ── Projects column layout (Settings switch, SHE-168) ──────────────────
+           The column lives inside the cockpit frame, which therefore stays on
+           screen all the time. The top bar and the tab row go away; the other
+           screens (Terminal, Apps, Settings...) open over the conversation,
+           to the right of the column, whose width the cockpit reports. */
+        body.layout-projects .topbar,
+        body.layout-projects .workspace-tabs { display: none; }
+        body.layout-projects #panel-agents { display: flex; flex-direction: column; }
+        body.layout-projects .panel:not(#panel-agents) {
+            left: var(--pj-side, 276px); z-index: 2; background: var(--surface-0);
+            border-left: 1px solid var(--border);
+        }
+        .tool-bar { display: none; }
+        /* The panel beside the chat shares the space right of the column half
+           and half with the conversation, instead of taking half the window
+           (which would squeeze the column and the chat into the other half). */
+        @media (min-width: 769px) {
+            body.layout-projects .report-panel { width: calc((100% - var(--pj-side, 276px)) / 2); }
+        }
+        @media (max-width: 720px) {
+            /* Phone: a tool takes the whole screen, with a way back on top. */
+            body.layout-projects .panel:not(#panel-agents) { left: 0; top: 48px; border-left: 0; }
+            body.layout-projects.tool-open .tool-bar {
+                display: flex; align-items: center; gap: 6px; position: absolute; z-index: 3;
+                top: 0; left: 0; right: 0; height: 48px; padding: 0 8px;
+                background: var(--surface-1); border-bottom: 1px solid var(--border);
+                font-size: var(--text-md); font-weight: var(--weight-semibold);
+            }
+            .tool-bar button {
+                display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
+                border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); cursor: pointer;
+            }
+            .tool-bar svg { width: 20px; height: 20px; }
+        }
+        .layout-switch { display: flex; gap: 8px; flex-wrap: wrap; }
+        .layout-switch .ai-btn { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); }
+        .layout-switch .ai-btn.active { background: var(--brand); color: #0a0a0a; border-color: var(--brand); }
+
         /* Report panel (right half of the split) */
         .report-panel {
             width: 50%; flex-shrink: 0; min-width: 0;
@@ -185,6 +223,10 @@
         .report-btn.is-public { color: var(--positive); border-color: var(--positive); }
         .report-btn.is-on { color: var(--brand); border-color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, var(--surface-1)); }
         .report-btn-icon { padding: 0; width: 30px; justify-content: center; font-size: 15px; }
+        /* .report-btn sets display, which beats the browser's own [hidden] rule:
+           without this line Comment / Edit text showed on every document, and a
+           project view kept its Private / Share buttons (same trap as SHE-167). */
+        .report-btn[hidden] { display: none; }
         .report-frame { flex: 1; width: 100%; border: 0; background: #fff; }
 
         /* Report open → the workspace is half-width, so compact the tab bar
@@ -563,6 +605,13 @@
     </nav>
 
     <main class="main" id="workspace-main">
+        <!-- Projects column layout, phone only: the way back from a tool. -->
+        <div class="tool-bar" id="tool-bar">
+            <button type="button" id="tool-bar-back" aria-label="Back to agents">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span id="tool-bar-title"></span>
+        </div>
         <div class="panel active" id="panel-agents" role="tabpanel" aria-labelledby="tab-agents">
             <iframe id="agents-iframe" title="Agents" allow="microphone"></iframe>
             <div class="gate" id="agents-gate">
@@ -749,6 +798,17 @@
                         and reports it below.
                     </p>
                     <div id="auto-update-root"></div>
+                </div>
+
+                <div class="card" id="layout-card">
+                    <h2>Layout</h2>
+                    <p class="muted" style="margin:0 0 12px">
+                        <b>Projects column</b> lists your agents on the left, grouped by
+                        the project they work in, with what each one is doing.
+                        <b>Tabs</b> is the row of tabs across the top. Applies to
+                        every device after a reload.
+                    </p>
+                    <div id="layout-root"></div>
                 </div>
 
                 <div class="card" id="dream-engine-card" hidden>
@@ -997,6 +1057,10 @@
         // ────────────────────────────────────────────────────────────────────
 
         const OWNER_USERNAME = "__OWNER_USERNAME__";
+        // "tabs" or "projects" (Settings switch, SHE-168).
+        const COCKPIT_LAYOUT = "__COCKPIT_LAYOUT__";
+        const PROJECTS_LAYOUT = COCKPIT_LAYOUT === 'projects';
+        if (PROJECTS_LAYOUT) document.body.classList.add('layout-projects');
         const COCKPIT_URL = "__COCKPIT_URL__";
         // Bumps whenever a served HTML shell changes, so iframe URLs can't be
         // served stale from a browser/PWA cache after a deploy.
@@ -1013,7 +1077,8 @@
                 // the browser kept a cached cockpit (old app.js) across deploys
                 // until a hard refresh, so new handlers like the report side
                 // panel silently didn't exist (SHE-39).
-                case 'agents':   return COCKPIT_URL + (COCKPIT_URL.includes('?') ? '&' : '?') + 'v=' + ASSET_VERSION;
+                case 'agents':   return COCKPIT_URL + (COCKPIT_URL.includes('?') ? '&' : '?') + 'v=' + ASSET_VERSION
+                                     + (PROJECTS_LAYOUT ? '&layout=projects' : '');
                 case 'terminal': return `/terminal?v=${ASSET_VERSION}`;
                 // Main-origin on purpose: the editor's writes (/_api/) require the
                 // master session cookie, which is host-only on this origin. The
@@ -1041,8 +1106,12 @@
         // 404s /knowledge without it) — probe once and reveal the tab. The
         // initial-tab logic awaits this so a #knowledge deep link validates
         // against the revealed tab, not a race.
+        const shellCaps = { knowledge: false, browser: "__HAS_BROWSER__" === "true" };
         const knowledgeProbe = fetch('/api/knowledge/dream/status').then(r => {
-            if (r.ok) document.getElementById('knowledge-tab').style.display = '';
+            if (!r.ok) return;
+            document.getElementById('knowledge-tab').style.display = '';
+            shellCaps.knowledge = true;
+            sendShellState();
         }).catch(() => {});
 
         // The Reports tab only appears once the box has produced at least one
@@ -1072,6 +1141,21 @@
         // Reopening the box without a #tab (a bookmark, the home-screen icon)
         // lands on the tab last used on this device (SHE-112).
         const LAST_TAB_KEY = 'shellteam_last_tab';
+        let currentTab = 'agents';
+
+        // Projects column layout: the column is drawn by the cockpit frame, so
+        // it is told which screen is showing and what this box offers.
+        function postToCockpit(message) {
+            document.getElementById('agents-iframe').contentWindow?.postMessage(
+                { source: 'shellteam-dashboard', ...message }, '*');
+        }
+        function sendShellState() {
+            if (!PROJECTS_LAYOUT) return;
+            postToCockpit({
+                kind: 'shell-state', tab: currentTab, caps: shellCaps,
+                restartNeeded: !document.getElementById('restart-chip').hidden,
+            });
+        }
 
         function switchTab(tab, { refreshSettings = true } = {}) {
             document.querySelectorAll('.tab').forEach(el => {
@@ -1092,7 +1176,43 @@
             }
             history.replaceState(null, '', `#${tab}`);
             localStorage.setItem(LAST_TAB_KEY, tab);
+            currentTab = tab;
+            if (PROJECTS_LAYOUT) {
+                // The cockpit frame carries the column: it must exist whatever
+                // screen the owner landed on.
+                ensureLoaded('agents');
+                document.body.classList.toggle('tool-open', tab !== 'agents');
+                document.getElementById('tool-bar-title').textContent =
+                    document.querySelector(`.tab[data-tab="${tab}"]`)?.textContent.trim() || '';
+                sendShellState();
+            }
         }
+        document.getElementById('tool-bar-back').addEventListener('click', () => switchTab('agents'));
+
+        // ─── Layout switch (Settings) ───────────────────────────────────────
+        (function layoutSwitch() {
+            const root = document.getElementById('layout-root');
+            const LABELS = { projects: 'Projects column', tabs: 'Tabs' };
+            root.innerHTML = `<div class="layout-switch" role="group" aria-label="Layout">${Object.entries(LABELS).map(([value, label]) =>
+                `<button type="button" class="ai-btn${value === COCKPIT_LAYOUT ? ' active' : ''}" aria-pressed="${value === COCKPIT_LAYOUT}" data-layout="${value}">${label}</button>`).join('')}</div><div class="fk-err"></div>`;
+            root.addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-layout]');
+                if (!btn || btn.dataset.layout === COCKPIT_LAYOUT) return;
+                const resp = await apiFetch('/api/settings/layout', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ layout: btn.dataset.layout }),
+                });
+                if (resp.error) {
+                    const err = root.querySelector('.fk-err');
+                    err.textContent = resp.error; err.style.display = 'block';
+                    return;
+                }
+                // Land on the agents, not back on Settings, in the new layout.
+                history.replaceState(null, '', '#agents');
+                localStorage.setItem(LAST_TAB_KEY, 'agents');
+                location.reload();
+            });
+        })();
 
         // ─── Laptop import (Environment Mirror) ─────────────────────────────
         // Each call mints a fresh 24h upload credential server-side, so the
@@ -2327,6 +2447,7 @@
             const chip = document.getElementById('restart-chip');
             if (r.error) { console.warn('[restart-chip] check failed:', r.error); return; }
             chip.hidden = !r.needed;
+            sendShellState();
             if (r.needed) chip.title = 'ShellTeam\'s code was updated (' + r.files.length + ' file'
                 + (r.files.length === 1 ? '' : 's') + '). Restart to load it. Agents mid-reply will stop.';
         }
@@ -2434,9 +2555,14 @@
             // strictly sandboxed (no same-origin → no cookie/DOM access).
             const STRICT_SANDBOX = 'allow-scripts allow-popups allow-forms allow-downloads';
             const TRUSTED_SANDBOX = STRICT_SANDBOX + ' allow-same-origin';
+            // /reports and /knowledge are this dashboard's own pages, shown in the
+            // panel by the projects column (one project's reports or notes).
             function isFirstPartyApp(u) {
-                try { return new URL(u, location.href).pathname.startsWith('/_editor/'); }
-                catch { return false; }
+                try {
+                    const x = new URL(u, location.href);
+                    if (x.host !== location.host) return false;
+                    return x.pathname.startsWith('/_editor/') || x.pathname === '/reports' || x.pathname === '/knowledge';
+                } catch { return false; }
             }
             // Icon + word; the word hides when the panel is narrow (container query).
             const iconLabel = (ico, label) => `<span class="report-btn-ico">${ico}</span><span class="report-btn-label">${label}</span>`;
@@ -2546,8 +2672,12 @@
                 }
             }
 
-            function openReport(u, title) {
-                url = u; relpath = relpathFromUrl(u); appPort = null;
+            // `tool`: one of the project views (Files, Reports, Knowledge) rather
+            // than a document, so publishing and sharing do not apply to it.
+            function openReport(u, title, tool = false) {
+                url = u; relpath = tool ? null : relpathFromUrl(u); appPort = null;
+                visBtn.hidden = shareBtn.hidden = tool;
+                if (!tool) postToCockpit({ kind: 'panel-closed' });
                 resetReview();
                 // Set sandbox BEFORE src so the new document inherits it. Never
                 // leave allow-same-origin on for a subsequent untrusted report.
@@ -2556,13 +2686,14 @@
                 titleEl.textContent = title || (relpath ? relpath.split('/').pop() : new URL(u, location.href).hostname);
                 panel.classList.remove('hidden');
                 split.classList.add('report-open');
-                refreshStatus();
+                if (!tool) refreshStatus();
             }
             function closeReport() {
                 panel.classList.add('hidden');
                 split.classList.remove('report-open');
                 frame.src = 'about:blank';
                 resetReview();
+                postToCockpit({ kind: 'panel-closed' });
             }
             visBtn.addEventListener('click', async () => {
                 if (!(relpath || appPort) || visBtn.disabled) return;
@@ -2617,7 +2748,19 @@
                 if (d && d.source === 'shellteam-report' && e.source === frame.contentWindow) return onReportMessage(d);
                 const agentsFrame = document.getElementById('agents-iframe');
                 if (!d || d.source !== 'shellteam-cockpit' || e.source !== agentsFrame?.contentWindow) return;
-                if (d.kind === 'report-open' && d.url) openReport(d.url, d.title);
+                if (d.kind === 'report-open' && d.url) openReport(d.url, d.title, d.tool === true && isFirstPartyApp(d.url));
+                // Projects column (SHE-168): the column is inside the cockpit frame.
+                else if (d.kind === 'side-ready') sendShellState();
+                else if (d.kind === 'side') document.body.style.setProperty('--pj-side', `${Math.max(0, Number(d.width) || 0)}px`);
+                else if (d.kind === 'tool-open' && (d.tab === 'settings' || IFRAME_IDS[d.tab])) switchTab(d.tab);
+                else if (d.kind === 'tool-close') switchTab('agents');
+                else if (d.kind === 'restart-click') document.getElementById('restart-chip').click();
+                else if (d.kind === 'feedback-open') document.getElementById('feedback-open').click();
+                else if (d.kind === 'reports-list') {
+                    fetch('/api/computers/reports/list').then(r => r.ok ? r.json() : { reports: [] })
+                        .then(j => postToCockpit({ kind: 'reports-list', reports: j.reports.map(({ path, name, title, workspace }) => ({ path, name, title, workspace })) }))
+                        .catch(e => console.error('[jump] reports list', e));
+                }
                 else if (d.kind === 'report-close') closeReport();
                 else if (d.kind === 'provider-settings') openAIProviderSettings(d.provider);
                 // Unread conversation tabs, Slack-style: "(2) ShellTeam" in the browser tab.

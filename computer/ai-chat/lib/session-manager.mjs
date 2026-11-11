@@ -307,6 +307,9 @@ export function listSlots() {
     viewedAt: s.viewedAt || 0,
     answeredAt: s.answeredAt || 0,
     markedUnread: !!s.markedUnread,
+    // The projects column shows "Working 4 min" and "Has a question" (SHE-168).
+    turnStartedAt: s.isGenerating ? (s.turnStartedAt || 0) : 0,
+    asking: !!s.pendingAskUser,
     label: deriveLabel(id),
     ...s.config,
   }));
@@ -549,6 +552,68 @@ async function forkIntoReservedSlot(source, sourceSlotId, newSlotId, toModel) {
     fork: { fromFamily, toFamily, toModel: model, crossFamily: fromFamily !== toFamily, csfId: handoff.csfId, stats: handoff.stats },
     history: fork.history,
   };
+}
+
+/**
+ * Move a slot's conversation into another folder and keep its history
+ * (SHE-168). `set_cwd` cannot do this: a session belongs to the folder it was
+ * started in, so it resets the conversation. Here the conversation is carried
+ * over as a fresh native session of the SAME agent in the new folder (the
+ * portable-session path a fork uses), and the slot is repointed at it.
+ *
+ * Returns { cwd, fromCwd, fromSessionId, sessionId } or { error }. On error the
+ * slot is untouched.
+ */
+export async function moveSlot(slotId, dir) {
+  const slot = getSlot(slotId);
+  if (!slot) return { error: "This chat no longer exists. It was closed on another device." };
+  const cwd = clampToWorkspaceLock(dir);
+  const fromCwd = slot.config.cwd;
+  if (cwd === fromCwd) return { cwd, fromCwd, fromSessionId: slot.sessionId, sessionId: slot.sessionId };
+  if (slot.isGenerating) {
+    return { error: "This agent is working. Wait for it to finish, then move it." };
+  }
+  const fromSessionId = slot.sessionId;
+  if (!fromSessionId) {
+    // Nothing said yet: there is no history to carry.
+    stopAgent(slotId);
+    slot.config.cwd = cwd;
+    touchSlot(slotId);
+    saveTabs();
+    return { cwd, fromCwd, fromSessionId: null, sessionId: null };
+  }
+
+  const model = slot.config.model;
+  const family = agentIdFor(model);
+  let handoff;
+  try {
+    handoff = await handoffSession({
+      fromFamily: family, fromSessionId, fromModel: model,
+      toFamily: family, toModel: model, cwd,
+    });
+  } catch (e) {
+    console.error(`[session-mgr] Slot ${slotId}: move ${fromCwd} -> ${cwd} FAILED: ${e.stack || e.message}`);
+    return { error: `Couldn't move the conversation: ${e.message}. Nothing was changed.` };
+  }
+  if (slot.isGenerating || slot.sessionId !== fromSessionId) {
+    // A message was sent while the conversation was being carried over.
+    return { error: "This chat changed while it was being moved. Nothing was changed, try again." };
+  }
+
+  stopAgent(slotId);
+  slot.config.cwd = cwd;
+  slot.sessionId = handoff.nativeSessionId;
+  slot.sessionFamily = family;
+  if (!supports(model, "cliOwnsHistory")) {
+    appendCodexHistory(handoff.nativeSessionId, { type: "session_meta", model, cwd, timestamp: Date.now() });
+    for (const msg of slot.history) appendCodexHistory(handoff.nativeSessionId, msg);
+  }
+  addToHistory(slotId, { type: "session_event", event: "moved", fromCwd, toCwd: cwd, timestamp: Date.now() });
+  if (slotId === 0) saveSessionIdToDisk(handoff.nativeSessionId);
+  touchSlot(slotId);
+  saveTabs();
+  console.log(`[session-mgr] Slot ${slotId}: moved ${fromCwd} -> ${cwd} — session ${fromSessionId} -> ${handoff.nativeSessionId} (csf=${handoff.csfId})`);
+  return { cwd, fromCwd, fromSessionId, sessionId: handoff.nativeSessionId };
 }
 
 export function setCwd(slotId, dir) {
@@ -807,6 +872,7 @@ export async function sendMessage(slotId, content, { isWatchdogResend = false } 
   // another tab's model/cost event, a reconnect) would otherwise report this
   // slot as idle, and the client's status reconciliation would tear down the
   // live Stop button + running-tab dot mid-request (SHE-90/SHE-88/SHE-89).
+  if (!slot.isGenerating) slot.turnStartedAt = Date.now();
   slot.isGenerating = true;
   slot.agent.sendMessage(content);
   return true;

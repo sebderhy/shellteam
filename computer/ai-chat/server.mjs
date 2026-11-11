@@ -16,6 +16,11 @@ import { WebSocketServer } from "ws";
 
 import { PORT, HOST, HOME, PUBLIC_DIR, MIME_TYPES, WORKSPACE_LOCK, GUEST_NAME } from "./lib/constants.mjs";
 import { listWorkspaces } from "./lib/workspaces.mjs";
+import {
+  listProjects, ensureProject, projectFor, renameProject, removeProject, reorderProjects,
+  createProject, openProject, cloneProject,
+} from "./lib/projects.mjs";
+import { moveInPrompt, recordSessionMove } from "./lib/project-move.mjs";
 import { installedAgents } from "./lib/agents/registry.mjs";
 import { enabledModules, codexProviderOverrides } from "./lib/agent-layer.mjs";
 import { proxyBrowserHttp, proxyBrowserUpgrade, browserProxyEnabled } from "./lib/browser-proxy.mjs";
@@ -57,6 +62,7 @@ import {
 } from "./lib/session.mjs";
 import {
   setBroadcast,
+  moveSlot,
   restoreSlots,
   resumeLostBackgroundTasks,
   beginShutdown,
@@ -166,6 +172,8 @@ function broadcast(obj) {
 }
 setBroadcast(broadcast);
 restoreSlots();
+// Every folder an open chat works in is a project in the projects column.
+for (const s of listSlots()) ensureProject(s.cwd);
 // A slot whose CLI died with background tasks running (this very restart, or
 // a crash the previous process never got to report) is resumed with a notice
 // naming them, once clients can receive the reply (SHE-93).
@@ -258,6 +266,8 @@ function buildStatus(overrides = {}) {
     // enforcement itself is server-side (set_cwd guard + session-manager clamp).
     workspaceLock: WORKSPACE_LOCK,
     guestName: GUEST_NAME,
+    home: HOME,
+    projects: listProjects(),
     model: loadModel(),
     cwd: getCwd(primaryId),
     sessionId: getSessionId(primaryId),
@@ -1242,8 +1252,82 @@ chatWSS.on("connection", (ws, req) => {
             break;
           }
           setCwd(slot, abs);
+          ensureProject(abs);
           resetSlot(slot);
           broadcast({ type: "cwd_changed", cwd: abs, slot });
+        }
+        break;
+      }
+
+      // --- Projects column (SHE-168) ---
+      case "rename_project": {
+        if (renameProject(msg.path, msg.name)) broadcast(buildStatus());
+        break;
+      }
+
+      case "remove_project": {
+        if (removeProject(msg.path)) broadcast(buildStatus());
+        break;
+      }
+
+      case "reorder_projects": {
+        if (!Array.isArray(msg.paths)) break;
+        reorderProjects(msg.paths);
+        broadcast(buildStatus());
+        break;
+      }
+
+      // Bring a project onto the list three ways: a new empty folder, a folder
+      // that already exists, or a GitHub repository. The reply carries the
+      // client's nonce so the dialog that asked can continue (or show why not).
+      case "add_project": {
+        let result;
+        if (msg.how === "new") result = createProject(msg.name);
+        else if (msg.how === "open") result = openProject(msg.path);
+        else if (msg.how === "clone") result = await cloneProject(msg.repo);
+        else result = { error: `Unknown way to add a project: ${msg.how}` };
+        ws.send(JSON.stringify({ type: "project_added", nonce: msg.nonce ?? null, ...result }));
+        if (!result.error) broadcast(buildStatus());
+        break;
+      }
+
+      // Move a chat into a project and keep its history. With `moveIn`, the
+      // agent is then asked to bring its files and write the project's notes.
+      case "move_slot": {
+        const slot = msg.slot;
+        if (!requireSlot(slot, "move_slot")) break;
+        const abs = resolve(String(msg.cwd || ""));
+        if (abs !== HOME && !abs.startsWith(HOME + "/")) {
+          ws.send(JSON.stringify({ type: "error", slot, message: "Directory must be under home" }));
+          break;
+        }
+        if (WORKSPACE_LOCK && clampToWorkspaceLock(abs) !== abs) {
+          ws.send(JSON.stringify({ type: "error", slot, message: `This workspace is locked to ${WORKSPACE_LOCK}` }));
+          break;
+        }
+        if (!existsSync(abs)) {
+          ws.send(JSON.stringify({ type: "error", slot, message: "Directory not found" }));
+          break;
+        }
+        const moved = await moveSlot(slot, abs);
+        if (moved.error) {
+          ws.send(JSON.stringify({ type: "error", slot, message: moved.error }));
+          break;
+        }
+        ensureProject(abs);
+        if (moved.fromSessionId) recordSessionMove({ sessionId: moved.fromSessionId, fromCwd: moved.fromCwd, toCwd: moved.cwd });
+        const project = projectFor(abs);
+        const askMoveIn = msg.moveIn === true && !!moved.sessionId && !!project;
+        const prompt = askMoveIn ? moveInPrompt({ project, createRepo: msg.createRepo === true }) : null;
+        if (prompt) addUserMessage(slot, prompt);
+        broadcast({ type: "slot_moved", slot, cwd: moved.cwd, sessionId: moved.sessionId });
+        broadcast({ type: "history", messages: getHistory(slot), slot });
+        broadcast(buildStatus());
+        console.log(`[ai-chat] Moved tab ${slot}: ${moved.fromCwd} -> ${moved.cwd}${askMoveIn ? " (agent asked to move in)" : ""}`);
+        if (askMoveIn) {
+          if (!isQueryActive(slot)) await startAgent(slot);
+          await sendMessage(slot, prompt);
+          broadcast(buildStatus());
         }
         break;
       }
@@ -1389,7 +1473,7 @@ chatWSS.on("connection", (ws, req) => {
           }
           config.model = msg.model;
         }
-        if (msg.cwd) config.cwd = msg.cwd;
+        if (msg.cwd) { config.cwd = msg.cwd; ensureProject(resolve(msg.cwd)); }
         const allocated = allocateSlotId(hint, (id) => delegationBroker.isBrokerSlot(id));
         createSlot(allocated, config);
         ws.send(JSON.stringify({ type: "tab_created", nonce: msg.nonce ?? null, requested: hint ?? null, slot: allocated }));

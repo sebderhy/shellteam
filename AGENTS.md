@@ -183,6 +183,7 @@ write to the owner's coding-agent config** (`~/.claude`, `~/.claude.json`,
 | `frontend/reports.html` / `api/services/report_catalog.py` | Reports tab: `~/reports` catalog grouped by originating workspace (transcript-scan attribution) |
 | `frontend/review-picker.js` / `api/services/report_review.py` | Review by pointing: picker injected into the owner's view of sandboxed HTML (comment on an element → cockpit quote tray; in-place text edit → exact-match save) |
 | `computer/ai-chat/` | The ai-chat cockpit (Node service on `:3456`) |
+| `computer/ai-chat/public/projects.js` / `lib/projects.mjs` | Projects column (opt-in, `COCKPIT_LAYOUT=projects`): agents grouped by project, move a chat into a project with its history |
 | `deploy/systemd/*.service` | `systemd --user` unit templates (rendered by `install.sh`) |
 | `deploy/nginx/shellteam.conf` | File-server nginx config template |
 | `install.sh` | Native installer (idempotent) |

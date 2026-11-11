@@ -5,6 +5,33 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.58] - 2026-11-11
+
+### Added
+- **Projects column (opt-in).** Settings -> Layout -> "Projects column" lists
+  your agents on the left, grouped by the project they work in, instead of
+  the row of tabs. Each agent shows what it is doing: working and for how
+  long, waiting with a question, done, or how long it has been quiet. Chats
+  untouched for a week fold away. Terminal, Apps and Settings open beside
+  the column (SHE-168).
+- **Projects have a name you choose.** Double-click it to rename; the folder
+  path stays next to it. "Add a project" creates a folder, opens an existing
+  one, or clones a GitHub repository.
+- **Move a chat into a project and keep its history.** Right-click an agent
+  (or drag it onto a project). The agent can then bring its files into the
+  project and write the project's first notes, and, for a new project, put
+  it in a private GitHub repository. The chat's reports follow it.
+- **Knowledge, Files and Reports for one project**, opened beside the chat.
+- **Ctrl+K** jumps to any agent, project or report. **Alt+W** goes to the
+  next agent waiting for you.
+- **A new box asks "What are you working on?"** so the first agent starts
+  inside a project.
+
+### Fixed
+- The right-click menu on a tab no longer stretches across the window.
+- The side panel's Comment and Edit text buttons no longer show on documents
+  that cannot be commented.
+
 ## [0.1.57] - 2026-11-11
 
 ### Fixed

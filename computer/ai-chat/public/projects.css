@@ -1,0 +1,420 @@
+/* Projects column (SHE-168) — see projects.js.
+   Everything here is scoped to html.layout-projects or to .pj-* elements, so
+   the tab-row layout is untouched when the column is off.
+
+   Colour keeps the cockpit's meanings: amber = an agent is working (and the
+   one action to take), green = something is waiting for you. Nothing else is
+   coloured, so the eye goes to the dots. */
+
+.pj-side, .pj-back, .pj-crumb, .pj-tools, .pj-first { display: none; }
+
+html.layout-projects body { display: flex; }
+html.layout-projects .app { flex: 1; min-width: 0; }
+html.layout-projects .session-tabs,
+html.layout-projects .workspace-combo,
+html.layout-projects .conv-switcher,
+html.layout-projects .status-label,
+html.layout-projects .btn-help,
+html.layout-projects #aiMenuWorkspaceItem { display: none !important; }
+
+/* ── The column ─────────────────────────────────────────────────────────── */
+html.layout-projects .pj-side:not([hidden]) {
+    display: flex; flex-direction: column; flex: none;
+    width: 276px; height: 100vh; height: 100dvh;
+    background: var(--surface); border-right: 1px solid var(--border);
+    font-size: 13px; color: var(--text); user-select: none;
+}
+html.layout-projects.pj-side-shut .pj-side { display: none !important; }
+.pj-side svg { width: 15px; height: 15px; flex: none; }
+
+.pj-brand {
+    display: flex; align-items: center; gap: 8px; flex: none;
+    height: 44px; padding: 0 8px 0 14px;
+}
+.pj-logo { display: flex; width: 22px; height: 22px; }
+.pj-logo svg { width: 22px; height: 22px; }
+.pj-wordmark { flex: 1; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.pj-wordmark b { color: var(--accent); font-weight: 700; }
+
+.pj-icon {
+    display: grid; place-items: center; flex: none;
+    width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text-dim); cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.pj-icon:hover { background: var(--surface-el); color: var(--text); }
+
+.pj-jump-btn {
+    display: flex; align-items: center; gap: 8px; flex: none;
+    margin: 0 10px; height: 32px; padding: 0 8px 0 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text-dim);
+    font: inherit; font-size: 12.5px; cursor: pointer; text-align: left;
+    transition: border-color 0.12s, color 0.12s;
+}
+.pj-jump-btn:hover { border-color: rgba(255, 255, 255, 0.22); color: var(--text-muted); }
+.pj-jump-btn span { flex: 1; }
+.pj-side kbd, .pj-dialog kbd {
+    font: 500 10px var(--font); color: var(--text-dim); white-space: nowrap;
+    border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+}
+
+.pj-pulse { display: flex; flex-wrap: wrap; gap: 6px; flex: none; padding: 10px 10px 2px; min-height: 12px; }
+.pj-pulse:empty { padding-bottom: 0; }
+.pj-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 22px; padding: 0 9px; border: 0; border-radius: 999px;
+    background: var(--surface-el); color: var(--text-muted);
+    font: 600 11px var(--font);
+}
+button.pj-chip { cursor: pointer; }
+.pj-chip.wait { background: rgba(34, 197, 94, 0.14); color: var(--text); }
+.pj-chip.wait:hover { background: rgba(34, 197, 94, 0.24); }
+
+.pj-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: transparent; }
+.pj-dot.work { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.4s infinite; }
+.pj-dot.new, .pj-dot.ask { background: var(--green); }
+@media (prefers-reduced-motion: reduce) { .pj-dot.work { animation: none; } }
+
+.pj-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px 12px; scrollbar-width: thin; scrollbar-color: var(--surface-el) transparent; }
+.pj-group { margin-bottom: 10px; border-radius: 9px; }
+.pj-group.drop { background: var(--accent-bg); box-shadow: inset 0 0 0 1.5px var(--accent); }
+
+.pj-head {
+    display: flex; align-items: center; gap: 4px;
+    height: 30px; padding: 0 2px 0 0; border-radius: 6px; cursor: pointer;
+}
+.pj-fold {
+    display: grid; place-items: center; flex: none;
+    width: 18px; height: 26px; padding: 0; border: 0; background: transparent;
+    color: var(--text-dim); cursor: pointer; opacity: 0;
+    transition: opacity 0.12s, transform 0.15s;
+}
+.pj-fold svg { width: 12px; height: 12px; }
+.pj-head:hover .pj-fold, .pj-fold:focus-visible, .pj-group.shut .pj-fold { opacity: 1; }
+.pj-group.shut .pj-fold { transform: rotate(-90deg); }
+.pj-name {
+    flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-weight: 700; font-size: 13.5px; letter-spacing: -0.005em; cursor: text;
+    border-radius: 4px; padding: 1px 3px; margin-left: -3px;
+}
+.pj-name.renaming, .pj-ag-name.renaming, .pj-crumb-agent.renaming {
+    outline: 1.5px solid var(--accent); background: var(--bg); text-overflow: clip; user-select: text; cursor: text;
+}
+.pj-path {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 11px var(--mono); color: var(--text-dim); padding-top: 1px; margin-left: 3px;
+}
+.pj-sum { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-right: 4px; }
+.pj-head .pj-icon { width: 22px; height: 22px; opacity: 0; }
+.pj-head:hover .pj-icon, .pj-head .pj-icon:focus-visible, .pj-loose-head .pj-icon { opacity: 1; }
+.pj-head .pj-icon svg, .pj-loose-head .pj-icon svg { width: 13px; height: 13px; }
+
+.pj-loose-head {
+    display: flex; align-items: center; gap: 10px;
+    height: 30px; padding: 0 2px 0 18px;
+    font-size: 11px; font-weight: 600; color: var(--text-dim);
+}
+.pj-loose-head::after { content: ''; order: 1; flex: 1; height: 1px; background: var(--border); }
+.pj-loose-head .pj-icon { order: 2; width: 22px; height: 22px; }
+
+.pj-ag {
+    display: flex; align-items: center; position: relative;
+    height: 30px; border-radius: 6px; color: var(--text-muted);
+    transition: background 0.1s;
+}
+.pj-ag:hover { background: var(--surface-el); }
+.pj-ag.on { background: rgba(255, 255, 255, 0.09); color: var(--text); }
+.pj-ag.on::before { content: ''; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2.5px; border-radius: 2px; background: var(--accent); }
+.pj-ag.dragging { opacity: 0.4; }
+.pj-ag.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.pj-ag.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.pj-ag-open {
+    display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; height: 100%;
+    padding: 0 8px 0 18px; border: 0; background: transparent; color: inherit;
+    font: inherit; text-align: left; cursor: pointer; border-radius: 6px;
+}
+.pj-ag-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; padding: 1px 3px; margin: 0 -3px; }
+.pj-ag-state { flex: none; font-size: 11px; color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pj-ag.work .pj-ag-state, .pj-ag-state.work { color: var(--accent); }
+.pj-ag.new, .pj-ag.ask { color: var(--text); font-weight: 700; }
+.pj-ag.new .pj-ag-state, .pj-ag.ask .pj-ag-state, .pj-ag-state.new, .pj-ag-state.ask { color: var(--green); font-weight: 500; }
+.pj-ag-more {
+    display: none; place-items: center; flex: none;
+    width: 24px; height: 24px; margin-right: 3px; padding: 0; border: 0; border-radius: 5px;
+    background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.pj-ag-more:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+.pj-ag:hover .pj-ag-more, .pj-ag-more:focus-visible { display: grid; }
+.pj-ag:hover .pj-ag-state { display: none; }
+
+.pj-none { padding: 6px 18px; font-size: 12px; color: var(--text-dim); }
+.pj-older {
+    display: block; margin: 2px 0 0 15px; padding: 3px 6px; border: 0; border-radius: 5px;
+    background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; cursor: pointer;
+}
+.pj-older:hover { color: var(--text); background: var(--surface-el); }
+.pj-add {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    height: 30px; margin-top: 4px; padding: 0 8px 0 15px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.pj-add:hover { background: var(--surface-el); color: var(--text); }
+.pj-add svg { width: 13px; height: 13px; }
+
+.pj-restart {
+    display: flex; align-items: center; gap: 8px; flex: none;
+    margin: 0 10px 8px; height: 32px; padding: 0 10px;
+    border: 1px solid var(--accent-border); border-radius: 8px;
+    background: var(--accent-bg); color: var(--accent);
+    font: 600 12px var(--font); cursor: pointer;
+}
+.pj-restart[hidden] { display: none; }
+.pj-restart:hover { border-color: var(--accent); }
+
+.pj-foot { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; flex: none; padding: 6px 8px 8px; border-top: 1px solid var(--border); }
+.pj-side.no-foot .pj-foot { display: none; }
+.pj-tool {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 7px 0 5px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text-dim);
+    font: 500 10.5px var(--font); cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.pj-tool svg { width: 17px; height: 17px; }
+.pj-tool:hover { background: var(--surface-el); color: var(--text); }
+.pj-tool.on { background: var(--surface-el); color: var(--accent); }
+
+/* ── Header: who you are talking to, and this project's three views ─────── */
+html.layout-projects .pj-crumb {
+    display: flex; align-items: baseline; gap: 6px; min-width: 0;
+    font-size: 13px; white-space: nowrap; overflow: hidden;
+}
+.pj-crumb-proj { color: var(--text-dim); font-weight: 500; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.pj-crumb-sep { color: var(--text-dim); opacity: 0.6; }
+.pj-crumb-agent { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; padding: 1px 3px; margin: 0 -3px; }
+html.layout-projects .status-left { min-width: 0; flex: 1; }
+
+html.layout-projects .pj-tools:not([hidden]) {
+    display: flex; gap: 2px; padding: 2px; flex: none; margin: 0 12px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.pj-panel-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 9px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text-muted);
+    font: 500 12px var(--font); cursor: pointer; white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+}
+.pj-panel-btn svg { width: 13px; height: 13px; flex: none; }
+.pj-panel-btn:hover { color: var(--text); background: var(--surface-el); }
+.pj-panel-btn.on { background: var(--accent); color: #1a1205; }
+
+html.layout-projects.pj-side-shut .pj-back { display: grid; }
+.pj-back {
+    place-items: center; position: relative; flex: none;
+    width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.pj-back:hover { background: var(--surface-el); color: var(--text); }
+.pj-back svg { width: 18px; height: 18px; }
+html.layout-projects.pj-side-shut .pj-back svg { transform: rotate(180deg); }
+.pj-back-badge {
+    position: absolute; top: -2px; right: -4px;
+    min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px;
+    background: var(--green); color: #0b0b0b; font: 700 10px/15px var(--font); text-align: center;
+}
+.pj-back-badge[hidden] { display: none; }
+
+/* ── First screen of a new box ──────────────────────────────────────────── */
+html.layout-projects .pj-first:not([hidden]) {
+    display: flex; flex: 1; align-items: center; justify-content: center;
+    padding: 32px 24px; overflow-y: auto;
+}
+.empty-state.pj-covered { display: none !important; }
+.pj-first-box { width: min(540px, 100%); }
+.pj-first h2 { font-family: var(--serif); font-weight: 600; font-size: 32px; letter-spacing: -0.01em; line-height: 1.1; }
+.pj-first p { margin: 8px 0 22px; color: var(--text-muted); font-size: 15px; line-height: 1.5; }
+.pj-choice {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    margin-bottom: 8px; padding: 14px 16px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, transform 0.12s;
+}
+.pj-choice:hover { border-color: var(--accent); background: var(--accent-bg); }
+.pj-choice:active { transform: scale(0.995); }
+.pj-choice svg { width: 19px; height: 19px; flex: none; color: var(--accent); }
+.pj-choice span { display: block; font-size: 12.5px; color: var(--text-dim); line-height: 1.45; }
+.pj-choice b { display: block; font-size: 14.5px; font-weight: 600; color: var(--text); }
+.pj-choice.quiet { border-style: dashed; }
+.pj-choice.quiet svg { color: var(--text-dim); }
+.pj-choice.quiet:hover { border-color: var(--text-dim); background: var(--surface); }
+
+/* ── Dialogs: add a project, move a chat, jump ──────────────────────────── */
+.pj-dialog-wrap {
+    position: fixed; inset: 0; z-index: 400;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 12vh 16px 16px; background: rgba(0, 0, 0, 0.55);
+    animation: pj-fade 0.12s ease-out;
+}
+.pj-dialog {
+    width: min(420px, 100%); max-height: calc(100vh - 14vh - 32px); overflow-y: auto;
+    padding: 20px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px;
+    background: var(--surface-el); color: var(--text); font-size: 13px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+    animation: pj-rise 0.14s ease-out;
+}
+.pj-dialog.wide { width: min(560px, 100%); }
+@keyframes pj-fade { from { opacity: 0; } }
+@keyframes pj-rise { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .pj-dialog-wrap, .pj-dialog { animation: none; } }
+.pj-dialog h2 { font-family: var(--serif); font-weight: 600; font-size: 21px; line-height: 1.2; margin-bottom: 4px; overflow-wrap: anywhere; }
+.pj-sub { color: var(--text-muted); line-height: 1.5; margin-bottom: 14px; }
+.pj-dialog label { display: block; margin: 12px 0 5px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.pj-dialog input[type="text"] {
+    width: 100%; height: 36px; padding: 0 11px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 14px; outline: none;
+}
+.pj-dialog input[type="text"]:focus { border-color: var(--accent); }
+.pj-dialog input::placeholder { color: var(--text-dim); }
+.pj-hint { margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.45; }
+.pj-note { margin: 12px 2px 0; font-size: 12px; color: var(--text-dim); }
+.pj-err { margin-top: 12px; padding: 8px 11px; border-radius: 8px; background: rgba(239, 68, 68, 0.12); color: #fca5a5; font-size: 12.5px; line-height: 1.45; }
+.pj-err[hidden] { display: none; }
+.pj-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.pj-btn {
+    height: 34px; padding: 0 15px; border: 1px solid var(--border); border-radius: 8px;
+    background: transparent; color: var(--text-muted); font: 600 13px var(--font); cursor: pointer;
+}
+.pj-btn:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.25); }
+.pj-btn.primary { border-color: var(--accent); background: var(--accent); color: #1a1205; }
+.pj-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #1a1205; }
+.pj-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.pj-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
+.pj-seg button { height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font: 500 12.5px var(--font); cursor: pointer; }
+.pj-seg button:hover { color: var(--text); }
+.pj-seg button.on { background: var(--surface-el); color: var(--text); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.pj-mode[hidden] { display: none; }
+.pj-folders { margin-top: 8px; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 4px; }
+.pj-folder { display: block; width: 100%; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font: 12.5px var(--mono); text-align: left; cursor: pointer; }
+.pj-folder:hover { background: var(--surface); color: var(--text); }
+.pj-folder.on { background: var(--accent-bg); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent); }
+
+.pj-targets { display: flex; flex-direction: column; gap: 3px; margin-top: 14px; max-height: 260px; overflow-y: auto; }
+.pj-target {
+    display: flex; align-items: baseline; gap: 9px; width: 100%;
+    padding: 9px 11px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--text-muted); font: inherit; text-align: left; cursor: pointer;
+}
+.pj-target:hover { background: var(--surface); }
+.pj-target b { color: var(--text); font-weight: 600; font-size: 13.5px; }
+.pj-target code { font: 11px var(--mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-target.on { background: var(--accent-bg); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pj-target-new { align-items: center; color: var(--text-muted); }
+.pj-target-new svg { width: 13px; height: 13px; flex: none; }
+.pj-newname { margin-top: 8px; }
+.pj-newname[hidden] { display: none; }
+.pj-dialog label.pj-check {
+    display: flex; align-items: flex-start; gap: 10px; margin: 14px 2px 0;
+    font-size: 12px; font-weight: 400; color: var(--text-muted); line-height: 1.45; cursor: pointer;
+}
+.pj-dialog label.pj-check[hidden] { display: none; }
+.pj-check input { flex: none; width: 16px; height: 16px; margin-top: 1px; accent-color: var(--accent); cursor: pointer; }
+.pj-check b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+
+.pj-dialog.pj-jump { padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: min(520px, 72vh); }
+.pj-jump-in { display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-dim); flex: none; }
+.pj-jump-in svg { width: 16px; height: 16px; flex: none; }
+.pj-dialog.pj-jump input[type="text"] { height: 50px; padding: 0; border: 0; background: transparent; font-size: 15px; }
+.pj-jump-list { overflow-y: auto; padding: 6px; }
+.pj-jump-item {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    height: 36px; padding: 0 10px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text-muted); font: inherit; text-align: left; cursor: pointer;
+}
+.pj-jump-item svg { width: 14px; height: 14px; flex: none; color: var(--text-dim); }
+.pj-jump-item .pj-dot { margin: 0 3.5px; }
+.pj-jump-item.on { background: rgba(255, 255, 255, 0.09); color: var(--text); }
+.pj-jump-label { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
+.pj-jump-sub { flex: 1; min-width: 0; font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── The column takes 276px: the header compacts that much earlier than the
+   tab-row layout does (styles.css does the same at 720px). ─────────────── */
+@media (max-width: 1000px) {
+    html.layout-projects:not(.pj-side-shut) #contextMeter:not(.api) { display: none; }
+    html.layout-projects:not(.pj-side-shut) .status-right { gap: 8px; }
+    html.layout-projects:not(.pj-side-shut) .quota-meter-track { width: 104px; }
+    html.layout-projects:not(.pj-side-shut) .btn-ai { max-width: 136px; }
+}
+html.layout-projects .pj-crumb { flex: 1 1 auto; }
+html.layout-projects .status-right { min-width: 0; }
+
+/* ── Narrow header: the three project buttons keep their icon only ──────── */
+@media (max-width: 1080px) {
+    .pj-panel-btn span { display: none; }
+    .pj-panel-btn { padding: 0 8px; }
+}
+
+/* ── Phone: the column is a full screen of its own ──────────────────────── */
+@media (max-width: 720px) {
+    html.layout-projects .pj-side:not([hidden]) {
+        display: none; position: fixed; inset: 0; z-index: 90; width: 100%; border-right: 0;
+        background: var(--bg); font-size: 15px;
+    }
+    html.layout-projects.pj-list-open .pj-side:not([hidden]) { display: flex; }
+    html.layout-projects .pj-back, html.layout-projects.pj-side-shut .pj-back { display: grid; }
+    html.layout-projects.pj-side-shut .pj-back svg { transform: none; }
+    html.layout-projects .status-dot { display: none; }
+    #pjCollapse { display: none; }
+    .pj-brand { height: 52px; }
+    .pj-wordmark { font-size: 17px; }
+    .pj-jump-btn { height: 40px; font-size: 14px; }
+    .pj-jump-btn kbd { display: none; }
+    .pj-head, .pj-loose-head { height: 40px; }
+    .pj-name { font-size: 15.5px; }
+    .pj-ag { height: 46px; }
+    .pj-ag-state { font-size: 12.5px; }
+    .pj-ag:hover .pj-ag-state { display: inline; }
+    .pj-ag-more, .pj-ag:hover .pj-ag-more { display: grid; width: 40px; height: 40px; }
+    .pj-head .pj-icon, .pj-fold { opacity: 1; width: 34px; height: 34px; }
+    .pj-add, .pj-older { height: 44px; font-size: 14px; }
+    .pj-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+    .pj-tool { font-size: 11.5px; padding: 9px 0 7px; }
+    .pj-tool svg { width: 20px; height: 20px; }
+    html.layout-projects .pj-tools:not([hidden]) { margin: 0 8px; }
+    .pj-dialog-wrap { align-items: flex-end; padding: 0; }
+    .pj-dialog, .pj-dialog.wide { width: 100%; max-height: 86vh; border-radius: 16px 16px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+    .pj-dialog.pj-jump { max-height: 86vh; padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .pj-dialog input[type="text"], .pj-btn { height: 44px; font-size: 16px; }
+    .pj-seg button { height: 40px; }
+    .pj-target, .pj-folder, .pj-jump-item { min-height: 44px; }
+    .pj-first h2 { font-size: 26px; }
+}
+
+/* ── Small phone: the header has no room for the project buttons, so they get
+   a row of their own under it, with their words back. ─────────────────────── */
+@media (max-width: 480px) {
+    html.layout-projects .status-bar,
+    html.layout-projects .status-bar.quota-active { flex-wrap: wrap; height: auto; min-height: 48px; }
+    html.layout-projects .status-left { height: 48px; min-width: 0; gap: 4px; }
+    html.layout-projects .status-right { height: 48px; }
+    html.layout-projects .pj-crumb-proj, html.layout-projects .pj-crumb-sep { display: none; }
+    html.layout-projects .pj-crumb-agent { font-size: 15px; }
+    /* Room for the agent's name: the model button keeps its icon, its menu says the rest. */
+    html.layout-projects .btn-ai-model { display: none; }
+    html.layout-projects .btn-ai { padding: 5px 8px; }
+    html.layout-projects .pj-tools:not([hidden]) {
+        order: 3; flex: 0 0 calc(100% + 20px); margin: 0 -10px; padding: 4px 8px;
+        border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg);
+    }
+    .pj-panel-btn { flex: 1; justify-content: center; height: 36px; font-size: 13px; }
+    .pj-panel-btn span { display: inline; }
+    /* The agent and project menus become a sheet from the bottom, like every other menu here. */
+    .actions-menu.tab-context-menu {
+        left: 8px !important; right: 8px; top: auto !important; max-width: none;
+        bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    }
+}

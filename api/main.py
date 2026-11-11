@@ -568,6 +568,10 @@ if FRONTEND_DIR.exists():
         from api.config import MODULES
 
         html = html.replace("__HAS_BROWSER__", "true" if "browser" in MODULES else "false")
+        # Tab row or projects column (Settings switch, SHE-168).
+        from api.routers.settings import cockpit_layout
+
+        html = html.replace("__COCKPIT_LAYOUT__", cockpit_layout())
         # Steel's host-side loopback port (browser.html builds the screencast WS
         # URL from it; default deliberately off :3000 — see api/config.py).
         from api.config import STEEL_PORT

@@ -147,7 +147,12 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 }
 .conv-switcher-badge[hidden] { display: none; }
 /* Right-click menu on a tab: the header menus' look, placed at the pointer. */
-.tab-context-menu { position: fixed; top: auto; right: auto; min-width: 170px; z-index: 300; }
+/* Two classes on purpose: .actions-menu (declared further down) sets
+   position/right too, and with one class it won, stretching this menu from
+   the pointer to the right edge of the window. */
+.actions-menu.tab-context-menu { position: fixed; top: auto; right: auto; min-width: 170px; max-width: 320px; z-index: 300; }
+.tab-context-menu .actions-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.tab-context-menu .actions-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .session-tab-add {
     width: 22px; height: 22px; border-radius: 6px;
     border: 1px solid var(--border); background: transparent;

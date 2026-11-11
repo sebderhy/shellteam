@@ -58,6 +58,10 @@ _WRITE_RE = re.compile(
 )
 _CWD_RE = re.compile(rb'"cwd"\s*:\s*"([^"]+)"')
 
+# Chats the owner moved into a project (SHE-168). The cockpit appends one JSON
+# line per move: {"session", "from", "to"}. A moved chat's reports follow it.
+_MOVES_RELPATH = Path(".config") / "shellteam" / "moved-sessions.jsonl"
+
 # Bump when the attribution semantics change: a loaded index of a different
 # version is discarded and rebuilt from scratch on the next listing (v1 indexes
 # were mention-based and carry stolen attributions).
@@ -134,6 +138,52 @@ def _transcripts(home: Path):
     claude = home / ".claude" / "projects"
     if claude.is_dir():
         yield from claude.glob("*/*.jsonl")
+
+
+def _session_moves(home: Path) -> list[dict]:
+    """The cockpit's record of moved chats, oldest first. [] when none."""
+    path = home / _MOVES_RELPATH
+    if not path.is_file():
+        return []
+    moves = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            move = json.loads(line)
+        except json.JSONDecodeError:
+            log.warning("Skipping an unreadable line in %s", path)
+            continue
+        if all(isinstance(move.get(k), str) for k in ("session", "from", "to")):
+            moves.append(move)
+    return moves
+
+
+def _apply_moves(attribution: dict[str, dict], home: Path) -> dict[str, dict]:
+    """Attribution with moved chats' reports re-homed to their new project.
+
+    The index keeps recording where a report was first written. A move is
+    applied on top at read time: every report the moved session wrote, and that
+    is still attributed to the folder the chat left, now belongs to the folder
+    it moved to. Moves chain (home -> a -> b) because they apply in order.
+    Only Claude transcripts carry the write evidence, same bound as above.
+    """
+    moves = _session_moves(home)
+    if not moves:
+        return attribution
+    result = {name: dict(entry) for name, entry in attribution.items()}
+    projects = home / ".claude" / "projects"
+    for move in moves:
+        # A session id is a file name here: refuse anything that is not one.
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", move["session"]):
+            continue
+        for transcript in projects.glob(f"*/{move['session']}.jsonl"):
+            for m in set(_WRITE_RE.findall(transcript.read_bytes())):
+                basename = m.decode("utf-8", errors="replace").rsplit("/", 1)[-1]
+                entry = result.get(basename)
+                if entry and entry["cwd"] == move["from"]:
+                    entry["cwd"] = move["to"]
+    return result
 
 
 def _index_path(user_id: str) -> Path:
@@ -214,7 +264,7 @@ def list_reports(user_id: str, home_dir: Path) -> list[dict]:
     reports_dir = home / "reports"
     if not reports_dir.is_dir():
         return []
-    attribution = refresh_attribution(user_id, home)
+    attribution = _apply_moves(refresh_attribution(user_id, home), home)
     entries: list[dict] = []
     for f in _report_files(reports_dir):
         st = f.stat()

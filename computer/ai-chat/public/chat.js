@@ -520,6 +520,12 @@ window.Chat = {
             this.renderForkMarker(msg);
         } else if (msg.event === 'merged') {
             this.renderMergeMarker(msg);
+        } else if (msg.event === 'moved') {
+            // The chat was moved into a project folder and kept its history (SHE-168).
+            const marker = document.createElement('div');
+            marker.className = 'compact-marker';
+            marker.textContent = `Moved to ${shortPath(msg.toCwd || '') || '~'}. The conversation continues here.`;
+            App.el.messages.appendChild(marker);
         } else if (msg.event === 'truncated') {
             // Replay cap marker (SHE-73): the middle of a very long transcript
             // is elided for rendering speed; the full history is on disk.
@@ -784,12 +790,15 @@ window.Chat = {
         this.commitAssistantEl();
         const block = document.createElement('div');
         block.className = 'tool-block internal-note';
+        // A cockpit notice reads better without its envelope tag in the fold line.
+        const isCockpitNotice = /^\s*<cockpit-notice>/.test(String(text));
+        const preview = String(text).replace(/^\s*<cockpit-notice>\s*/, '');
         const header = document.createElement('div');
         header.className = 'tool-header';
         header.innerHTML = `
             <span class="tool-chevron">&#9654;</span>
-            <span class="tool-name">background update</span>
-            <span class="tool-preview">${escHtml(String(text).slice(0, 80))}</span>`;
+            <span class="tool-name">${isCockpitNotice ? 'ShellTeam to the agent' : 'background update'}</span>
+            <span class="tool-preview">${escHtml(preview.slice(0, 80))}</span>`;
         const detail = document.createElement('div');
         detail.className = 'tool-detail';
         const pre = document.createElement('pre');

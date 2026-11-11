@@ -97,6 +97,9 @@
             .item { min-height: 44px; }
             .group-h, .toolbar button, .bar button { min-height: 44px; }
         }
+        /* Inside the cockpit's project panel (?panel=1): the panel has its own
+           title bar, and the list is one project's reports, so no group rows. */
+        body.in-panel .bar { display: none; }
     </style>
 </head>
 <body>
@@ -159,6 +162,11 @@
         const KIND_BADGE = { mp3: '🎧', wav: '🎧', mp4: '🎬', pdf: '📄', md: '📝' };
         const label = (r) => r.title || r.name.replace(/\.[a-z0-9]+$/i, '').replace(/[-_]/g, ' ');
         const groupName = (r) => r.workspace || 'Other';
+        // ?workspace=<name> shows one project's reports only (the projects
+        // column's Reports button, SHE-168); ?panel=1 drops the page header.
+        const PARAMS = new URLSearchParams(location.search);
+        const ONLY_WORKSPACE = PARAMS.get('workspace');
+        if (PARAMS.get('panel')) document.body.classList.add('in-panel');
 
         // Collapse state survives reloads — with 200+ reports, re-collapsing
         // the Dreaming pile on every visit would get old fast.
@@ -183,6 +191,7 @@
             if (!ordered.length) {
                 const d = document.createElement('div'); d.className = 'empty';
                 d.textContent = q ? 'No reports match “' + q + '”.'
+                    : ONLY_WORKSPACE ? 'No reports from this project yet. When an agent working here writes one, it shows up in this list.'
                     : 'No reports yet. Ask an agent for a briefing, an analysis or a dashboard — it lands here.';
                 side.appendChild(d);
                 return;
@@ -197,8 +206,8 @@
                 const count = document.createElement('span'); count.className = 'count'; count.textContent = items.length;
                 h.append(chev, name, count);
                 h.onclick = () => { collapsed.has(g) ? collapsed.delete(g) : collapsed.add(g); saveCollapsed(); render(); };
-                side.appendChild(h);
-                if (isClosed) continue;
+                if (!ONLY_WORKSPACE) side.appendChild(h);
+                if (isClosed && !ONLY_WORKSPACE) continue;
                 for (const r of items) {
                     const b = document.createElement('button');
                     b.className = 'item' + (selected && selected.path === r.path ? ' active' : '');
@@ -304,8 +313,8 @@
             // produced each report — that can take a few seconds once.
             $('count').textContent = 'loading…';
             const j = await api('/api/computers/reports/list', { cache: 'no-store' });
-            all = j.reports;
-            $('count').textContent = j.count + ' report' + (j.count === 1 ? '' : 's');
+            all = ONLY_WORKSPACE ? j.reports.filter(r => groupName(r) === ONLY_WORKSPACE) : j.reports;
+            $('count').textContent = all.length + ' report' + (all.length === 1 ? '' : 's');
             render();
         }
         const loadFailed = (e) => {

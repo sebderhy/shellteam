@@ -5,10 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
     <title>ShellTeam</title>
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/projects.css">
+    <!-- Sets the layout class before the first paint (no flash of the tab row). -->
+    <script src="/layout.js"></script>
     <!-- xterm.js for terminal mode -->
     <link rel="stylesheet" href="/vendor/xterm-5.5.0.min.css">
 </head>
 <body>
+    <!-- Projects column (SHE-168): shown with ?layout=projects, drawn by projects.js. -->
+    <aside class="pj-side" id="pjSide" aria-label="Projects and agents" hidden>
+        <div class="pj-brand">
+            <span class="pj-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="ShellTeam petal mark, gilded compact"><defs><linearGradient id="pjAu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbbf24"/><stop offset="1" stop-color="#d97706"/></linearGradient></defs><g fill="url(#pjAu)"><g transform="translate(1.857 7.393) scale(0.9629)"><path d="M 11.00 48.25 A 4.91 4.91 0 1 1 18.54 42.05 L 33.04 64.50 L 27.82 64.50 Z"/><path d="M 17.55 34.99 A 5.66 5.66 0 1 1 27.63 30.02 L 39.99 64.50 L 36.61 64.50 Z"/><path d="M 29.15 25.35 A 6.10 6.10 0 1 1 40.96 22.60 L 45.78 64.50 L 43.17 64.50 Z"/><path d="M 43.79 20.97 A 6.25 6.25 0 1 1 56.21 20.97 L 51.20 64.50 L 48.80 64.50 Z"/><path d="M 59.04 22.60 A 6.10 6.10 0 1 1 70.85 25.35 L 56.83 64.50 L 54.22 64.50 Z"/><path d="M 72.37 30.02 A 5.66 5.66 0 1 1 82.45 34.99 L 63.39 64.50 L 60.01 64.50 Z"/><path d="M 81.46 42.05 A 4.91 4.91 0 1 1 89.00 48.25 L 72.18 64.50 L 66.96 64.50 Z"/><rect x="27.82" y="67.50" width="44.35" height="7.0" rx="3.50"/></g></g></svg></span>
+            <span class="pj-wordmark">Shell<b>Team</b></span>
+            <button class="pj-icon" id="pjFeedback" type="button" title="Report a bug or ask for a feature" aria-label="Feedback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+            <button class="pj-icon" id="pjCollapse" type="button" title="Hide the column" aria-label="Hide the column"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg></button>
+        </div>
+        <button class="pj-jump-btn" id="pjJump" type="button" title="Jump to an agent, a project or a report">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <span>Jump to...</span><kbd>Ctrl K</kbd>
+        </button>
+        <div class="pj-pulse" id="pjPulse" aria-live="polite"></div>
+        <nav class="pj-list" id="pjList" aria-label="Projects"></nav>
+        <button class="pj-restart" id="pjRestart" type="button" hidden title="ShellTeam's code was updated. Restart to load it. Agents mid-reply will stop.">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            <span>Restart to apply update</span>
+        </button>
+        <div class="pj-foot" id="pjFoot"></div>
+    </aside>
     <div class="app">
         <nav class="session-tabs" id="sessionTabs" aria-label="Conversations">
             <div class="session-tab-list" id="sessionTabList" role="tablist" aria-label="Open conversations">
@@ -20,8 +43,14 @@
         </nav>
         <header class="status-bar">
             <div class="status-left">
+                <!-- Projects column: opens the list on a phone, re-opens a hidden column on desktop. -->
+                <button class="pj-back" id="pjBack" type="button" aria-label="Show projects and agents" title="Projects and agents">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                    <span class="pj-back-badge" id="pjBackBadge" hidden></span>
+                </button>
                 <div class="status-dot" id="statusDot"></div>
                 <span class="status-label" id="statusLabel">Connecting...</span>
+                <div class="pj-crumb" id="pjCrumb"></div>
                 <!-- Mobile: tap to open the conversation drawer (replaces the tab strip) -->
                     <button class="conv-switcher mobile-only" id="convSwitcher" type="button" onclick="openSessionDrawer()" aria-label="Switch conversation" aria-controls="sessionDrawer" aria-expanded="false">
                     <span class="conv-switcher-label" id="convSwitcherLabel">Chat 1</span>
@@ -29,6 +58,9 @@
                     <span class="conv-switcher-badge" id="convSwitcherBadge" hidden></span>
                 </button>
             </div>
+            <!-- Projects column: this project's Knowledge / Files / Reports, opened beside
+                 the chat. A direct child of the bar so it can drop to its own row on a phone. -->
+            <div class="pj-tools" id="pjTools" role="group" aria-label="This project" hidden></div>
             <div class="status-right">
                 <!-- Guest cockpit: replaces the workspace combo when the server
                      reports a workspace lock (status.workspaceLock) -->
@@ -352,6 +384,25 @@
 
         <!-- Chat area -->
         <div class="messages hidden" id="messages"></div>
+        <!-- Projects column, first screen of a new box: start inside a project. -->
+        <div class="pj-first" id="pjFirst" hidden>
+            <div class="pj-first-box">
+                <h2>What are you working on?</h2>
+                <p>Agents work inside a project, which is a folder on this computer. Pick where your first one starts.</p>
+                <button type="button" class="pj-choice" data-first="clone">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 9v12M18 15V9a3 3 0 0 0-3-3h-3"/></svg>
+                    <span><b>Bring a project from GitHub</b>Clone a repository onto this computer</span></button>
+                <button type="button" class="pj-choice" data-first="open">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                    <span><b>Open a folder on this computer</b>Any folder in your home can be a project</span></button>
+                <button type="button" class="pj-choice" data-first="new">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                    <span><b>Start something new</b>Name it, and an empty project folder is created</span></button>
+                <button type="button" class="pj-choice quiet" data-first="chat">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span><b>Just chat for now</b>You can move the chat into a project later</span></button>
+            </div>
+        </div>
         <div class="empty-state hidden" id="emptyState">
             <div class="empty-icon">&#10097;</div>
             <div class="empty-title" id="emptyTitle">What can I help you build?</div>
@@ -479,5 +530,6 @@
     <script src="/plan.js"></script>
     <script src="/terminal.js"></script>
     <script src="/app.js"></script>
+    <script src="/projects.js"></script>
 </body>
 </html>

@@ -68,6 +68,9 @@
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
         .status-dot.running { background: #fbbf24; animation: pulse 1.2s infinite; }
         @keyframes pulse { 50% { opacity: .35; } }
+        /* Inside the cockpit's project panel (?panel=1): the panel has its
+           own title bar. */
+        body.in-panel .bar, body.in-panel #review { display: none !important; }
         @media (max-width: 720px) {
             .wrap { flex-direction: column; }
             .side { width: 100%; max-height: 38%; border-right: none;
@@ -162,8 +165,32 @@
             return b;
         }
 
+        // ?project=<folder> shows one project's memory only (the projects
+        // column's Knowledge button, SHE-168); ?panel=1 drops the page header.
+        const PARAMS = new URLSearchParams(location.search);
+        const ONLY_PROJECT = PARAMS.get('project');
+        if (PARAMS.get('panel')) document.body.classList.add('in-panel');
+
+        async function loadProject(t) {
+            const side = $('side'); side.innerHTML = '';
+            const node = t.nodes.find(n => n.node === ONLY_PROJECT);
+            if (!node) {
+                const p = document.createElement('div');
+                p.className = 'item dim';
+                p.style.whiteSpace = 'normal';
+                p.textContent = 'Nothing yet for this project. The nightly dream writes what agents learned here after you have worked in it.';
+                side.appendChild(p);
+                return;
+            }
+            const first = sideItem('Project notes', node.index);
+            side.appendChild(first);
+            for (const d of node.details) side.appendChild(sideItem(d.split('/').pop(), d, 'detail'));
+            if (node.index) openFile(node.index, first);
+        }
+
         async function loadTree() {
             const t = await api('/api/knowledge/tree');
+            if (ONLY_PROJECT) return loadProject(t);
             const side = $('side'); side.innerHTML = '';
             let h = document.createElement('h2'); h.textContent = 'You (injected everywhere)';
             side.appendChild(h);

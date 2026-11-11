@@ -178,6 +178,39 @@ def _dream_engine_state() -> dict:
     }
 
 
+# ── Cockpit layout ───────────────────────────────────────────────────────────
+# "tabs" is the row of tabs across the top; "projects" is the column that
+# groups agents by project (SHE-168, docs/decisions/20261111-projects-column.md).
+# Stored as COCKPIT_LAYOUT in .env so every device of the owner follows it; the
+# dashboard reads it at serve time, so a reload applies it.
+
+COCKPIT_LAYOUTS = ("tabs", "projects")
+
+
+class CockpitLayoutRequest(BaseModel):
+    layout: str = Field(..., min_length=1)
+
+
+def cockpit_layout() -> str:
+    layout = (os.environ.get("COCKPIT_LAYOUT") or "tabs").strip().lower()
+    return layout if layout in COCKPIT_LAYOUTS else "tabs"
+
+
+@router.get("/layout")
+async def get_layout(user: dict = Depends(get_current_user)) -> dict:
+    return {"layout": cockpit_layout()}
+
+
+@router.post("/layout")
+async def set_layout(body: CockpitLayoutRequest, user: dict = Depends(get_current_user)) -> dict:
+    layout = body.layout.strip().lower()
+    if layout not in COCKPIT_LAYOUTS:
+        raise HTTPException(status_code=400, detail=f"layout must be one of {', '.join(COCKPIT_LAYOUTS)}")
+    feature_keys.persist("COCKPIT_LAYOUT", layout)
+    log.info("COCKPIT_LAYOUT set to %r via Settings", layout)
+    return {"layout": layout}
+
+
 @router.get("/dream-engine")
 async def get_dream_engine(user: dict = Depends(get_current_user)) -> dict:
     return _dream_engine_state()

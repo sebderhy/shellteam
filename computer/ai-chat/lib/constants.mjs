@@ -37,6 +37,11 @@ export const ANTIGRAVITY_AUTH_FILE = join(HOME, ".gemini", "antigravity-cli", "a
 export const CLAUDE_CONFIG_FILE = join(HOME, ".claude.json");
 export const MODEL_FILE = join(HOME, ".claude-chat-model.txt");
 export const TABS_FILE = join(HOME, ".claude-chat-tabs.json");
+// The projects column's list: folders and the names the owner gave them (SHE-168).
+export const PROJECTS_FILE = join(HOME, ".config", "shellteam", "projects.json");
+// Chats moved into a project, one JSON line each. The Reports tab reads it so
+// a moved chat's reports follow it (api/services/report_catalog.py).
+export const SESSION_MOVES_FILE = join(HOME, ".config", "shellteam", "moved-sessions.jsonl");
 export const CODEX_HISTORY_DIR = join(HOME, ".config", "shellteam", "codex-history");
 export const BROKER_STATE_FILE = join(HOME, ".config", "shellteam", "delegation-broker.json");
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";

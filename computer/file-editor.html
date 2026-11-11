@@ -1579,14 +1579,18 @@ renderTree();
     filePath = filePath.replace(/\/+$/, '');
     if (!filePath) return;
 
-    const lineParam = new URLSearchParams(window.location.search).get('line');
+    const query = new URLSearchParams(window.location.search);
+    const lineParam = query.get('line');
     const lineNumber = lineParam ? parseInt(lineParam, 10) : null;
+    // ?dir=1: the path is a folder to show opened in the tree, not a file to
+    // load (the projects column's Files button, SHE-168).
+    const isDir = query.has('dir');
 
     // Expand all parent directories so the file is visible in the tree.
     // A failed listing must never block opening the file — the tree is a
     // convenience, the deep-linked file is the point (defense in depth).
     const parts = filePath.split('/');
-    for (let i = 1; i < parts.length; i++) {
+    for (let i = 1; i < parts.length + (isDir ? 1 : 0); i++) {
         const dir = '/' + parts.slice(0, i).join('/') + '/';
         expandedDirs.add(dir);
         try {
@@ -1596,6 +1600,7 @@ renderTree();
         }
     }
     await renderTree();
+    if (isDir) return;
 
     // Wait for Monaco to be ready
     while (!monacoReady) await new Promise(r => setTimeout(r, 50));

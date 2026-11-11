@@ -2098,6 +2098,7 @@ const GLOBAL_TYPES = new Set([
 
 function handleMessage(msg) {
     const msgSlot = msg.slot ?? 0;
+    window.Projects?.note(msg, msgSlot);
 
     // The server allocated the canonical id for a fresh create (SHE-52). When
     // another device won the raced id, the ack renames our optimistic local
@@ -2272,6 +2273,27 @@ function handleMessage(msg) {
         return;
     }
 
+    // A chat moved into a project and kept its history (SHE-168). The server
+    // follows with the full history, so only the slot's identity changes here.
+    if (msg.type === 'slot_moved') {
+        const moved = sessionSlots.find(s => s.id === msg.slot);
+        if (moved) {
+            moved.config.cwd = msg.cwd;
+            moved.sessionId = msg.sessionId || null;
+        }
+        if (msg.slot === activeSlotId) {
+            S.sessionId = msg.sessionId || null;
+            setWorkspaceDisplay(msg.cwd);
+            renderAIMenuValues();
+        }
+        renderSessionTabs();
+        return;
+    }
+    if (msg.type === 'project_added') {
+        window.Projects?.onProjectAdded(msg);
+        return;
+    }
+
     if (msg.type === 'cwd_changed') {
         const cwdSlot = sessionSlots.find(s => s.id === (msg.slot ?? activeSlotId));
         if (cwdSlot) cwdSlot.config.cwd = msg.cwd;
@@ -2420,6 +2442,7 @@ function applyWorkspaceLockUI() {
 }
 
 function handleStatusMessage(msg) {
+    if (msg.projects) window.Projects?.setProjects(msg.projects);
     if (msg.workspaceLock !== undefined) {
         S.workspaceLock = msg.workspaceLock || null;
         S.guestName = msg.guestName || null;
@@ -2937,6 +2960,7 @@ window.addEventListener('message', (e) => {
     if (e.source !== window.parent || e.origin !== fileBaseUrl()) return;
     if (!d || d.source !== 'shellteam-dashboard') return;
     if (d.kind === 'report-comment') window.QuoteReview?.addFromReport(d);
+    else window.Projects?.onDashboardMessage(d);
 });
 
 // Report links open in the right-side panel, delegated on the stable #messages
@@ -3598,6 +3622,7 @@ function renderSessionTabs() {
     setupTabDragReorder();
     renderSessionDrawer();
     updateUnreadCount();
+    window.Projects?.render();
 }
 
 // --- Unread tabs --------------------------------------------------------------
@@ -3619,6 +3644,10 @@ function slotUnread(slot) {
 }
 
 function syncReadState(local, serverSlot) {
+    // What the projects column shows next to each agent (SHE-168).
+    local.lastUsedAt = serverSlot.lastUsedAt || 0;
+    local.turnStartedAt = serverSlot.turnStartedAt || 0;
+    local.asking = !!serverSlot.asking;
     local.answeredAt = serverSlot.answeredAt || 0;
     local.viewedAt = serverSlot.viewedAt || 0;
     local.markedUnread = !!serverSlot.markedUnread;
@@ -3973,13 +4002,16 @@ document.getElementById('sessionDrawer')?.addEventListener('keydown', event => {
     }
 });
 
-function addSessionTab() {
+// `where.cwd` starts the new chat in that folder (the projects column's "+");
+// without it the chat starts where the current one works.
+function addSessionTab(where) {
     if (sessionSlots.length >= MAX_SESSION_TABS) {
         showError(`Max ${MAX_SESSION_TABS} sessions`);
         return;
     }
     const id = nextSlotId++;
     const newSlot = makeSlot(id);
+    if (typeof where?.cwd === 'string') newSlot.config.cwd = where.cwd;
     // Un-acked until a server snapshot includes it — the reconnect reconcile
     // re-creates (never drops) such tabs. `fresh` marks a genuinely new tab;
     // the server refuses non-fresh creates of unknown ids (SHE-78). The id is
@@ -4464,6 +4496,8 @@ const SHORTCUTS = [
     { group: 'Conversations', rows: [
         ['Alt+1 … Alt+9', 'Jump to that conversation tab'],
         ['Alt+↑ / Alt+↓', 'Previous / next tab'],
+        ['Ctrl+K', 'Projects column: jump to any agent, project or report by typing its name'],
+        ['Alt+W', 'Projects column: go to the next agent waiting for you'],
         ['Alt+R', 'Reports this conversation linked: pick one to open it in the side panel'],
         ['Alt+U', 'Mark this tab unread (again to mark it read). Right-click any tab for the same'],
         ['Double-click', 'On a tab: rename it (Enter saves, Esc cancels)'],
@@ -4552,11 +4586,13 @@ document.addEventListener('keydown', (e) => {
         return;
     }
     if (e.code === 'ArrowDown' || e.code === 'ArrowUp') {
-        const idx = sessionSlots.findIndex(s => s.id === activeSlotId);
-        if (idx < 0 || sessionSlots.length < 2) return;
+        // The projects column lists chats grouped by project: follow what is on screen.
+        const order = window.Projects?.visibleOrder() || sessionSlots;
+        const idx = order.findIndex(s => s.id === activeSlotId);
+        if (idx < 0 || order.length < 2) return;
         e.preventDefault();
         const delta = e.code === 'ArrowDown' ? 1 : -1;
-        const next = sessionSlots[(idx + delta + sessionSlots.length) % sessionSlots.length];
+        const next = order[(idx + delta + order.length) % order.length];
         switchSessionTab(next.id);
     }
 });
