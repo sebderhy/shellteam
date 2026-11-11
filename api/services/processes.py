@@ -172,7 +172,12 @@ def restart_services() -> None:
 # chip asks for a restart when the checkout has since moved (an update, a
 # pull, a commit) and the change touches something a running service loads.
 REPO_DIR = Path(__file__).resolve().parents[2]
-_NO_RESTART = re.compile(r"^(docs/|tests/|computer/ai-chat/test/|scripts/qa/)|\.md$")
+# Paths a running service never has in memory: docs and tests, plus the pages
+# and browser scripts, which both services read from disk on every request (a
+# page reload shows them; asking for a restart there is noise, SHE-167).
+_NO_RESTART = re.compile(
+    r"^(docs/|tests/|computer/ai-chat/test/|scripts/qa/|frontend/|computer/ai-chat/public/)|\.md$"
+)
 
 
 def _git(*args: str) -> str:

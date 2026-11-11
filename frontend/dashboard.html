@@ -46,6 +46,9 @@
            employee shell keeps its own layout. */
         .topbar .fb-trigger { margin-left: auto; }
         /* SHE-157: shown only while a service runs older code than the checkout. */
+        /* .fb-trigger sets display, which beats the browser's own [hidden] rule:
+           without this line the chip showed all the time (SHE-167). */
+        .topbar .restart-chip[hidden] { display: none; }
         .topbar .restart-chip { color: var(--brand); border-color: color-mix(in oklch, var(--brand) 45%, transparent); }
         .topbar .restart-chip:hover { color: var(--brand); border-color: var(--brand); }
         .topbar .restart-chip:not([hidden]) + .fb-trigger { margin-left: 8px; }

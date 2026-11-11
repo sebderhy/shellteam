@@ -116,7 +116,9 @@ def test_chip_when_code_moved_after_a_service_started(repo, monkeypatch):
 def test_docs_and_tests_alone_never_ask_for_a_restart(repo, monkeypatch):
     t = repo("api/main.py")
     for path in ("docs/decisions/x.md", "tests/test_x.py", "computer/ai-chat/test/x.test.mjs",
-                 "scripts/qa/x.mjs", "CHANGELOG.md"):
+                 "scripts/qa/x.mjs", "CHANGELOG.md",
+                 # Read from disk on every request: a page reload is enough.
+                 "frontend/dashboard.html", "frontend/static/restart.js", "computer/ai-chat/public/app.js"):
         repo(path)
     monkeypatch.setattr(processes, "_unit_started_at", _started({"shellteam-api": t, "shellteam-ai-chat": t}))
     assert processes.pending_restart()["needed"] is False
@@ -142,3 +144,10 @@ def test_header_chip_is_wired_to_the_shared_restart():
     html = (REPO / "frontend" / "dashboard.html").read_text()
     assert 'id="restart-chip"' in html and "restart-btn" in html
     assert "/api/computers/restart-needed" in html
+
+
+def test_a_hidden_chip_is_really_hidden():
+    # SHE-167: the chip carries .fb-trigger, whose `display` beats the
+    # browser's default for [hidden]. It showed all the time, restart or not.
+    html = (REPO / "frontend" / "dashboard.html").read_text()
+    assert ".restart-chip[hidden] { display: none; }" in html

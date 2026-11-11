@@ -5,6 +5,14 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.57] - 2026-11-11
+
+### Fixed
+- **"Restart to apply update" no longer stays in the header for good.** A
+  style rule kept the chip visible whether or not a restart was needed, so
+  restarting never made it go away. Updates that only change pages no longer
+  ask for a restart either: a page reload already shows them (SHE-167).
+
 ## [0.1.56] - 2026-11-10
 
 Second part of the security audit fixes.
