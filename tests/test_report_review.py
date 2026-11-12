@@ -75,7 +75,30 @@ class TestPickerDelivery:
         assert "sandbox" in csp and "allow-same-origin" not in csp
 
     @respx.mock
-    def test_share_link_visitor_gets_no_picker(self, proxy_home):
+    def test_owner_files_are_always_revalidated(self, proxy_home):
+        """SHE-183: the agent changed a report, the owner reopened it and saw the
+        old version: with no caching rule the browser reused its copy. Reports
+        and their assets must ask the server every time."""
+        _mock_file()
+        respx.get(f"{FILE_ORIGIN}/reports/chart.png").mock(
+            return_value=httpx.Response(200, content=b"png", headers={"content-type": "image/png", "last-modified": "Thu, 12 Nov 2026 18:00:00 GMT"})
+        )
+        with TestClient(app) as client:
+            html = client.get("/reports/r.html", headers={**LOCAL, **BEARER})
+            png = client.get("/reports/chart.png", headers={**LOCAL, **BEARER})
+        assert html.headers.get("cache-control") == "no-cache"
+        assert png.headers.get("cache-control") == "no-cache"
+
+    @respx.mock
+    def test_a_caching_rule_set_by_the_file_server_is_kept(self, proxy_home):
+        respx.get(f"{FILE_ORIGIN}/_editor/app.js").mock(
+            return_value=httpx.Response(200, text="x", headers={"content-type": "text/javascript", "cache-control": "no-store"})
+        )
+        with TestClient(app) as client:
+            resp = client.get("/_editor/app.js", headers={**LOCAL, **BEARER})
+        assert resp.headers.get("cache-control") == "no-store"
+
+
         from api.services.auth import sign_share_path
 
         exp = int(time.time()) + 300

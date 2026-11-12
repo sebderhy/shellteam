@@ -136,3 +136,25 @@ test("the dashboard relays app picks with the URL and hands app text edits to th
   assert.match(dashboard, /if \(!relpath\) \{[\s\S]{0,200}sendToChat\(\{ selector: d\.selector, text: d\.old_text \}/);
   assert.doesNotMatch(dashboard, /an app on a port never carries the picker/);
 });
+
+// SHE-182: on a phone the report takes the whole screen. After a tap on an
+// element nothing visible happened: the quote landed in a chat hidden behind
+// the report. The report now steps aside, and touch screens get a short hint.
+test("on a phone a pick closes the full-screen report so the quote is visible", () => {
+  const send = dashboard.match(/function sendToChat\(d, comment\) \{[\s\S]*?\n            \}/);
+  assert.ok(send, "sendToChat found");
+  assert.match(send[0], /if \(matchMedia\(PANEL_COVERS_CHAT\)\.matches\) closeReport\(\);/);
+  // The JS width must be the CSS width at which the panel covers the chat.
+  const width = dashboard.match(/const PANEL_COVERS_CHAT = '\(max-width: (\d+)px\)';/);
+  assert.ok(width, "PANEL_COVERS_CHAT found");
+  assert.match(dashboard, new RegExp(`@media \\(max-width: ${width[1]}px\\) \\{\\s*\\.report-panel \\{ width: 100%;`));
+});
+
+test("touch screens get a short hint that says Tap and fits the screen", () => {
+  assert.match(pickerJs, /matchMedia\('\(pointer: coarse\)'\)\.matches/);
+  const touch = pickerJs.match(/const HINTS = TOUCH \? \{([\s\S]*?)\} : \{/);
+  assert.ok(touch, "touch hints found");
+  assert.match(touch[1], /comment: 'Tap /);
+  assert.doesNotMatch(touch[1], /Esc|Ctrl|↑/);
+  assert.match(pickerJs, /max-width:calc\(100vw - 24px\)/);
+});

@@ -5,6 +5,19 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.61] - 2026-11-12
+
+### Fixed
+- **Commenting on a report by pointing works on a phone.** A report takes the
+  whole screen on a phone, so after you tapped Comment and then an element,
+  nothing seemed to happen: the quoted element had landed in a chat hidden
+  behind the report. The report now steps aside and the chat shows the quoted
+  element with the message box ready. The hint on a touch screen is short,
+  says "Tap", and fits the screen.
+- **A report reopened right after an agent changed it no longer shows the old
+  copy.** The browser could reuse its saved copy of a file from your box. Your
+  own files are now checked against the box every time they are opened.
+
 ## [0.1.60] - 2026-11-12
 
 ### Fixed

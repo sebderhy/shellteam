@@ -43,8 +43,14 @@
     hint.setAttribute(MARK, '');
     hint.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483647;display:none;' +
         'padding:6px 12px;font:12px/16px system-ui,sans-serif;background:rgba(20,20,20,.92);color:#fff;border-radius:6px;' +
-        'box-shadow:0 2px 10px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap;';
-    const HINTS = {
+        'box-shadow:0 2px 10px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap;max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;';
+    // A finger has no arrow keys and no Esc, and a phone has no room for the
+    // long line: touch screens get the short one (SHE-182).
+    const TOUCH = matchMedia('(pointer: coarse)').matches;
+    const HINTS = TOUCH ? {
+        comment: 'Tap what you want to change',
+        edit: 'Tap text to edit it · tap elsewhere to save',
+    } : {
         comment: 'Click an element to comment on it · ↑ wider · ↓ narrower · Esc done',
         edit: 'Click text to edit it · Ctrl+S or click elsewhere saves · Esc cancels',
     };
@@ -168,7 +174,7 @@
         el.focus();
         outline(el);
         box.style.borderColor = '#3b82f6';
-        hint.textContent = 'Editing · Ctrl+S or click elsewhere saves · Esc cancels';
+        hint.textContent = TOUCH ? 'Editing · tap elsewhere to save' : 'Editing · Ctrl+S or click elsewhere saves · Esc cancels';
     }
     function finishEdit(cancel) {
         const { el, before, beforeText } = editing;

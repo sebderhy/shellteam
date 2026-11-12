@@ -2610,6 +2610,8 @@
             // talks to us by postMessage. We relay picks to the cockpit's quote tray
             // and turn in-place text edits into a deterministic save; when the
             // server can't match the text exactly once, the edit goes to the agent.
+            // Same width as the CSS rule that makes the panel take the whole screen.
+            const PANEL_COVERS_CHAT = '(max-width: 768px)';
             function setReviewMode(mode) {
                 reviewMode = mode;
                 for (const [btn, m] of [[commentBtn, 'comment'], [editBtn, 'edit']]) {
@@ -2634,6 +2636,10 @@
                     path: relpath || url, selector: d.selector, text: d.text, comment: comment || '',
                 }, '*');
                 switchTab('agents');
+                // On a phone the report covers the chat: step aside, so the
+                // owner sees the quoted element land in the message box and can
+                // type. The reply links the report again (SHE-182).
+                if (matchMedia(PANEL_COVERS_CHAT).matches) closeReport();
             }
             async function saveTextEdit(d) {
                 if (!relpath) {

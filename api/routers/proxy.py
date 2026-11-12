@@ -795,6 +795,19 @@ def _inject_app_review_picker(response: Response) -> Response:
     return _rewrite_html_body(response, report_review.inject_picker)
 
 
+def _always_revalidate(response: Response) -> None:
+    """Make the browser check a served home file with the server before reusing it.
+
+    The file server sends a date and no caching rule, so a browser guesses a
+    lifetime from the file's age and reuses its copy without asking: a report
+    reopened right after the agent changed it showed the old version (SHE-183,
+    same family as SHE-60). An unchanged file costs one 304. A rule the file
+    server did set is kept.
+    """
+    if "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "no-cache"
+
+
 def _append_share_footer(response: Response) -> Response:
     """Append the "Made with ShellTeam" footer to a 200 text/html response.
 
@@ -902,6 +915,8 @@ async def serve_owner_file(request: Request, path: str) -> Response:
         response = _inject_review_picker(request, response)
     if reached and _share_footer_applies(request, is_published_report, via_share_sig, p):
         response = _append_share_footer(response)
+    if reached:
+        _always_revalidate(response)
     return response
 
 
@@ -1073,6 +1088,8 @@ async def proxy_subdomain(request: Request, path: str):
         response = _inject_app_review_picker(response)
     if reached and _share_footer_applies(request, is_published_report, False, path):
         response = _append_share_footer(response)
+    if reached and port == FILE_PORT:
+        _always_revalidate(response)
     return response
 
 
