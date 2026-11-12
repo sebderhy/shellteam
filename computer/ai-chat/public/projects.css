@@ -355,6 +355,18 @@ html.layout-projects .pj-first:not([hidden]) {
     html.layout-projects:not(.pj-side-shut) .btn-ai { max-width: 136px; }
 }
 html.layout-projects .status-right { min-width: 0; }
+/* The billing badge never gives up width: squeezed, its label ran over the
+   model button (SHE-180). The names on the left shorten instead, and when the
+   chat is at its narrowest beside the column (a report open in the side
+   panel) the quiet badges step aside. "API · metered" is a cost warning and
+   stays; a subscription keeps its usage bar. */
+html.layout-projects .subscription-monitor, html.layout-projects .quota-meter { flex-shrink: 0; }
+@media (min-width: 721px) and (max-width: 860px) {
+    html.layout-projects:not(.pj-side-shut) #authBadge.inc,
+    html.layout-projects:not(.pj-side-shut) #authBadge.sub { display: none; }
+    html.layout-projects:not(.pj-side-shut) .quota-meter-track { width: 72px; }
+    html.layout-projects:not(.pj-side-shut) .subscription-monitor:has(#authBadge.inc):not(:has(.quota-meter-track:not([hidden]))) { display: none; }
+}
 
 /* ── Narrow header: the three project buttons keep their icon only ──────── */
 @media (max-width: 1080px) {

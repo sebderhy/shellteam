@@ -42,6 +42,9 @@ export const PROJECTS_FILE = join(HOME, ".config", "shellteam", "projects.json")
 // Chats moved into a project, one JSON line each. The Reports tab reads it so
 // a moved chat's reports follow it (api/services/report_catalog.py).
 export const SESSION_MOVES_FILE = join(HOME, ".config", "shellteam", "moved-sessions.jsonl");
+// Reports a chat wrote, one JSON line each, recorded when the turn ends, so
+// reports from every agent land in their project (lib/report-writes.mjs, SHE-177).
+export const REPORT_WRITES_FILE = join(HOME, ".config", "shellteam", "report-writes.jsonl");
 export const CODEX_HISTORY_DIR = join(HOME, ".config", "shellteam", "codex-history");
 // Hard links to the Claude transcripts of open tabs, so a tab's conversation
 // survives Claude Code's own 30-day transcript cleanup (SHE-173).

@@ -17,6 +17,7 @@ import { importSession } from "./portable/import.mjs";
 import { renderTranscript } from "./portable/transcript.mjs";
 import { CSF_DIR } from "./portable/csf.mjs";
 import { keepClaudeTranscript, syncKeptTranscripts } from "./transcript-keep.mjs";
+import { recordTurnReports } from "./report-writes.mjs";
 import {
   findSessionFile,
   readSessionForReplay,
@@ -1216,6 +1217,12 @@ function wireAgentEvents(slotId, agent) {
       is_error: data.is_error, errors: data.errors, subtype: data.subtype,
       undelivered: data.undelivered });
     slotBroadcast(slotId, "turn_done", data);
+    if (wasGenerating) {
+      // The chat must go on even if the record cannot be written (disk full):
+      // the cost is one report missing from its project, said loudly.
+      try { recordTurnReports({ history: slot.history, turnStartedAt: slot.turnStartedAt, cwd: slot.config.cwd, sessionId: slot.sessionId }); }
+      catch (e) { console.error(`[session-mgr] Slot ${slotId}: could not record this turn's reports: ${e.message}`); }
+    }
     if (data.is_error) recordAuthFailure(data.errors);
     sendAfterCompact(slotId, data);
 

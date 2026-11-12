@@ -5,6 +5,27 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.60] - 2026-11-12
+
+### Fixed
+- **Reports from Codex, OpenCode and Antigravity chats land in their project.**
+  A project's Reports list stayed empty for a report one of these agents wrote,
+  because only a Claude file write counted. The cockpit now notes, when an
+  agent finishes, the reports it named and changed in that turn, whatever tool
+  wrote the file. A chat that only links an older report still does not claim it.
+- **Several Codex chats started together on a new box all answer.** Codex
+  creates its state files on its very first start; chats started in the same
+  second raced on that and one showed "failed to initialize sqlite state
+  runtime". That message is now retried once, silently.
+- **A new box no longer shows a false "passwordless sudo" warning.** The
+  installer gives the owner sudo for the install only, and the dashboard could
+  keep the red warning for 10 minutes after it was removed. A warning is now
+  rechecked after 30 seconds.
+- **The billing badge no longer overlaps the model button.** With a report open
+  beside the chat, the header ran out of room and "Included" sat on top of the
+  model name. The badge keeps its width, and steps aside when the chat is at
+  its narrowest. The "API · metered" warning always stays.
+
 ## [0.1.59] - 2026-11-12
 
 ### Added

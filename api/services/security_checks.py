@@ -12,7 +12,11 @@ control from Python but can detect and shout about:
     its unauthenticated CDP port to every other container.
 
 Each check shells out once (``sudo -n -l``, ``docker inspect``) and the result
-is cached for ``CACHE_SECONDS``; ``sudo -n`` never prompts.
+is cached for ``CACHE_SECONDS``; ``sudo -n`` never prompts. A result that
+carries a warning is trusted for ``WARNING_CACHE_SECONDS`` only: the condition
+may just have been fixed (the installer removes its install-time sudo seconds
+after the API's startup check), and a stale red banner on a fixed box is a
+false alarm the owner cannot dismiss (SHE-179).
 """
 
 import json
@@ -28,6 +32,7 @@ log = logging.getLogger(__name__)
 STEEL_CONTAINER = "shellteam-steel"
 STEEL_NETWORK = "shellteam-browser-net"
 CACHE_SECONDS = 600
+WARNING_CACHE_SECONDS = 30
 _NOPASSWD_ALL = re.compile(r"NOPASSWD:\s*ALL(?![A-Za-z])")
 _cache: dict = {"at": 0.0, "warnings": None}
 
@@ -111,7 +116,10 @@ def refresh() -> list[dict]:
 
 
 def current() -> list[dict]:
-    """The cached findings, refreshed when older than CACHE_SECONDS."""
-    if _cache["warnings"] is None or time.time() - _cache["at"] > CACHE_SECONDS:
+    """The cached findings; a clean result lives CACHE_SECONDS, a warning WARNING_CACHE_SECONDS."""
+    if _cache["warnings"] is None:
+        return refresh()
+    ttl = WARNING_CACHE_SECONDS if _cache["warnings"] else CACHE_SECONDS
+    if time.time() - _cache["at"] > ttl:
         return refresh()
     return _cache["warnings"]

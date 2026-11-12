@@ -405,6 +405,24 @@ class TestPasswordlessSudoWarning:
         ids = [w["id"] for w in r.json()["warnings"]]
         assert "passwordless-sudo" in ids
 
+    def test_a_fixed_box_stops_warning_within_seconds(self):
+        """SHE-179: the installer removes its install-time sudo right after the
+        API's startup check. The stale warning stayed on a brand-new box for 10
+        minutes; a result carrying a warning is now rechecked after 30 s."""
+        from api.services import security_checks
+
+        with patch.object(security_checks, "_steel_networks", return_value=None):
+            with patch.object(security_checks, "_sudo_listing", return_value="    (ALL) NOPASSWD: ALL\n"):
+                assert [w["id"] for w in security_checks.refresh()] == ["passwordless-sudo"]
+            with patch.object(security_checks, "_sudo_listing", return_value=""):
+                assert security_checks.current(), "inside the short window the cached warning is served"
+                security_checks._cache["at"] -= security_checks.WARNING_CACHE_SECONDS + 1
+                assert security_checks.current() == []
+                # A clean result is still trusted for the long window.
+                security_checks._cache["at"] -= security_checks.WARNING_CACHE_SECONDS + 1
+                with patch.object(security_checks, "_sudo_listing", return_value="    (ALL) NOPASSWD: ALL\n"):
+                    assert security_checks.current() == []
+
     def test_owner_can_keep_passwordless_sudo_knowingly(self, monkeypatch):
         """PASSWORDLESS_SUDO_OK=1 records the owner's choice: no banner, one
         INFO line, so a box that keeps sudo on purpose isn't red forever."""

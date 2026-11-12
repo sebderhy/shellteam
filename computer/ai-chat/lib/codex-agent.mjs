@@ -79,6 +79,12 @@ const CONTEXT_OVERFLOW_RE = /ran out of room|context window/i;
 // process is still attached to the thread dies with this JSON-RPC error
 // (SHE-102). The lock releases the moment the holder exits.
 const ACTIVE_WRITER_RE = /already has an active writer/i;
+// Codex creates its state database on its very first start. Several processes
+// started together on a brand-new box race on that: one wins, the others exit
+// with this error. It cannot happen again once the database exists, so the
+// same single delayed retry recovers it (SHE-178; reproduced with 6 parallel
+// `codex app-server` on an empty CODEX_HOME: 5 failed, 0 on the next round).
+const FIRST_START_RACE_RE = /failed to initialize sqlite state runtime/i;
 const WRITER_RETRY_DELAY_MS = 1500;
 
 // Idle watchdog: max silence BETWEEN events before we treat the process as
@@ -748,13 +754,16 @@ export class CodexAgent extends CodingAgent {
   // still exiting, or a terminal codex sits on the same thread. The lock
   // releases the moment the holder exits, so one delayed retry of the user's
   // message recovers silently; only a second failure surfaces the error.
+  // The first-start race on Codex's state database (SHE-178) is the same kind
+  // of failure, gone a moment later, and takes the same retry.
 
   _scheduleWriterRetry(message) {
     if (this._writerRetryUsed || this._compactTurn || !this._lastPrompt) return false;
-    if (!ACTIVE_WRITER_RE.test(message || "")) return false;
+    const firstStartRace = FIRST_START_RACE_RE.test(message || "");
+    if (!firstStartRace && !ACTIVE_WRITER_RE.test(message || "")) return false;
     this._writerRetryUsed = true;
     this._writerRetryPending = true;
-    console.warn(`[codex-agent] thread writer conflict — retrying the message in ${WRITER_RETRY_DELAY_MS}ms`);
+    console.warn(`[codex-agent] ${firstStartRace ? "first-start state race" : "thread writer conflict"} — retrying the message in ${WRITER_RETRY_DELAY_MS}ms`);
     setTimeout(() => {
       if (!this._writerRetryPending) return;   // superseded by interrupt/stop/new message
       this._writerRetryPending = false;

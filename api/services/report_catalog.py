@@ -15,9 +15,13 @@ Backs the dashboard's Reports tab (SHE-84). A report is a document under
    the earliest transcript that wrote it, and persist the mapping so
    subsequent scans only read transcripts modified since the last watermark.
 
-   Heuristic by design: a report renamed on disk, or produced by an unscanned
-   CLI (Codex/OpenCode/Antigravity) or by plain shell commands, simply lands
-   in the "unattributed" bucket; nothing breaks. Textual MENTIONS deliberately
+   Transcripts of the other CLIs (Codex/OpenCode/Antigravity) carry no such
+   call, so for every cockpit chat the cockpit also records, when a turn ends,
+   the reports that turn named and changed (``_WRITES_RELPATH``, SHE-177).
+
+   Heuristic by design: a report renamed on disk, or produced outside the
+   cockpit by something other than Claude's Write tool, simply lands in the
+   "unattributed" bucket; nothing breaks. Textual MENTIONS deliberately
    do not attribute — see ``_WRITE_RE`` for the incident that taught us.
 
 See docs/decisions/20260829-reports-tab-workspace-attribution.md.
@@ -61,6 +65,13 @@ _CWD_RE = re.compile(rb'"cwd"\s*:\s*"([^"]+)"')
 # Chats the owner moved into a project (SHE-168). The cockpit appends one JSON
 # line per move: {"session", "from", "to"}. A moved chat's reports follow it.
 _MOVES_RELPATH = Path(".config") / "shellteam" / "moved-sessions.jsonl"
+
+# Reports a cockpit chat wrote, recorded by the cockpit when the turn ends
+# (computer/ai-chat/lib/report-writes.mjs, SHE-177): {"report", "cwd",
+# "session", "ts" in ms}. This is the evidence for Codex, OpenCode and
+# Antigravity, whose transcripts carry no Write call: the turn named the report
+# AND the file changed while the turn ran, so a mention alone still fails.
+_WRITES_RELPATH = Path(".config") / "shellteam" / "report-writes.jsonl"
 
 # Bump when the attribution semantics change: a loaded index of a different
 # version is discarded and rebuilt from scratch on the next listing (v1 indexes
@@ -133,30 +144,56 @@ def _transcripts(home: Path):
     # Claude transcripts only: they carry cwd on every line and Write tool
     # calls with file_path (authorship). Codex rollouts were checked against
     # the real corpus (486 MB) and contain no report-write evidence — agents
-    # there write via shell in forms too varied to match honestly. Reports
-    # produced by Codex/OpenCode/Antigravity land in the "Other" bucket.
+    # there write via shell in forms too varied to match honestly. Their
+    # reports are attributed by the cockpit's write record instead.
     claude = home / ".claude" / "projects"
     if claude.is_dir():
         yield from claude.glob("*/*.jsonl")
 
 
-def _session_moves(home: Path) -> list[dict]:
-    """The cockpit's record of moved chats, oldest first. [] when none."""
-    path = home / _MOVES_RELPATH
+def _cockpit_records(path: Path, text_keys: tuple[str, ...]) -> list[dict]:
+    """The JSON lines of one cockpit record file that carry every text key, oldest first."""
     if not path.is_file():
         return []
-    moves = []
+    records = []
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
         try:
-            move = json.loads(line)
+            record = json.loads(line)
         except json.JSONDecodeError:
             log.warning("Skipping an unreadable line in %s", path)
             continue
-        if all(isinstance(move.get(k), str) for k in ("session", "from", "to")):
-            moves.append(move)
-    return moves
+        if isinstance(record, dict) and all(isinstance(record.get(k), str) for k in text_keys):
+            records.append(record)
+    return records
+
+
+def _session_moves(home: Path) -> list[dict]:
+    """The cockpit's record of moved chats, oldest first. [] when none."""
+    return _cockpit_records(home / _MOVES_RELPATH, ("session", "from", "to"))
+
+
+def _apply_recorded_writes(attribution: dict[str, dict], home: Path) -> dict[str, dict]:
+    """Attribution with the cockpit's own write record merged in.
+
+    Same rule as between transcripts: the earliest writer keeps the claim. An
+    entry that comes from the record remembers its session, so a later move of
+    that chat re-homes the report (``_apply_moves``).
+    """
+    writes = _cockpit_records(home / _WRITES_RELPATH, ("report", "cwd", "session"))
+    if not writes:
+        return attribution
+    result = {name: dict(entry) for name, entry in attribution.items()}
+    for write in writes:
+        ts = write.get("ts")
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+            continue
+        ts = ts / 1000
+        current = result.get(write["report"])
+        if current is None or ts < current["ts"]:
+            result[write["report"]] = {"cwd": write["cwd"], "ts": ts, "session": write["session"]}
+    return result
 
 
 def _apply_moves(attribution: dict[str, dict], home: Path) -> dict[str, dict]:
@@ -166,7 +203,8 @@ def _apply_moves(attribution: dict[str, dict], home: Path) -> dict[str, dict]:
     applied on top at read time: every report the moved session wrote, and that
     is still attributed to the folder the chat left, now belongs to the folder
     it moved to. Moves chain (home -> a -> b) because they apply in order.
-    Only Claude transcripts carry the write evidence, same bound as above.
+    A report the cockpit recorded names its session; for the others the moved
+    session's Claude transcript is searched for the write.
     """
     moves = _session_moves(home)
     if not moves:
@@ -174,6 +212,9 @@ def _apply_moves(attribution: dict[str, dict], home: Path) -> dict[str, dict]:
     result = {name: dict(entry) for name, entry in attribution.items()}
     projects = home / ".claude" / "projects"
     for move in moves:
+        for entry in result.values():
+            if entry.get("session") == move["session"] and entry["cwd"] == move["from"]:
+                entry["cwd"] = move["to"]
         # A session id is a file name here: refuse anything that is not one.
         if not re.fullmatch(r"[A-Za-z0-9._-]+", move["session"]):
             continue
@@ -218,8 +259,8 @@ def refresh_attribution(user_id: str, home: Path) -> dict[str, dict]:
     read. Only WRITE evidence attributes (see ``_WRITE_RE``); among writers,
     the earliest-mtime transcript keeps the claim (creation beats a later
     edit by another workspace). Reports written by Codex/OpenCode/Antigravity
-    or by plain shell commands stay unattributed — a coverage bound, stated
-    rather than silent.
+    or by plain shell commands are not found here; the cockpit's write record
+    covers them (``_apply_recorded_writes``).
     """
     idx = _load_index(user_id)
     watermark = idx["watermark"]
@@ -264,7 +305,7 @@ def list_reports(user_id: str, home_dir: Path) -> list[dict]:
     reports_dir = home / "reports"
     if not reports_dir.is_dir():
         return []
-    attribution = _apply_moves(refresh_attribution(user_id, home), home)
+    attribution = _apply_moves(_apply_recorded_writes(refresh_attribution(user_id, home), home), home)
     entries: list[dict] = []
     for f in _report_files(reports_dir):
         st = f.stat()

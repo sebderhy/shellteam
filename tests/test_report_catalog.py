@@ -218,3 +218,42 @@ class TestDashboardWiring:
         # no parent DOM) — the same trust split the dashboard side-panel uses.
         assert "const STRICT = 'allow-scripts allow-popups allow-forms allow-downloads'" in REPORTS_HTML
         assert "STRICT + ' allow-same-origin'" in REPORTS_HTML  # only for our /_editor/ SPA
+
+
+class TestCockpitWriteRecord:
+    """SHE-177: a Codex agent wrote a report through a build script; the
+    project's Reports list stayed empty. The cockpit now records the reports a
+    turn named and changed, and the catalog reads that record."""
+
+    def _record(self, home, *lines):
+        f = home / ".config" / "shellteam" / "report-writes.jsonl"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        with f.open("a") as fh:
+            for line in lines:
+                fh.write(json.dumps(line) + "\n")
+
+    def test_a_recorded_write_attributes_a_report_no_transcript_claims(self, home):
+        self._record(home, {"report": "c.mp3", "cwd": str(home / "kahava"), "session": "t1", "ts": 5_000_000})
+        by_path = {e["path"]: e for e in report_catalog.list_reports("owner", home)}
+        assert by_path["reports/c.mp3"]["workspace"] == "kahava"
+        assert by_path["reports/a.html"]["workspace"] == "webshop"
+
+    def test_the_earliest_writer_keeps_the_claim(self, home):
+        # a.html was written by the webshop Claude session long ago; a later
+        # cockpit turn elsewhere that touched it must not take it.
+        self._record(home, {"report": "a.html", "cwd": str(home / "scout"), "session": "t2", "ts": time.time() * 1000})
+        by_path = {e["path"]: e for e in report_catalog.list_reports("owner", home)}
+        assert by_path["reports/a.html"]["workspace"] == "webshop"
+
+    def test_a_recorded_report_follows_its_chat_into_a_project(self, home):
+        self._record(home, {"report": "c.mp3", "cwd": str(home), "session": "t1", "ts": 5_000_000})
+        moves = home / ".config" / "shellteam" / "moved-sessions.jsonl"
+        moves.write_text(json.dumps({"session": "t1", "from": str(home), "to": str(home / "kahava")}) + "\n")
+        by_path = {e["path"]: e for e in report_catalog.list_reports("owner", home)}
+        assert by_path["reports/c.mp3"]["workspace"] == "kahava"
+
+    def test_unreadable_and_incomplete_lines_are_skipped(self, home):
+        self._record(home, {"report": "c.mp3", "cwd": str(home / "kahava"), "session": "t1"}, ["not", "a", "record"])
+        (home / ".config" / "shellteam" / "report-writes.jsonl").open("a").write("{broken\n")
+        by_path = {e["path"]: e for e in report_catalog.list_reports("owner", home)}
+        assert by_path["reports/c.mp3"]["workspace"] == report_catalog.UNATTRIBUTED
