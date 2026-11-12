@@ -202,3 +202,32 @@ test("the agent and project menus are not stretched across the window", () => {
   const css = readFileSync(join(PUBLIC, "styles.css"), "utf8");
   assert.match(css, /\.actions-menu\.tab-context-menu \{ position: fixed; top: auto; right: auto;/);
 });
+
+test("SHE-169: the project's three views sit between the project's name and the agent's", () => {
+  // They were on the right, next to the chat's own controls, and read as the chat's.
+  const html = readFileSync(join(PUBLIC, "index.html"), "utf8");
+  const [proj, tools, agent, right] = ['id="pjCrumb"', 'id="pjTools"', 'id="pjAgent"', 'class="status-right"'].map(s => html.indexOf(s));
+  assert.ok(proj > 0 && proj < tools && tools < agent && agent < right);
+  const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
+  assert.match(js, /getElementById\('pjAgent'\)\.addEventListener\('dblclick'/, "the agent's name is still renamed by double-click");
+});
+
+test("SHE-169: the chat's own report count says it is this chat's", () => {
+  // Beside the project's "Reports" button, a bare page icon and a number looked like a second copy.
+  const html = readFileSync(join(PUBLIC, "index.html"), "utf8");
+  assert.match(html, /id="reportsCount">0<\/span><span class="btn-reports-scope">in this chat<\/span>/);
+  const css = readFileSync(join(PUBLIC, "projects.css"), "utf8");
+  assert.match(css, /^\.btn-reports-scope \{ display: none; \}/m, "the tab-row layout is unchanged");
+  assert.match(css, /html\.layout-projects \.btn-reports-scope \{ display: inline;/);
+});
+
+test("SHE-169: home-folder chats are 'General ~', and feedback is a bug, not a chat bubble", () => {
+  const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
+  assert.match(js, /const GENERAL = 'General';/);
+  assert.match(js, /<span class="pj-name">\$\{GENERAL\}<\/span><span class="pj-path"[^>]*>~<\/span>/);
+  assert.doesNotMatch(js, /not in a project<|'Not in a project'/i);
+  const html = readFileSync(join(PUBLIC, "index.html"), "utf8");
+  const feedback = html.slice(html.indexOf('id="pjFeedback"'), html.indexOf('id="pjCollapse"'));
+  assert.match(feedback, /m8 2 1\.88 1\.88/, "the bug icon");
+  assert.doesNotMatch(feedback, /M21 15a2 2 0 0 1-2 2H7l-4 4V5/, "not the chat bubble");
+});

@@ -64,6 +64,7 @@ import {
   setBroadcast,
   moveSlot,
   restoreSlots,
+  startTranscriptKeeper,
   resumeLostBackgroundTasks,
   beginShutdown,
   listSlots,
@@ -85,6 +86,7 @@ import {
   resumeSession,
   rewindSlot,
   compactSlot,
+  compactThenSend,
   replayStateToSocket,
   addUserMessage,
   isQueryActive,
@@ -172,6 +174,7 @@ function broadcast(obj) {
 }
 setBroadcast(broadcast);
 restoreSlots();
+startTranscriptKeeper();
 // Every folder an open chat works in is a project in the projects column.
 for (const s of listSlots()) ensureProject(s.cwd);
 // A slot whose CLI died with background tasks running (this very restart, or
@@ -1104,6 +1107,7 @@ chatWSS.on("connection", (ws, req) => {
           });
         }
 
+        if (msg.compactFirst) { await compactThenSend(slot, content); break; }
         if (!isQueryActive(slot)) await startAgent(slot);
         await sendMessage(slot, content);
         break;

@@ -81,15 +81,11 @@ export function cwdFromSessionPath(sessionPath) {
 
 // --- Find session file ---
 
-export function findSessionFile(sessionId) {
-  if (!isSafeSessionId(sessionId)) return null;
-  // Check Codex history first (fast, flat directory)
-  const codexPath = join(CODEX_HISTORY_DIR, sessionId + ".jsonl");
-  if (existsSync(codexPath)) return codexPath;
+export const CLAUDE_PROJECTS_DIR = join(HOME, ".claude", "projects");
 
-  // Search Claude Code projects (recursive)
-  const projectsDir = join(HOME, ".claude", "projects");
-  if (!existsSync(projectsDir)) return null;
+/** Path of `<sessionId>.jsonl` anywhere under `root`, or null. */
+export function findJsonlUnder(root, sessionId) {
+  if (!isSafeSessionId(sessionId) || !existsSync(root)) return null;
   const target = sessionId + ".jsonl";
   const search = (dir) => {
     let entries;
@@ -104,7 +100,15 @@ export function findSessionFile(sessionId) {
     }
     return null;
   };
-  return search(projectsDir);
+  return search(root);
+}
+
+export function findSessionFile(sessionId) {
+  if (!isSafeSessionId(sessionId)) return null;
+  // Check Codex history first (fast, flat directory)
+  const codexPath = join(CODEX_HISTORY_DIR, sessionId + ".jsonl");
+  if (existsSync(codexPath)) return codexPath;
+  return findJsonlUnder(CLAUDE_PROJECTS_DIR, sessionId);
 }
 
 /**

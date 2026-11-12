@@ -251,6 +251,22 @@ function resolveImageUrl(ref) {
     if (!rel || !IMAGE_EXT_RE.test(rel)) return null;
     return `${fileBaseUrl()}/${encodeRelPath(rel)}`;
 }
+// A link to a picture, a sound or a clip on this box shows the file under the
+// link (SHE-174): agents share URLs, and a URL to a chart is a chart the owner
+// wants to see. Files on the box only, so an outside link stays just a link.
+const VIDEO_EXT_RE = /\.(mp4|mov|m4v)$/i;
+function boxMediaEmbed(href) {
+    let u;
+    try { u = new URL(href); } catch { return ''; }
+    if (u.origin !== new URL(fileBaseUrl()).origin || u.pathname.startsWith('/_editor/')) return '';
+    const src = escHtml(u.href);
+    if (IMAGE_EXT_RE.test(u.pathname)) {
+        return `<img class="agent-shot" src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">`;
+    }
+    if (VIDEO_EXT_RE.test(u.pathname)) return `<video class="agent-clip" controls preload="metadata" src="${src}"></video>`;
+    if (AUDIO_EXT_RE.test(u.pathname)) return `<audio controls preload="metadata" src="${src}"></audio>`;
+    return '';
+}
 // Backtick spans that look like a source/doc file are linked to the in-container editor.
 const FILE_PATH_RE = /^(?:~\/|\.\/|\/)?[\w.@-]+(?:\/[\w.@-]+)*\.(?:md|markdown|mdx|txt|rst|py|js|mjs|cjs|ts|tsx|jsx|json|jsonc|ya?ml|toml|html?|css|scss|sass|less|sh|bash|zsh|sql|go|rs|rb|java|kt|c|h|cpp|hpp|cc|php|xml|ini|cfg|conf|env|lock|vue|svelte|astro|svg|csv|tsv|log|dockerfile)$/i;
 // Extensions whose final form is the rendered file (open directly), not source.
@@ -457,7 +473,7 @@ marked.use({
             const text = this.parser.parseInline(tokens);
             if (!isSafeLinkHref(href)) return `<code>${text}</code>`;
             const titleAttr = title ? ` title="${escHtml(title)}"` : '';
-            return `<a href="${escHtml(href)}" target="_blank" rel="noopener"${titleAttr}>${text}</a>`;
+            return `<a href="${escHtml(href)}" target="_blank" rel="noopener"${titleAttr}>${text}</a>` + boxMediaEmbed(href);
         }
     }
 });
@@ -654,6 +670,7 @@ function setStatus(state, label) {
 
 function setGenerating(active) {
     S.isGenerating = active;
+    renderCompactSend();
     if (active) {
         setStatus('generating', 'Working...');
         E.streamingIndicator.classList.add('visible');
@@ -914,6 +931,29 @@ function updateContextMeter(usage, contextWindow) {
     renderContextMeter();
 }
 
+// Past this size a chat is worth compacting before a message that starts
+// something new: the agent then works from a summary instead of rereading
+// everything (SHE-175). The owner decides; the cockpit only offers.
+const COMPACT_HINT_TOKENS = 200_000;
+
+function canCompactSend() {
+    const slot = sessionSlots.find(s => s.id === activeSlotId);
+    return !!S.sessionId && !S.isGenerating && (slot?.contextTokens || 0) >= COMPACT_HINT_TOKENS;
+}
+
+function renderCompactSend() {
+    const btn = document.getElementById('btnCompactSend');
+    if (!btn) return;
+    // Only with a message to send: the button sends it.
+    const show = canCompactSend() && !!E.input.value.trim();
+    btn.classList.toggle('hidden', !show);
+    if (!show) return;
+    const k = Math.round(sessionSlots.find(s => s.id === activeSlotId).contextTokens / 1000);
+    btn.title = `This conversation is long (${k}k tokens). Compacting replaces it, for the agent, with a summary. `
+        + 'Worth doing when your message is not directly tied to the last exchanges. '
+        + 'You still see the whole conversation. (Alt+Enter)';
+}
+
 function contextWindowForSlot(slot) {
     return slot?.contextWindow || contextWindowForModel(S.currentModel);
 }
@@ -932,6 +972,7 @@ function renderContextMeter() {
     if (!el) return;
     const slot = sessionSlots.find(s => s.id === activeSlotId);
     const tokens = slot?.contextTokens;
+    renderCompactSend();
     if (!tokens) { el.hidden = true; updateInfoWarning(); refreshInfoPanelIfOpen(); return; }
     const windowSize = contextWindowForSlot(slot);
     const pct = Math.min(100, Math.round((tokens / windowSize) * 100));
@@ -2724,7 +2765,7 @@ function handleStop() {
     }
 }
 
-function handleSend() {
+function handleSend({ compactFirst = false } = {}) {
     let text = E.input.value.trim();
     const hasFiles = S.pendingFiles.some(f => f.path);
     const hasQuotes = window.QuoteReview?.hasContent();
@@ -2778,6 +2819,8 @@ function handleSend() {
     }
 
     Chat.addUserMessage(displayText, imageUrls);
+    compactFirst = compactFirst && canCompactSend();
+    if (compactFirst) Chat.handleCompactStarted();
     updateSlotLabel(activeSlotId, displayText);
     if (!S.isGenerating) setGenerating(true);
     // Mark the slot in-flight until the agent's first event lands. Guards the
@@ -2786,13 +2829,14 @@ function handleSend() {
     const activeSlot = sessionSlots.find(s => s.id === activeSlotId);
     if (activeSlot) { activeSlot.pendingSend = true; renderSessionTabs(); }
     // Use "send" type (new protocol) instead of "user"
-    S.ws?.send(JSON.stringify({ type: 'send', content, slot: activeSlotId }));
+    S.ws?.send(JSON.stringify({ type: 'send', content, slot: activeSlotId, ...(compactFirst ? { compactFirst: true } : {}) }));
 
     S.pendingImages = [];
     S.pendingFiles = [];
     updateAttachmentPreviews();
     window.QuoteReview?.clear();
     E.input.value = '';
+    renderCompactSend();
     E.input.style.height = 'auto';
     E.input.focus();
     const sentSlot = sessionSlots.find(s => s.id === activeSlotId);
@@ -4108,6 +4152,7 @@ function switchSessionTab(id) {
     // The composer is shared DOM — swap in this tab's own draft (SHE-38),
     // sized so the draft is visible without focusing (SHE-63).
     E.input.value = target.draft || '';
+    renderCompactSend();
     autosizeComposer();
     S.currentModel = target.config.model || S.currentModel;
     setModelDisplay(S.currentModel);
@@ -4411,6 +4456,7 @@ composerPhoneQuery.addEventListener?.('change', updateComposerCollapse);
 
 E.input.addEventListener('input', () => {
     autosizeComposer();
+    renderCompactSend();
     const at = getAtQuery();
     if (at) {
         fetchFiles();
@@ -4460,6 +4506,11 @@ E.input.addEventListener('keydown', (e) => {
         handleStop();
         return;
     }
+    if (e.key === 'Enter' && e.altKey && canCompactSend()) {
+        e.preventDefault();
+        handleSend({ compactFirst: true });
+        return;
+    }
     if (enterSendsMessage(e)) {
         e.preventDefault();
         handleSend();
@@ -4505,6 +4556,7 @@ const SHORTCUTS = [
     { group: 'Composing', rows: [
         ['Enter / Shift+Enter', 'Send / insert a newline'],
         ['@', 'Autocomplete a file path into the message'],
+        ['Alt+Enter', 'Long conversation: compact it, then send (when the Compact & send button shows)'],
         ['Alt+A', 'Have replies read out loud (needs an ElevenLabs key)'],
         ['Esc', 'Stop the agent while it is generating'],
       ] },

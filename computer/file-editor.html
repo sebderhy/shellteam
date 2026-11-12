@@ -1599,8 +1599,15 @@ renderTree();
             console.warn('Deep-link: could not expand tree for', dir, e);
         }
     }
+    if (isDir) {
+        // Show the folder as the selected one, at the top of the tree: the
+        // owner asked for this project's files, not for the whole home.
+        currentDir = '/' + filePath + '/';
+        await renderTree();
+        document.querySelector('.tree-item.selected-dir')?.scrollIntoView({ block: 'start' });
+        return;
+    }
     await renderTree();
-    if (isDir) return;
 
     // Wait for Monaco to be ready
     while (!monacoReady) await new Promise(r => setTimeout(r, 50));

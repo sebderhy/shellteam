@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=3">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=3">
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=3">
-    <link rel="shortcut icon" href="/static/favicon.ico?v=3">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=3">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=4">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=4">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=4">
+    <link rel="shortcut icon" href="/static/favicon.ico?v=4">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=4">
     <!-- Makes "Install app" a real app: full screen, no browser bar (SHE-133). -->
     <link rel="manifest" href="/static/manifest.webmanifest">
     <meta name="theme-color" content="#110f0d">
@@ -223,6 +223,8 @@
         .report-btn.is-public { color: var(--positive); border-color: var(--positive); }
         .report-btn.is-on { color: var(--brand); border-color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, var(--surface-1)); }
         .report-btn-icon { padding: 0; width: 30px; justify-content: center; font-size: 15px; }
+        .report-btn-ico { display: inline-flex; }
+        .report-btn svg { flex: none; }
         /* .report-btn sets display, which beats the browser's own [hidden] rule:
            without this line Comment / Edit text showed on every document, and a
            project view kept its Private / Share buttons (same trap as SHE-167). */
@@ -539,7 +541,7 @@
 <body>
     <header class="topbar">
         <div class="brand">
-            <img src="/static/favicon.svg?v=3" alt="">
+            <img src="/static/logo.svg?v=4" alt="">
             <span>Shell<span style="color:var(--brand)">Team</span></span>
         </div>
         <button type="button" id="restart-chip" class="fb-trigger restart-chip restart-btn" hidden
@@ -856,16 +858,16 @@
                 <!-- Review tools: shown once the framed document's picker reports in
                      (only the owner's view of a sandboxed HTML file carries it). -->
                 <button class="report-btn" id="reportCommentBtn" hidden aria-pressed="false"
-                        title="Click an element in the document to comment on it in the chat"><span class="report-btn-ico">💬</span><span class="report-btn-label">Comment</span></button>
+                        title="Click an element in the document to comment on it in the chat"><span class="report-btn-ico"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5z"/></svg></span><span class="report-btn-label">Comment</span></button>
                 <button class="report-btn" id="reportEditBtn" hidden aria-pressed="false"
-                        title="Click text in the document to edit it in place"><span class="report-btn-ico">✎</span><span class="report-btn-label">Edit text</span></button>
-                <button class="report-btn" id="reportVisBtn" title="Make public / private"><span class="report-btn-ico">🔒</span><span class="report-btn-label">Private</span></button>
+                        title="Click text in the document to edit it in place"><span class="report-btn-ico"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span><span class="report-btn-label">Edit text</span></button>
+                <button class="report-btn" id="reportVisBtn" title="Make public / private"><span class="report-btn-ico"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><span class="report-btn-label">Private</span></button>
                 <button class="report-btn" id="reportShareBtn" title="Make public to share" disabled>Share</button>
-                <button class="report-btn report-btn-icon" id="reportOpenBtn" title="Open in new tab">↗</button>
+                <button class="report-btn report-btn-icon" id="reportOpenBtn" title="Open in new tab" aria-label="Open in new tab"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8"/><path d="M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"/></svg></button>
             </div>
             <!-- Outside the actions row on purpose: the row scrolls when it does
                  not fit, the close button never moves. -->
-            <button class="report-btn report-btn-icon" id="reportCloseBtn" title="Close">✕</button>
+            <button class="report-btn report-btn-icon" id="reportCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
         <iframe class="report-frame" id="reportFrame"
                 sandbox="allow-scripts allow-popups allow-forms allow-downloads"
@@ -880,7 +882,7 @@
         <div class="wizard-card">
             <div class="wizard-step active" id="wizard-step-1">
                 <div class="brand" style="justify-content:center;margin-bottom:16px">
-                    <img src="/static/favicon.svg?v=3" alt="">
+                    <img src="/static/logo.svg?v=4" alt="">
                     <span>Shell<span style="color:var(--brand)">Team</span></span>
                 </div>
                 <h1 id="wizard-title" tabindex="-1">Welcome to your ShellTeam box</h1>
@@ -2565,10 +2567,11 @@
                 } catch { return false; }
             }
             // Icon + word; the word hides when the panel is narrow (container query).
+            const VIS_ICON = { globe: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.7 2.6 14.3 0 17M12 3.5c-2.6 2.7-2.6 14.3 0 17"/></svg>', lock: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>' };
             const iconLabel = (ico, label) => `<span class="report-btn-ico">${ico}</span><span class="report-btn-label">${label}</span>`;
             function setPublic(pub, toggleDisabled = false) {
                 isPublic = pub;
-                visBtn.innerHTML = pub ? iconLabel('🌐', 'Public') : iconLabel('🔒', 'Private');
+                visBtn.innerHTML = pub ? iconLabel(VIS_ICON.globe, 'Public') : iconLabel(VIS_ICON.lock, 'Private');
                 visBtn.classList.toggle('is-public', pub);
                 visBtn.disabled = toggleDisabled;
                 visBtn.title = toggleDisabled

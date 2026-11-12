@@ -43,6 +43,9 @@ export const PROJECTS_FILE = join(HOME, ".config", "shellteam", "projects.json")
 // a moved chat's reports follow it (api/services/report_catalog.py).
 export const SESSION_MOVES_FILE = join(HOME, ".config", "shellteam", "moved-sessions.jsonl");
 export const CODEX_HISTORY_DIR = join(HOME, ".config", "shellteam", "codex-history");
+// Hard links to the Claude transcripts of open tabs, so a tab's conversation
+// survives Claude Code's own 30-day transcript cleanup (SHE-173).
+export const CLAUDE_TRANSCRIPT_KEEP_DIR = join(HOME, ".config", "shellteam", "claude-transcripts");
 export const BROKER_STATE_FILE = join(HOME, ".config", "shellteam", "delegation-broker.json");
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
 export const DEFAULT_CODEX_MODEL = "gpt-6.1-sol-max";

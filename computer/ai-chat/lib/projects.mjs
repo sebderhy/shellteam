@@ -4,7 +4,7 @@
  * A project is a folder under $HOME that agents work in. The projects column
  * groups agents by it. Each project has the folder path (never editable here)
  * and a display name the owner can change. $HOME itself is never a project:
- * agents running there are listed under "Not in a project".
+ * agents running there are listed under "General ~".
  *
  * The list is owner state, persisted in ~/.config/shellteam/projects.json
  * next to the cockpit's other state files. A folder that no longer exists is

@@ -16,6 +16,7 @@ import { handoffSession } from "./portable/index.mjs";
 import { importSession } from "./portable/import.mjs";
 import { renderTranscript } from "./portable/transcript.mjs";
 import { CSF_DIR } from "./portable/csf.mjs";
+import { keepClaudeTranscript, syncKeptTranscripts } from "./transcript-keep.mjs";
 import {
   findSessionFile,
   readSessionForReplay,
@@ -669,6 +670,9 @@ export async function startAgent(slotId = 0) {
   //    this to Claude: Codex/OpenCode may store rollouts outside our search
   //    path, so a null family there is not proof the session is gone.
   if (savedSession) {
+    // Claude Code may have deleted an idle transcript since the last turn;
+    // put it back before judging the session orphaned (SHE-173).
+    keepClaudeTranscript(savedSession);
     // Prefer the slot's recorded family (authoritative, set on init/handoff);
     // fall back to file sniffing for pre-existing tabs that predate the field.
     const sessionFamily = slot.sessionFamily || familyOfSession(savedSession);
@@ -1017,6 +1021,37 @@ export async function compactSlot(slotId) {
   return {};
 }
 
+/**
+ * Compact, then deliver `content` (SHE-175: "Compact & send"). The message
+ * waits for the compaction turn to end, so every agent family gets it on a
+ * settled session. With nothing to compact it is simply sent.
+ */
+export async function compactThenSend(slotId, content) {
+  const result = await compactSlot(slotId);
+  if (result.error) {
+    if (!isQueryActive(slotId)) await startAgent(slotId);
+    await sendMessage(slotId, content);
+    return;
+  }
+  getSlot(slotId).afterCompact = content;
+}
+
+/** Deliver the message queued behind a compaction once that turn is over. */
+function sendAfterCompact(slotId, turn) {
+  const slot = getSlot(slotId);
+  const queued = slot?.afterCompact;
+  if (queued == null || turn.subtype === "watchdog_timeout") return;   // the restart re-runs the compaction
+  slot.afterCompact = null;
+  if (["interrupted", "stopped"].includes(turn.subtype)) {
+    console.log(`[session-mgr] Slot ${slotId}: stopped during compaction, the queued message is not sent`);
+    return;
+  }
+  sendMessage(slotId, queued).catch((err) => {
+    console.error(`[session-mgr] Slot ${slotId}: message queued behind a compaction failed to send: ${err.message}`);
+    slotBroadcast(slotId, "error", { message: `Your message was not sent after compacting: ${err.message}` });
+  });
+}
+
 // --- Public API: replay state to a new socket ---
 
 export function replayStateToSocket(ws, shouldIncludeSlot = () => true) {
@@ -1182,6 +1217,7 @@ function wireAgentEvents(slotId, agent) {
       undelivered: data.undelivered });
     slotBroadcast(slotId, "turn_done", data);
     if (data.is_error) recordAuthFailure(data.errors);
+    sendAfterCompact(slotId, data);
 
     // Auto-restart on watchdog timeout: resume session and resend last message
     if (data.subtype === "watchdog_timeout") {
@@ -1368,6 +1404,25 @@ function correctCwdFromSession(slot, sessionFile, sessionId, slotId) {
   }
 }
 
+// Set when the saved tab list could not be read. The open tabs are then
+// unknown, so the transcript keeper must not release anything.
+let tabStateLost = false;
+const TRANSCRIPT_KEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Hold on to the transcript of every open tab, now and every hour, so Claude
+ * Code's 30-day cleanup cannot empty a tab (SHE-173). Call after restoreSlots.
+ */
+export function startTranscriptKeeper() {
+  if (tabStateLost) {
+    console.error("[session-mgr] Tab state was unreadable: keeping every saved transcript link, releasing none");
+    return;
+  }
+  const sync = () => syncKeptTranscripts([...slots.values()].map((slot) => slot.sessionId));
+  sync();
+  setInterval(sync, TRANSCRIPT_KEEP_INTERVAL_MS).unref();
+}
+
 export function restoreSlots() {
   if (!existsSync(TABS_FILE)) return;
   let saved;
@@ -1377,6 +1432,7 @@ export function restoreSlots() {
     // evidence and start fresh.
     console.error(`[session-mgr] Corrupt tab state ${TABS_FILE}: ${e.message} — backing up to .corrupt and starting fresh`);
     try { renameSync(TABS_FILE, TABS_FILE + ".corrupt"); } catch {}
+    tabStateLost = true;
     return;
   }
   if (!Array.isArray(saved)) return;
@@ -1399,11 +1455,16 @@ export function restoreSlots() {
 
     // Load history and correct cwd from the session's authoritative record
     if (s.sessionId) {
+      keepClaudeTranscript(s.sessionId);
       const sessionFile = findSessionFile(s.sessionId);
       if (sessionFile) {
         correctCwdFromSession(slot, sessionFile, s.sessionId, s.id);
         slot.history = readSessionForReplay(sessionFile);
         slot.totalCost = extractCostFromHistory(slot.history);
+      } else if (s.sessionFamily === "claude") {
+        // Gone before the keeper existed: say so instead of an empty tab.
+        console.warn(`[session-mgr] Slot ${s.id}: transcript of session ${s.sessionId} is gone from disk`);
+        slot.history = [{ type: "session_event", event: "transcript_lost", timestamp: Date.now() }];
       }
     }
   }
@@ -1419,6 +1480,7 @@ export function restoreSlots() {
       slot0.sessionId = loadSessionIdFromDisk();
     }
     if (slot0.sessionId && slot0.history.length === 0) {
+      keepClaudeTranscript(slot0.sessionId);
       const sessionFile = findSessionFile(slot0.sessionId);
       if (sessionFile) {
         correctCwdFromSession(slot0, sessionFile, slot0.sessionId, 0);

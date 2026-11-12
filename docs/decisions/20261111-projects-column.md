@@ -27,7 +27,7 @@ Two facts from his own box shaped the design:
    name is editable, the path is shown next to it and is not. The list is kept
    in `~/.config/shellteam/projects.json` (`lib/projects.mjs`). A folder an
    agent works in becomes a project by itself. Home is never a project: its
-   chats sit under "Not in a project", which is a label and not a name.
+   chats sit under "General ~" (renamed from "Not in a project" on 2026-11-12, SHE-169: Seb found the plain name with the home path clearer).
 3. **A chat can be moved into a project and keeps its history**
    (`session-manager.moveSlot`). The conversation is carried into a fresh
    session of the same agent in the new folder, the way a fork does it. With
@@ -68,7 +68,7 @@ Two facts from his own box shaped the design:
 
 ## What would make us revisit
 
-- If owners keep most chats in "Not in a project" after moving is this easy,
+- If owners keep most chats in "General" after moving is this easy,
   the project model is wrong for them, not the screen.
 - If the default flips to `projects`, the tab row and its phone drawer can be
   deleted (about 400 lines), along with the switch.

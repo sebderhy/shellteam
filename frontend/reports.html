@@ -78,21 +78,18 @@
             padding: 10px 16px; font-size: var(--text-sm); display: none; z-index: 5; }
         .toast.err { border-color: var(--negative); }
 
-        @media (max-width: 720px) {
-            /* Phone: list first; opening a report swaps to a full-height preview
-               with a Back button (a 38%-height preview is unreadable). */
-            .wrap { flex-direction: column; }
-            .side { width: 100%; flex: 1; border-right: none; }
-            /* One surface at a time on a phone: the full list, or the full
-               report — never a half-height placeholder. */
-            body:not(.previewing) .main { display: none; }
-            body.previewing .side { display: none; }
-            body.previewing #back { display: inline-block; }
-            /* The report renders its own heading right below — a title crushed
-               to one letter between four buttons is noise, not information. */
-            .toolbar { flex-wrap: wrap; }
-            .toolbar .title { display: none; }
-        }
+        /* One pane at a time (a phone, or the cockpit's narrow project
+           panel, SHE-171): the full list, or the full report with a Back
+           button. Never a list squeezing the report it just opened. */
+        body.one-pane .wrap { flex-direction: column; }
+        body.one-pane .side { width: 100%; flex: 1; border-right: none; }
+        body.one-pane:not(.previewing) .main { display: none; }
+        body.one-pane.previewing .side { display: none; }
+        body.one-pane.previewing #back { display: inline-block; }
+        /* The report renders its own heading right below; a title crushed
+           to one letter between four buttons is noise, not information. */
+        body.one-pane .toolbar { flex-wrap: wrap; }
+        body.one-pane .toolbar .title { display: none; }
         @media (pointer: coarse) {
             .item { min-height: 44px; }
             .group-h, .toolbar button, .bar button { min-height: 44px; }
@@ -167,6 +164,10 @@
         const PARAMS = new URLSearchParams(location.search);
         const ONLY_WORKSPACE = PARAMS.get('workspace');
         if (PARAMS.get('panel')) document.body.classList.add('in-panel');
+        const PHONE = matchMedia('(max-width: 720px)');
+        const setOnePane = () => document.body.classList.toggle('one-pane', !!PARAMS.get('panel') || PHONE.matches);
+        PHONE.addEventListener('change', setOnePane);
+        setOnePane();
 
         // Collapse state survives reloads — with 200+ reports, re-collapsing
         // the Dreaming pile on every visit would get old fast.

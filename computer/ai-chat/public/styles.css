@@ -845,6 +845,10 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
     display: block; height: auto;
     border: 1px solid var(--border); background: var(--surface);
 }
+.msg-assistant .content video.agent-clip {
+    display: block; margin: 8px 0; max-width: 100%; max-height: 400px;
+    border-radius: 8px; border: 1px solid var(--border);
+}
 .msg-assistant .content audio {
     display: block; margin: 8px 0; width: 100%; max-width: 480px;
     border-radius: 8px;
@@ -1082,6 +1086,18 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 .btn-send:hover { background: var(--accent-hover); }
 .btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
 .btn-send svg { width: 18px; height: 18px; }
+/* "Compact & send" (SHE-175): Send's quieter twin, same height, right beside
+   it, only on long chats. Outlined so Send stays the one filled button. */
+.btn-compact-send {
+    height: 42px; padding: 0 14px; border-radius: 21px; flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-bg);
+    color: var(--accent); cursor: pointer; white-space: nowrap;
+    font-family: var(--font); font-size: 13px; font-weight: 500;
+    transition: background 0.15s, border-color 0.15s;
+}
+.btn-compact-send:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.btn-compact-send svg { width: 16px; height: 16px; }
 .stop-btn {
     background: none; border: 1px solid var(--red, #ef4444); color: var(--red, #ef4444);
     cursor: pointer; font-size: 11px; padding: 2px 8px;
@@ -1147,14 +1163,23 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 .btn-audio-reply svg { width: 20px; height: 20px; }
 .btn-audio-reply.active { color: var(--accent); background: var(--accent-bg); }
 
-/* The player above a spoken reply. */
+/* A spoken reply arrives as a voice message (SHE-175): a player bubble, the
+   written text folded behind "Show text". */
 .reply-audio {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    margin-bottom: 10px;
+    display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    max-width: 100%; margin-bottom: 10px; padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
     font-size: 12px; color: var(--text-dim);
 }
-.reply-audio audio { height: 32px; max-width: 100%; }
-.reply-audio-note { color: var(--text-dim); }
+.reply-audio audio { height: 36px; width: 300px; max-width: 100%; }
+.reply-audio-text {
+    border: none; background: none; padding: 4px 2px; cursor: pointer;
+    font: inherit; color: var(--text-dim); text-decoration: underline;
+}
+.reply-audio-text:hover { color: var(--text); }
+/* Just the voice message: the text and the steps come back with "Show text". */
+.voice-folded > :not(.reply-audio) { display: none; }
+.reply-audio-note { color: var(--text-dim); flex-basis: 100%; }
 .reply-audio-error { color: var(--red); }
 
 /* Attachment preview strip */
@@ -1585,6 +1610,14 @@ kbd { font-family: var(--mono); }
        real size grows — the earlier 40px rule was BELOW the 42px desktop
        size while claiming "full-size". */
     .btn-attach, .btn-mic, .btn-audio-reply, .btn-composer-expand, .btn-send { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    /* Phone: the row belongs to the message. The button floats as a chip just
+       above Send, so it costs no width and no extra row. */
+    .btn-compact-send {
+        position: absolute; right: 12px; bottom: calc(100% + 8px); z-index: 40;
+        height: 40px; border-radius: 20px; padding: 0 14px;
+        background: var(--surface); border-color: var(--accent);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    }
 
     /* Header controls: same 44px bar, but the visual design of the 48px
        status bar is audited and stays untouched — instead each control gets

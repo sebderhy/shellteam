@@ -197,7 +197,7 @@ NOT_FOUND_HTML = (
     '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
     '<title>404 \u2014 ShellTeam</title>'
-    '<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=3">'
+    '<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=4">'
     '<style>'
     'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;'
     'background:#0a0a0a;color:#e5e5e5;font-family:system-ui,-apple-system,sans-serif;'

@@ -533,3 +533,54 @@ def test_uninstaller_removes_the_user_manager_dropin():
     docs/FOOTPRINT.md), so uninstall.sh must reverse it at the very path
     install.sh writes."""
     assert _USER_MANAGER_DROPIN in (REPO / "uninstall.sh").read_text()
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.mark.skipif(not shutil.which("nginx"), reason="nginx not installed")
+def test_folder_url_without_slash_redirects_relatively(tmp_path):
+    """SHE-166: `~/site/sub?x=1` answered 301 to http://127.0.0.1:<file port>/…,
+    the internal file server, and the proxy handed that dead address to the
+    owner's browser. The redirect must stay relative and keep the query."""
+    import http.client
+    import time
+
+    home, state = tmp_path / "home", tmp_path / "state"
+    (home / "site" / "sub").mkdir(parents=True)
+    (home / "site" / "sub" / "index.html").write_text("ok")
+    state.mkdir()
+    port = _free_port()
+    conf = (REPO / "deploy/nginx/shellteam.conf").read_text()
+    for token, value in {
+        "@HOME@": str(home), "@STATE@": str(state), "@FILE_PORT@": str(port),
+        "@AI_CHAT_PORT@": str(_free_port()), "@MIME@": "/etc/nginx/mime.types",
+    }.items():
+        conf = conf.replace(token, value)
+    conf = re.sub(r"daemon\s+on;", "daemon off;", conf)
+    conf_path = tmp_path / "nginx.conf"
+    conf_path.write_text(conf)
+
+    proc = subprocess.Popen(["nginx", "-c", str(conf_path)], stderr=subprocess.PIPE)
+    try:
+        for _ in range(50):
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+                conn.request("GET", "/site/sub?x=1")
+                resp = conn.getresponse()
+                break
+            except ConnectionRefusedError:
+                assert proc.poll() is None, proc.stderr.read().decode()
+                time.sleep(0.1)
+        else:
+            pytest.fail("nginx did not start")
+        assert resp.status == 301
+        assert resp.getheader("Location") == "/site/sub/?x=1"
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)

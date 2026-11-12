@@ -5,6 +5,44 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.59] - 2026-11-12
+
+### Added
+- **Pictures, audio and video show in the chat.** When an agent links to a
+  picture, a sound file or a clip on your box, the chat shows it under the
+  link. Links to other sites stay plain links.
+- **Compact & send.** On a long conversation (over 200K tokens) a small button
+  appears beside Send (a chip above it on a phone). One click compacts the
+  conversation, then sends your message. Alt+Enter does the same. Use it when
+  the message starts something new.
+
+### Changed
+- **Replies read out loud arrive as a voice message.** With "read replies out
+  loud" on (Alt+A), the reply is a player, like a voice note in a messaging
+  app. "Show text" unfolds the written reply. Earlier voice replies stay playable.
+- **Side panel buttons use line icons instead of emoji.**
+- **New logo: a nautilus.** The gold scallop is replaced by a flat amber
+  nautilus shell in the product, the browser-tab and phone icons, and the README.
+- **Projects column header.** Knowledge, Files and Reports now sit right after
+  the project's name, before the agent's, because they belong to the project.
+  The chat's own report count says "in this chat". Home-folder chats are listed
+  under "General ~". The feedback button is a bug, not a chat bubble.
+
+### Fixed
+- **A blocked auto-update says what blocks it.** It names the edited files in
+  the ShellTeam folder instead of "local changes".
+- **A tab you come back to after a month still has its conversation.** Claude
+  Code deletes a chat it has not written to for 30 days, so an old tab opened
+  empty and quietly started over. ShellTeam now keeps its own link to the
+  conversation of every open tab and puts it back if Claude Code removes it.
+  A tab that was already emptied before this fix now says so.
+- **Project Reports panel: opening a report hides the list.** The list and its
+  search box no longer squeeze the report; a Back button returns to the list.
+- **A folder address without its final slash works.** It used to send the
+  browser to an internal address that does not open.
+- **Projects column: Files opens on the project's folder**, selected and at the
+  top of the tree, instead of somewhere down the list of your home folder.
+
 ## [0.1.58] - 2026-11-11
 
 ### Added

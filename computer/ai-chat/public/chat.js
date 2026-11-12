@@ -526,6 +526,13 @@ window.Chat = {
             marker.className = 'compact-marker';
             marker.textContent = `Moved to ${shortPath(msg.toCwd || '') || '~'}. The conversation continues here.`;
             App.el.messages.appendChild(marker);
+        } else if (msg.event === 'transcript_lost') {
+            // SHE-173: the transcript was deleted before the cockpit kept its own link.
+            const marker = document.createElement('div');
+            marker.className = 'compact-marker';
+            marker.textContent = 'This conversation is no longer on the box: Claude Code deleted it after 30 idle days. '
+                + 'Your next message starts a new one. Chats in open tabs are now kept.';
+            App.el.messages.appendChild(marker);
         } else if (msg.event === 'truncated') {
             // Replay cap marker (SHE-73): the middle of a very long transcript
             // is elided for rendering speed; the full history is on disk.
@@ -660,26 +667,37 @@ window.Chat = {
     // Spoken replies
     // =============================================================
 
-    /** Stop and release whatever is currently playing. */
+    /** Pause whatever is playing. Earlier voice replies stay playable. */
     stopSpeaking() {
-        if (!this.currentAudio) return;
-        this.currentAudio.pause();
-        URL.revokeObjectURL(this.currentAudio.src);
+        this.currentAudio?.pause();
         this.currentAudio = null;
     },
 
     /**
-     * Read this turn's closing text aloud, with a player above it. The text
-     * stays on screen either way — audio is an extra way to receive the reply,
-     * not a replacement for a transcript you can skim, search and copy.
+     * Deliver this turn's closing text as a voice message (SHE-175): the
+     * reply becomes a player, like a voice note in a messaging app, with the
+     * written text folded behind "Show text". The text is always one click
+     * away, and comes back by itself if the audio cannot be made.
      */
     async speakReply(container, markdown) {
         if (!container || !markdown.trim()) return;
         this.stopSpeaking();
         const player = document.createElement('div');
         player.className = 'reply-audio';
-        player.textContent = 'Preparing audio…';
+        const status = document.createElement('span');
+        status.textContent = 'Recording the voice reply…';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'reply-audio-text';
+        const fold = (folded) => {
+            container.classList.toggle('voice-folded', folded);
+            toggle.textContent = folded ? 'Show text' : 'Hide text';
+            toggle.setAttribute('aria-expanded', String(!folded));
+        };
+        toggle.onclick = () => fold(!container.classList.contains('voice-folded'));
+        player.append(status, toggle);
         container.insertBefore(player, container.firstChild);
+        fold(true);
 
         try {
             const resp = await fetch('/speak', {
@@ -687,9 +705,9 @@ window.Chat = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: markdown }),
             });
-            // 204: the reply was all code, table or link. Nothing to say, and
-            // saying so in the transcript would be noise.
-            if (resp.status === 204) { player.remove(); return; }
+            // 204: the reply was all code, table or link. Nothing to say, so
+            // it is simply a written reply.
+            if (resp.status === 204) { fold(false); player.remove(); return; }
             if (!resp.ok) {
                 const data = await resp.json().catch(() => ({}));
                 throw new Error(data.error || `Speech failed (${resp.status})`);
@@ -698,12 +716,11 @@ window.Chat = {
             const audio = new Audio(URL.createObjectURL(await resp.blob()));
             audio.controls = true;
             this.currentAudio = audio;
-            player.textContent = '';
-            player.appendChild(audio);
+            status.replaceWith(audio);
             if (truncated) {
                 const note = document.createElement('span');
                 note.className = 'reply-audio-note';
-                note.textContent = 'Long reply — the audio stops early. Full text below.';
+                note.textContent = 'Long reply: the audio stops early, the text has the rest.';
                 player.appendChild(note);
             }
             // Autoplay is allowed because sending the message was a user
@@ -711,8 +728,10 @@ window.Chat = {
             // waits to be pressed rather than failing silently.
             audio.play().catch((err) => console.warn('[chat] autoplay refused:', err.message));
         } catch (err) {
+            fold(false);
+            toggle.remove();
             player.classList.add('reply-audio-error');
-            player.textContent = err.message || 'Speech failed';
+            status.textContent = err.message || 'Speech failed';
             console.error('[chat] spoken reply failed:', err);
         }
         scrollToBottom();

@@ -110,13 +110,13 @@ button.pj-chip { cursor: pointer; }
 .pj-head:hover .pj-icon, .pj-head .pj-icon:focus-visible, .pj-loose-head .pj-icon { opacity: 1; }
 .pj-head .pj-icon svg, .pj-loose-head .pj-icon svg { width: 13px; height: 13px; }
 
+/* "General ~": the home folder's chats, set like a project so the two read alike. */
 .pj-loose-head {
-    display: flex; align-items: center; gap: 10px;
-    height: 30px; padding: 0 2px 0 18px;
-    font-size: 11px; font-weight: 600; color: var(--text-dim);
+    display: flex; align-items: center; gap: 4px;
+    height: 30px; padding: 0 2px 0 22px;
 }
-.pj-loose-head::after { content: ''; order: 1; flex: 1; height: 1px; background: var(--border); }
-.pj-loose-head .pj-icon { order: 2; width: 22px; height: 22px; }
+.pj-loose-head .pj-name { cursor: default; }
+.pj-loose-head .pj-icon { width: 22px; height: 22px; }
 
 .pj-ag {
     display: flex; align-items: center; position: relative;
@@ -193,10 +193,15 @@ html.layout-projects .pj-crumb {
 .pj-crumb-proj { color: var(--text-dim); font-weight: 500; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .pj-crumb-sep { color: var(--text-dim); opacity: 0.6; }
 .pj-crumb-agent { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; padding: 1px 3px; margin: 0 -3px; }
-html.layout-projects .status-left { min-width: 0; flex: 1; }
+html.layout-projects .status-left { min-width: 0; flex: 0 1 auto; }
+html.layout-projects .pj-crumb-chat { flex: 1 1 0; }
+/* The chat's own reports sit with the chat's controls on the right and say so. */
+.btn-reports-scope { display: none; }
+html.layout-projects .btn-reports-scope { display: inline; color: var(--text-muted); font-weight: 500; }
+@media (max-width: 1280px) { html.layout-projects .btn-reports-scope { display: none; } }
 
 html.layout-projects .pj-tools:not([hidden]) {
-    display: flex; gap: 2px; padding: 2px; flex: none; margin: 0 12px;
+    display: flex; gap: 2px; padding: 2px; flex: none; margin: 0 10px;
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
 }
 .pj-panel-btn {
@@ -349,7 +354,6 @@ html.layout-projects .pj-first:not([hidden]) {
     html.layout-projects:not(.pj-side-shut) .quota-meter-track { width: 104px; }
     html.layout-projects:not(.pj-side-shut) .btn-ai { max-width: 136px; }
 }
-html.layout-projects .pj-crumb { flex: 1 1 auto; }
 html.layout-projects .status-right { min-width: 0; }
 
 /* ── Narrow header: the three project buttons keep their icon only ──────── */
@@ -401,7 +405,8 @@ html.layout-projects .status-right { min-width: 0; }
     html.layout-projects .status-bar.quota-active { flex-wrap: wrap; height: auto; min-height: 48px; }
     html.layout-projects .status-left { height: 48px; min-width: 0; gap: 4px; }
     html.layout-projects .status-right { height: 48px; }
-    html.layout-projects .pj-crumb-proj, html.layout-projects .pj-crumb-sep { display: none; }
+    html.layout-projects #pjCrumb, html.layout-projects .pj-crumb-sep { display: none; }
+    html.layout-projects .pj-crumb-chat { height: 48px; align-items: center; }
     html.layout-projects .pj-crumb-agent { font-size: 15px; }
     /* Room for the agent's name: the model button keeps its icon, its menu says the rest. */
     html.layout-projects .btn-ai-model { display: none; }

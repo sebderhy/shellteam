@@ -147,6 +147,7 @@ class TestSelfUpdateScript:
         assert (box / "VERSION").read_text() == "0.1.0\n"
         assert (box / "local-hack.txt").exists()  # never clobbered
         assert state["status"] == "error" and "local changes" in state["detail"]
+        assert "local-hack.txt" in state["detail"]  # SHE-138: the owner sees what blocks it
 
     def test_refuses_diverged_checkout(self, box, tmp_path):
         (box / "fork.txt").write_text("local commit")

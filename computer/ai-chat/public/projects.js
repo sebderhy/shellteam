@@ -3,7 +3,7 @@
  *
  * Replaces the row of tabs with a column that groups agents by the project
  * (folder) they work in. Each agent shows what it is doing; chats in the home
- * folder sit under "Not in a project" and can be moved into one, keeping their
+ * folder sit under "General ~" and can be moved into one, keeping their
  * history. The column is on only when the page is opened with
  * ?layout=projects (the dashboard adds it from the Settings switch); without
  * it nothing here renders and the tab row is untouched.
@@ -51,6 +51,8 @@ const Projects = (() => {
         check: '<path d="M20 6 9 17l-5-5"/>',
     };
     const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
+    /** The home folder's chats: not a project, so the name is fixed. */
+    const GENERAL = 'General';
     const send = (obj) => S.ws?.send(JSON.stringify(obj));
     const post = (kind, extra = {}) => { if (EMBEDDED) window.parent.postMessage({ source: 'shellteam-cockpit', kind, ...extra }, '*'); };
     const slotById = (id) => sessionSlots.find(s => s.id === id);
@@ -148,9 +150,8 @@ const Projects = (() => {
             ? `<button class="pj-older" type="button" data-older="${escHtml(g.key)}">${g.hidden} older</button>`
             : (g.foldable && showOlder.has(g.key) ? `<button class="pj-older" type="button" data-older="${escHtml(g.key)}">Hide older</button>` : '');
         if (!g.project) {
-            const label = projects.length ? 'Not in a project' : 'Chats';
             return `<section class="pj-group pj-loose" data-group="">
-                <div class="pj-loose-head"><span>${label}</span><button class="pj-icon" type="button" data-new="" title="New chat, not in a project" aria-label="New chat, not in a project">${icon('plus')}</button></div>
+                <div class="pj-loose-head"><span class="pj-name">${GENERAL}</span><span class="pj-path" title="Chats in your home folder, not in a project">~</span><button class="pj-icon" type="button" data-new="" title="New chat in ${GENERAL}" aria-label="New chat in ${GENERAL}">${icon('plus')}</button></div>
                 <div role="list">${rows}</div>${older}</section>`;
         }
         const p = g.project;
@@ -185,8 +186,8 @@ const Projects = (() => {
         const scroll = list.scrollTop;
         list.innerHTML = groups().map(groupHtml).join('')
             + (S.workspaceLock ? '' : `<button class="pj-add" type="button" id="pjAddProject">${icon('plus')}Add a project</button>`)
-            // With every chat in a project there is no "Not in a project" row to start a loose one from.
-            + (projects.length && sessionSlots.every(projectOf) ? `<button class="pj-add" type="button" data-new="">${icon('chat')}New chat, not in a project</button>` : '');
+            // With every chat in a project there is no "General" row to start a loose one from.
+            + (projects.length && sessionSlots.every(projectOf) ? `<button class="pj-add" type="button" data-new="">${icon('chat')}New chat in ${GENERAL} (~)</button>` : '');
         list.scrollTop = scroll;
 
         document.getElementById('pjRestart').hidden = !shell.restartNeeded;
@@ -201,10 +202,11 @@ const Projects = (() => {
 
     function renderHeader() {
         const slot = slotById(activeSlotId);
-        const crumb = document.getElementById('pjCrumb');
         if (!slot) return;
         const p = projectOf(slot);
-        crumb.innerHTML = `${p ? `<span class="pj-crumb-proj">${escHtml(p.name)}</span><span class="pj-crumb-sep">/</span>` : ''}<span class="pj-crumb-agent" title="Double-click to rename">${escHtml(slotDisplayLabel(slot))}</span>`;
+        // Project, its three views, then the agent: the views belong to the project.
+        document.getElementById('pjCrumb').innerHTML = `<span class="pj-crumb-proj" title="${escHtml(p ? p.label : 'Chats in your home folder, not in a project')}">${escHtml(p ? p.name : GENERAL)}</span>`;
+        document.getElementById('pjAgent').innerHTML = `<span class="pj-crumb-sep">/</span><span class="pj-crumb-agent" title="Double-click to rename">${escHtml(slotDisplayLabel(slot))}</span>`;
         // The three project buttons open in the dashboard's panel beside the chat.
         const tools = document.getElementById('pjTools');
         tools.hidden = !EMBEDDED;
@@ -585,7 +587,7 @@ const Projects = (() => {
         const items = [];
         for (const g of groups()) for (const slot of g.slots) {
             const st = stateOf(slot);
-            items.push({ kind: st.kind, label: slotDisplayLabel(slot), sub: g.project ? g.project.name : 'Not in a project', tag: st.text, run: () => openAgent(slot.id) });
+            items.push({ kind: st.kind, label: slotDisplayLabel(slot), sub: g.project ? g.project.name : `${GENERAL} ~`, tag: st.text, run: () => openAgent(slot.id) });
         }
         for (const p of projects) items.push({ icon: 'plus', label: `New agent in ${p.name}`, sub: p.label, run: () => newAgentIn(p.path) });
         if (!S.workspaceLock) items.push({ icon: 'plus', label: 'Add a project', sub: 'New, existing folder or GitHub', run: () => openAddDialog() });
@@ -756,7 +758,7 @@ const Projects = (() => {
         side.addEventListener('dragend', () => { dragSlot = null; clearDrop(); side.querySelectorAll('.dragging').forEach(n => n.classList.remove('dragging')); });
 
         document.getElementById('pjTools').addEventListener('click', (e) => { const b = e.target.closest('[data-panel]'); if (b) togglePanel(b.dataset.panel); });
-        document.getElementById('pjCrumb').addEventListener('dblclick', (e) => {
+        document.getElementById('pjAgent').addEventListener('dblclick', (e) => {
             const a = e.target.closest('.pj-crumb-agent');
             if (a) beginRenameOn(a, activeSlotId);
         });

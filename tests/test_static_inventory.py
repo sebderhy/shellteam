@@ -29,6 +29,7 @@ APPROVED = {
     "restart.js",        # the shared "Restart ShellTeam" button (Settings + Apps tab, SHE-156)
     "icon-192.png",
     "icon-512.png",
+    "logo.svg",
     "icons/figma.svg",
     "icons/github.svg",
     "icons/gmail.svg",

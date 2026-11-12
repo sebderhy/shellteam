@@ -113,8 +113,10 @@ if is_managed; then upgrade_agents; fi
 
 cd "$REPO"
 [ -d .git ] || fail "$REPO is not a git checkout"
-[ -z "$(git status --porcelain)" ] || \
-    fail "working tree has local changes - refusing to update (commit or stash them)"
+# Never overwrite someone's edits. Name the files (SHE-138): "local changes"
+# alone left the owner with no idea what was blocking every update.
+DIRTY="$(git status --porcelain | cut -c4- | tr -d '\\"')"
+[ -z "$DIRTY" ] || fail "updates are blocked: $(printf '%s\n' "$DIRTY" | wc -l) file(s) in $REPO have local changes ($(printf '%s\n' "$DIRTY" | head -3 | paste -sd, - | sed 's/,/, /g')). Commit them or undo them with git checkout"
 git fetch --tags --quiet origin || fail "git fetch failed (network or remote problem)"
 
 # Only a release signed by ShellTeam's release key is installed (SHE-148).

@@ -98,7 +98,9 @@ def test_reports_and_knowledge_pages_can_show_one_project():
 
 def test_the_editor_can_open_on_a_folder():
     assert "const isDir = query.has('dir');" in EDITOR_HTML
-    assert "if (isDir) return;" in EDITOR_HTML
+    # ...selected and scrolled to the top, not lost somewhere down the home tree.
+    assert "currentDir = '/' + filePath + '/';" in EDITOR_HTML
+    assert "scrollIntoView({ block: 'start' })" in EDITOR_HTML
 
 
 # ── A moved chat's reports follow it ─────────────────────────────────────────
@@ -166,3 +168,13 @@ def test_a_broken_or_hostile_moves_file_is_skipped_not_fatal(home):
                     + json.dumps({"session": "../../etc/passwd", "from": str(home), "to": "/x"}) + "\n"
                     + json.dumps({"session": "*", "from": str(home), "to": "/x"}) + "\n")
     assert _workspaces(home) == {"magnets.html": "Home", "finance.html": "Home", "shop.html": "webshop"}
+
+
+def test_reports_page_is_one_pane_inside_the_project_panel():
+    """SHE-171: in the narrow project panel, opening a report left the list
+    (and its search box) squeezing it. The panel now behaves like a phone:
+    the list, or the report with a Back button."""
+    html = (Path(__file__).resolve().parent.parent / "frontend" / "reports.html").read_text()
+    assert "classList.toggle('one-pane', !!PARAMS.get('panel') || PHONE.matches)" in html
+    assert "body.one-pane.previewing .side { display: none; }" in html
+    assert "body.one-pane.previewing #back { display: inline-block; }" in html
