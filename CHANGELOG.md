@@ -5,6 +5,15 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.62] - 2026-11-13
+
+### Fixed
+- **Switching a chat to another agent reads plainly.** The line in the chat now
+  says, for example, "Switched to Codex, GPT-6.1 Sol (max). It has the whole
+  conversation." instead of an internal model id, and the question before the
+  switch no longer talks about session formats. Forks name the model the same way.
+- **The empty chat shows the ShellTeam nautilus** instead of the old chevron.
+
 ## [0.1.61] - 2026-11-12
 
 ### Fixed

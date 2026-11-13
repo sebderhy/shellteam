@@ -707,7 +707,7 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
     align-items: center; justify-content: center; gap: 20px;
     padding: 40px 24px; text-align: center;
 }
-.empty-icon { font-size: 2.5rem; color: var(--accent); margin-bottom: 4px; }
+.empty-icon { width: 52px; height: 52px; margin-bottom: 6px; }
 /* The one display moment in the cockpit, set in the same serif as the
    marketing site so the product a customer lands in reads as the brand they
    bought. Everything else stays in the UI sans. */
@@ -1600,7 +1600,7 @@ kbd { font-family: var(--mono); }
     .msg-assistant .content { font-size: 14px; }
 
     /* Empty state: tighter on small screens, comfortable tap targets */
-    .empty-icon { font-size: 2rem; }
+    .empty-icon { width: 44px; height: 44px; }
     .empty-title { font-size: 1.6rem; }
     .empty-subtitle { font-size: 0.82rem; }
     .empty-chip { min-height: 48px; display: flex; align-items: center; }

@@ -2872,7 +2872,7 @@ function changeModel(model) {
     if (activeSlot?.sessionId && agentIdForModel(prevModel) !== agentIdForModel(model)) {
         const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', opencode: 'OpenCode' };
         const to = FAMILY_LABEL[agentIdForModel(model)] || model;
-        const ok = confirm(`Continue this conversation with ${to}? ShellTeam translates it into ${to}'s native session format so ${to} picks up with full context.`);
+        const ok = confirm(`Continue this conversation with ${to}? ${to} gets the whole conversation so far and picks up where it left off.`);
         if (!ok) {
             setModelDisplay(prevModel);
             return;

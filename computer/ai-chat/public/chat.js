@@ -505,7 +505,7 @@ window.Chat = {
             // Insert compact marker
             const marker = document.createElement('div');
             marker.className = 'compact-marker';
-            marker.textContent = 'Context compacted — earlier messages were summarized';
+            marker.textContent = 'Context compacted. Earlier messages were summarized.';
             App.el.messages.appendChild(marker);
             // Mid-turn compaction: the open assistant bubble sits above the
             // marker, so what the agent does next must start a new one below
@@ -556,10 +556,10 @@ window.Chat = {
     renderHandoffMarker(msg) {
         const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', opencode: 'OpenCode' };
         const to = FAMILY_LABEL[msg.toFamily] || msg.toFamily || 'another agent';
-        const model = msg.toModel ? ` (${msg.toModel})` : '';
+        const model = msg.toModel ? `, ${modelDisplayName(msg.toModel)}` : '';
         const marker = document.createElement('div');
         marker.className = 'compact-marker handoff-marker';
-        marker.textContent = `⇄ Switched to ${to}${model} — context carried over natively`;
+        marker.textContent = `⇄ Switched to ${to}${model}. It has the whole conversation.`;
         App.el.messages.appendChild(marker);
         scrollToBottom();
     },
@@ -572,8 +572,8 @@ window.Chat = {
         const marker = document.createElement('div');
         marker.className = 'compact-marker fork-marker';
         marker.textContent = msg.crossFamily
-            ? `⑃ Forked from here — now on ${FAMILY_LABEL[msg.toFamily] || msg.toFamily}${msg.toModel ? ` (${msg.toModel})` : ''}`
-            : '⑃ Forked from here — this is a new branch of the conversation';
+            ? `⑃ Forked from here, now on ${FAMILY_LABEL[msg.toFamily] || msg.toFamily}${msg.toModel ? `, ${modelDisplayName(msg.toModel)}` : ''}`
+            : '⑃ Forked from here. This is a new branch of the conversation.';
         App.el.messages.appendChild(marker);
         scrollToBottom();
     },
