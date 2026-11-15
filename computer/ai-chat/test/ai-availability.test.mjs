@@ -1,10 +1,10 @@
-// Feature-keys liveness pins (Settings → Feature keys, 2026-07-12):
+// Feature-keys liveness pins (Settings → Secrets; Feature keys until 2026-11-15):
 //   1. The status payload's key-gated flags (hasOpenCode, sttAvailable) come
 //      from the control plane's live /internal/ai/status, not this process's
 //      spawn-time env — a key saved in the dashboard flips them w/o restart.
 //   2. The control-plane fetch failing falls back LOUDLY (console.warn) to
 //      process env / the last good answer — status building never crashes.
-//   3. The OpenCode setup copy points at Settings → Feature keys; no surface
+//   3. The OpenCode setup copy points at Settings → Secrets; no surface
 //      tells the user to edit .env and restart anymore.
 //
 // Run: node --test 'computer/ai-chat/test/*.test.mjs'
@@ -129,9 +129,9 @@ test("no OpenCode setup surface tells the user to edit .env anymore", () => {
     const src = read(rel);
     for (const m of src.matchAll(/[^\n]*OpenCode[^\n]*/g)) {
       assert.doesNotMatch(m[0], /\.env/,
-        `${rel}: OpenCode copy must point at Settings → Feature keys, not .env: ${m[0].trim().slice(0, 120)}`);
+        `${rel}: OpenCode copy must point at Settings → Secrets, not .env: ${m[0].trim().slice(0, 120)}`);
     }
-    assert.match(src, /Feature keys/,
-      `${rel} must point users at Settings → Feature keys`);
+    assert.match(src, /Settings → Secrets/,
+      `${rel} must point users at Settings → Secrets`);
   }
 });

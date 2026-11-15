@@ -199,7 +199,12 @@ Two things follow from taking that seriously:
    — it conflicts with the "command the whole VPS" mission — available when needed.
 
 8. **Secrets at rest.** `.env` is `chmod 600` and never committed. `.gitignore`
-   covers `.env` and `.mcp.json`. Audit it before any public push.
+   covers `.env` and `.mcp.json`. Audit it before any public push. Keys live in
+   Settings → Secrets (`~/.shellteam/secrets.json`, `chmod 600`). The files
+   ShellTeam gives agents hold no key: MCP servers that need one (Composio,
+   Linear) are reached through ShellTeam's relay on this box, which adds the
+   key itself. This keeps keys out of what agents read by accident; it does not
+   stop an agent that sets out to read `.env`, since agents run as your user.
 
 9. **Hostnames are public by construction.** Any publicly trusted TLS
    certificate lands in Certificate Transparency logs, so `APP_DOMAIN` and its

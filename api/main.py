@@ -27,7 +27,7 @@ from api.config import APP_DOMAIN, MAIN_HOSTS, OWNER_ID, OWNER_USERNAME, OWNER_T
 AI_CHAT_PORT = os.environ.get("AI_CHAT_PORT", "3456")
 
 from api.config import RUNTIME, migrate_legacy_state_dir  # noqa: E402
-from api.routers import ai_tools, auth, computers, enroll, feedback, integrations, knowledge, mirror, settings, terminal, internal, proxy  # noqa: E402
+from api.routers import ai_tools, auth, computers, enroll, feedback, integrations, knowledge, mcp_relay, mirror, settings, terminal, internal, proxy  # noqa: E402
 from api.services import app_routes, ports as port_service, reports as report_service  # noqa: E402
 from api.services.ratelimit import RateLimiter  # noqa: E402
 from api.services.auth import origin_is_trusted  # noqa: E402
@@ -118,6 +118,11 @@ async def lifespan(app: FastAPI):
     # materializes per-container). Skipped under pytest: the suite's hermetic env
     # (localhost, MODULES="") would otherwise clobber the real box's live layer.
     if RUNTIME == "native" and "PYTEST_CURRENT_TEST" not in os.environ:
+        # Every key in one list: keys set in ShellTeam's .env before the vault
+        # (or by hand) join Settings -> Secrets (SHE-203).
+        from api.services import feature_keys, secrets_vault
+
+        secrets_vault.adopt_env_file(feature_keys.env_file_path())
         from api.config import OWNER_EMAIL
         from api.services.processes import _materialize_config
 
@@ -477,6 +482,7 @@ app.include_router(computers.router)
 app.include_router(terminal.router)
 app.include_router(internal.router)
 app.include_router(ai_tools.router)
+app.include_router(mcp_relay.router)
 app.include_router(feedback.router)
 app.include_router(mirror.router)
 app.include_router(integrations.router)

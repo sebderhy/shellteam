@@ -70,3 +70,23 @@ def verify_notify_token(token: str) -> bool:
     )
 
 
+# --- Scoped MCP relay credential (SHE-203) ---
+# Agents reach MCP servers that need a key (Composio, Linear) through
+# /internal/mcp/*, which adds the key itself: the launch layer, readable by
+# every agent, holds this token instead of the keys. It opens the relay and
+# nothing else: a leaked relay token lets someone use those tools from this
+# box, never read a key.
+
+
+def mcp_relay_token() -> str:
+    if not _SECRET:
+        return ""
+    return hmac.new(_SECRET, b"mcp-relay-v1", hashlib.sha256).hexdigest()
+
+
+def verify_mcp_relay_token(token: str) -> bool:
+    if not _SECRET or not token:
+        return False
+    return hmac.compare_digest(token.encode(), mcp_relay_token().encode())
+
+

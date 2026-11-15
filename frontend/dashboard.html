@@ -380,7 +380,7 @@
             .ai-provider-actions .ai-btn { width: 100%; }
         }
 
-        /* ── Feature keys panel (reuses ai-key-row/ai-btn/ai-hint patterns) ── */
+        /* ── Key rows (Secrets; reuse ai-key-row/ai-btn/ai-hint patterns) ── */
         .fk-row { padding: 13px 0; }
         .fk-row:not(:last-child) { border-bottom: 1px solid var(--border); }
         .fk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -402,6 +402,13 @@
         /* ── Secrets vault (SHE-135): names + where used, never values ── */
         .sv-add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; gap: 8px; margin-top: 12px; }
         .sv-add input { min-width: 0; }
+        #sv-features:not(:empty) { margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+        /* On a phone the key's name gets its own line: it is what the row is about. */
+        @media (max-width: 520px) {
+            .sv-row .fk-head { flex-wrap: wrap; row-gap: 6px; }
+            .sv-row .fk-label { flex-basis: 100%; overflow-wrap: anywhere; }
+            .sv-row .fk-badge { margin-right: auto; }
+        }
         .sv-uses { margin: 6px 0 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.6; }
         .sv-uses code { font-size: var(--text-xs); overflow-wrap: anywhere; }
         .sv-result { margin-top: 8px; font-size: var(--text-xs); line-height: 1.6; }
@@ -751,24 +758,15 @@
                     <div id="ai-panel-root"></div>
                 </div>
 
-                <div class="card">
-                    <h2>Feature keys</h2>
-                    <p class="muted" style="margin-top:0;margin-bottom:4px">
-                        Optional superpowers — each key unlocks one feature. Keys are
-                        validated live, saved on the server, and never shown in the
-                        browser. You can add or change these anytime.
-                    </p>
-                    <div id="feature-keys-root"></div>
-                </div>
-
                 <div class="card" id="secrets-card">
                     <h2>Secrets</h2>
                     <p class="muted" style="margin-top:0;margin-bottom:4px">
-                        API keys for your own apps (Stripe, Supabase, OpenAI…). Add each one once:
-                        agents put them where your apps need them by name, so the values never
-                        show in a chat. Replace a key here and every app using it gets the new
-                        value and restarts.
+                        Every API key in one place: the ones that turn on ShellTeam's features and
+                        the ones your apps need (Stripe, Supabase, OpenAI…). Add each one once:
+                        agents use them by name, so the values never show in a chat. Replace a key
+                        here and everything using it gets the new value.
                     </p>
+                    <div id="sv-features"></div>
                     <div id="secrets-root"></div>
                     <div class="sv-add">
                         <div class="sv-name-wrap">
@@ -1704,7 +1702,7 @@
                         <div class="ai-oc-title">${ocOn ? '✓ OpenCode active (your Fireworks key)' : 'OpenCode needs a Fireworks key'}</div>
                         <div class="ai-oc-body">${ocOn
                             ? 'OpenCode is the open-source coding agent on state-of-the-art open models, running on your Fireworks key. Pick an OpenCode model in the Agents tab.'
-                            : 'OpenCode runs on Fireworks. Add your Fireworks key in Settings → Feature keys below — it activates immediately. Or connect Claude / OpenAI / Antigravity above.'}</div>
+                            : 'OpenCode runs on Fireworks. Add your Fireworks key in Settings → Secrets below — it activates immediately. Or connect Claude / OpenAI / Antigravity above.'}</div>
                     </div>
                 </div>`;
 
@@ -1991,91 +1989,6 @@
             openStep(Math.min(resumeStep, 4) || 1);
         }
 
-        // ─── Feature keys (Settings → Feature keys) ──────────────────────────
-        // Optional per-feature API keys, validated live by the control plane
-        // (POST /api/settings/feature-keys) and applied without a restart for
-        // fireworks/elevenlabs. One renderer, any container — reuse it wherever
-        // key entry is needed instead of building bespoke widgets. All display
-        // copy (label/hint/hint_url) comes from the server's FEATURE_KEYS
-        // registry, so adding a key server-side needs no dashboard change.
-        function renderFeatureKeys(root, keys) {
-            if (!root) return;
-            root.innerHTML = Object.entries(keys).map(([name, k]) => {
-                const site = (k.hint_url || '').replace(/^https?:\/\//, '');
-                const getKey = k.hint_url
-                    ? ` Get a key at <a href="${escapeHtml(k.hint_url)}" target="_blank" rel="noopener">${escapeHtml(site)} →</a>`
-                    : '';
-                return `
-                <div class="fk-row" data-key="${escapeHtml(name)}">
-                    <div class="fk-head">
-                        <span class="fk-label">${escapeHtml(k.label)}</span>
-                        <span class="fk-badge${k.set ? ' on' : ''}"><span class="dot"></span>${k.set ? 'Set' : 'Not set'}</span>
-                        ${k.set ? '<button type="button" class="fk-clear">Clear</button>' : ''}
-                    </div>
-                    <div class="ai-key-row">
-                        <input type="password" class="fk-input" placeholder="${k.set ? 'Replace key…' : 'Paste key…'}"
-                            autocomplete="off" oninput="this.parentNode.querySelector('.fk-save').disabled = this.value.trim().length < 8">
-                        <button class="ai-btn fk-save" disabled>Save</button>
-                    </div>
-                    <div class="ai-hint">${escapeHtml(k.hint || '')}${getKey}</div>
-                    <div class="fk-err"></div>
-                    <div class="fk-restart">This change needs a restart to finish applying.
-                        <button type="button" class="ai-btn restart-btn">Restart ShellTeam</button>
-                        <div class="restart-status"></div></div>
-                </div>`;
-            }).join('');
-
-            root.querySelectorAll('.fk-row').forEach(row => {
-                const name = row.dataset.key;
-                const err = row.querySelector('.fk-err');
-                const showErr = (m) => { err.textContent = m; err.style.display = 'block'; };
-
-                async function submit(key) {
-                    const saveBtn = row.querySelector('.fk-save');
-                    err.style.display = 'none';
-                    saveBtn.disabled = true; saveBtn.textContent = key ? 'Validating…' : 'Clearing…';
-                    const resp = await apiFetch('/api/settings/feature-keys', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, key }),
-                    });
-                    saveBtn.textContent = 'Save';
-                    if (resp.error) { saveBtn.disabled = false; return showErr(resp.error); }
-                    renderFeatureKeys(root, resp.keys);
-                    // Setting AND clearing a module-gated key both change
-                    // process-start state (MODULES, the agent layer) — a clear
-                    // without the restart leaves agents holding the withdrawn
-                    // key, so the instruction must show either way.
-                    if (resp.needs_restart) {
-                        const restart = root.querySelector(`.fk-row[data-key="${name}"] .fk-restart`);
-                        if (restart) restart.style.display = 'block';
-                    }
-                    // Any key change can flip agent availability — sync the
-                    // provider tab, dots, and the Agents gate (cheap GET).
-                    refreshAIStatus().then(renderAIPanel);
-                }
-
-                row.querySelector('.fk-save').addEventListener('click', () => {
-                    const key = row.querySelector('.fk-input').value.trim();
-                    if (key) submit(key);
-                });
-                row.querySelector('.fk-input').addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' && !row.querySelector('.fk-save').disabled) submit(e.target.value.trim());
-                });
-                row.querySelector('.fk-clear')?.addEventListener('click', () => submit(''));
-            });
-        }
-
-        async function refreshFeatureKeys() {
-            const root = document.getElementById('feature-keys-root');
-            if (!root) return;
-            const resp = await apiFetch('/api/settings/feature-keys');
-            if (resp.error) {
-                root.innerHTML = `<div class="fk-err" style="display:block">Could not load feature keys: ${escapeHtml(resp.error)}</div>`;
-                return;
-            }
-            renderFeatureKeys(root, resp.keys || {});
-        }
-
         // ─── Secrets vault (Settings → Secrets, SHE-135) ─────────────────────
         // The server never returns values: rows show the name, when it was last
         // set and where agents wrote it. Saving = rotating: the response lists
@@ -2098,7 +2011,9 @@
                 return;
             }
             root.innerHTML = rows.map(r => {
-                const uses = r.uses.map(u => u.kind === 'file'
+                const uses = r.uses.map(u => u.shellteam
+                    ? `<li>used by ShellTeam${r.shellteam ? `: ${escapeHtml(r.shellteam.label)}` : ''}</li>`
+                    : u.kind === 'file'
                     ? `<li>in <code>${escapeHtml(u.file)}</code>${u.restart ? ` · restarts <code>${escapeHtml(u.restart)}</code>` : ''}</li>`
                     : `<li>runs <code>${escapeHtml(u.command)}</code></li>`).join('');
                 return `
@@ -2110,6 +2025,7 @@
                         <button type="button" class="fk-clear sv-delete">Delete</button>
                     </div>
                     <ul class="sv-uses">${uses || '<li>Not used by any app yet.</li>'}</ul>
+                    ${r.differs ? `<div class="sv-warn">⚠ ${escapeHtml(r.differs)}</div>` : ''}
                     ${r.warning ? `<div class="sv-warn">⚠ ${escapeHtml(r.warning.message)}<button type="button" class="fk-clear sv-rename" data-to="${escapeHtml(r.warning.rename_to)}">Rename to ${escapeHtml(r.warning.rename_to)}</button></div>` : ''}
                     <div class="ai-key-row">
                         <input type="password" class="fk-input" placeholder="New value…" autocomplete="off">
@@ -2300,13 +2216,40 @@
         let secretSuggestions = [];
         let secretSuggestionsShown = false;
 
+        // ShellTeam's own features that have no key yet stay in view (they used
+        // to have a card of their own): one line each, with where to get the key.
+        function renderFeatureOffers(missing) {
+            const root = document.getElementById('sv-features');
+            root.innerHTML = missing.length ? `<div class="sv-group">ShellTeam features without a key</div>` + missing.map(sug => `
+                <div class="sv-sug">
+                    <div class="sv-sug-main">
+                        <div class="sv-sug-service">${escapeHtml(sug.service)}</div>
+                        <div class="sv-sug-meta">${escapeHtml(sug.hint)} <code>${escapeHtml(sug.name)}</code></div>
+                    </div>
+                    <a href="${escapeHtml(sug.url)}" target="_blank" rel="noopener">Get it →</a>
+                    <button type="button" class="fk-clear sv-use" data-name="${escapeHtml(sug.name)}">Add</button>
+                </div>`).join('') : '';
+            wireSuggestionButtons(root);
+        }
+
+        function wireSuggestionButtons(root) {
+            root.querySelectorAll('.sv-use').forEach(btn => btn.addEventListener('click', () => {
+                const nameEl = document.getElementById('sv-name');
+                nameEl.value = btn.dataset.name;
+                nameEl.dispatchEvent(new Event('input'));
+                nameEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                document.getElementById('sv-value').focus({ preventScroll: true });
+            }));
+        }
+
         function renderSecretSuggestions(saved) {
             const root = document.getElementById('sv-suggest-root');
             const have = new Set(saved.map(r => r.name));
             const groups = {};
             for (const sug of secretSuggestions) {
-                if (!have.has(sug.name)) (groups[sug.group] ||= []).push(sug);
+                if (!have.has(sug.name) && sug.group !== 'ShellTeam') (groups[sug.group] ||= []).push(sug);
             }
+            renderFeatureOffers(secretSuggestions.filter(sug => sug.group === 'ShellTeam' && !have.has(sug.name)));
             root.innerHTML = Object.entries(groups).map(([group, items]) => `
                 <div class="sv-group">${escapeHtml(group)}</div>
                 ${items.map(sug => `
@@ -2318,13 +2261,7 @@
                     <a href="${escapeHtml(sug.url)}" target="_blank" rel="noopener">Get it →</a>
                     <button type="button" class="fk-clear sv-use" data-name="${escapeHtml(sug.name)}">Add</button>
                 </div>`).join('')}`).join('');
-            root.querySelectorAll('.sv-use').forEach(btn => btn.addEventListener('click', () => {
-                const nameEl = document.getElementById('sv-name');
-                nameEl.value = btn.dataset.name;
-                nameEl.dispatchEvent(new Event('input'));
-                nameEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                document.getElementById('sv-value').focus({ preventScroll: true });
-            }));
+            wireSuggestionButtons(root);
             // Open on first load when the vault is empty; later renders (after an
             // add) leave it as the owner set it, so adding several in a row works.
             if (!secretSuggestionsShown) {
@@ -2473,7 +2410,6 @@
         (async () => {
             await refreshAIStatus();
             renderAIPanel();
-            refreshFeatureKeys();
             wireSecretsForm();
             refreshSecrets();
             refreshAutoUpdate();

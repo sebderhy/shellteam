@@ -73,20 +73,26 @@ function linearKeyForCwd(cwd) {
   ])) {
     if (process.env[name]) return process.env[name];
   }
-  for (const path of uniq([
-    cwd ? join(cwd, ".env") : "",
-    join(root, ".env"),
-    join(root, "code", ".env"),
-  ])) {
+  for (const path of uniq([join(root, ".env"), join(root, "code", ".env")])) {
     const key = readEnvValue(path, "LINEAR_API_KEY");
     if (key) return key;
   }
   return process.env.LINEAR_API_KEY || null;
 }
 
-function linearServerForCwd(cwd) {
+// The owner's box reaches Linear through ShellTeam's relay, which adds the
+// project's key itself (SHE-203: no key in a file agents are given). The same
+// lookup rules live in api/services/mcp_relay.py:linear_key. An employee box
+// has no relay: its project's own key goes to its own agents.
+function linearServerForCwd(cwd, manifest = readManifest()) {
   const key = linearKeyForCwd(cwd);
   if (!key) return null;
+  const relay = manifest?.mcp_relay;
+  if (relay) {
+    const { root } = projectInfoForCwd(cwd || HOME);
+    const project = root === HOME ? "" : `/${root.slice(HOME.length + 1)}`;
+    return { type: "http", url: `${relay.base}/linear${project}`, headers: { Authorization: relay.authorization } };
+  }
   return {
     type: "http",
     url: "https://mcp.linear.app/mcp",
@@ -97,7 +103,7 @@ function linearServerForCwd(cwd) {
 function runtimeClaudeMcpPath(manifest, baseEnabled, cwd) {
   if (!linearModuleEnabled(manifest)) return baseEnabled ? CLAUDE_MCP_CONFIG : null;
 
-  const linear = linearServerForCwd(cwd);
+  const linear = linearServerForCwd(cwd, manifest);
   if (!linear) return baseEnabled ? CLAUDE_MCP_CONFIG : null;
 
   const cfg = baseEnabled
@@ -115,7 +121,7 @@ function runtimeClaudeMcpPath(manifest, baseEnabled, cwd) {
 
 function dynamicCodexLinearOverrides(manifest, cwd) {
   if (!linearModuleEnabled(manifest)) return [];
-  const linear = linearServerForCwd(cwd);
+  const linear = linearServerForCwd(cwd, manifest);
   if (!linear) return [];
   return [
     `mcp_servers.linear.url=${JSON.stringify(linear.url)}`,
@@ -139,7 +145,7 @@ export function codexSecretEnv(cwd = HOME) {
     Object.assign(env, JSON.parse(readFileSync(CODEX_ENV, "utf8")));
   }
   if (linearModuleEnabled(manifest)) {
-    const linear = linearServerForCwd(cwd);
+    const linear = linearServerForCwd(cwd, manifest);
     if (linear) env[headerEnvName("linear", "Authorization")] = linear.headers.Authorization;
   }
   return env;
@@ -456,7 +462,7 @@ function antigravityMcpServer(server) {
 }
 
 function runtimeAntigravityWorkspace(manifest, cwd, promptPath) {
-  const linear = linearModuleEnabled(manifest) ? linearServerForCwd(cwd) : null;
+  const linear = linearModuleEnabled(manifest) ? linearServerForCwd(cwd, manifest) : null;
   const dynamicPrompt = promptPath && promptPath !== CLAUDE_SYSTEM_PROMPT;
   if (!linear && !dynamicPrompt) return ANTIGRAVITY_WORKSPACE;
 
@@ -618,7 +624,7 @@ export function opencodeConfigPath(cwd = HOME) {
   if (!existsSync(OPENCODE_CONFIG)) return null;
   const manifest = readManifest();
   const promptPath = harnessPromptFor(manifest, cwd);
-  const linear = linearModuleEnabled(manifest) ? linearServerForCwd(cwd) : null;
+  const linear = linearModuleEnabled(manifest) ? linearServerForCwd(cwd, manifest) : null;
   const dynamicPrompt = promptPath && promptPath !== CLAUDE_SYSTEM_PROMPT;
   if (!dynamicPrompt && !linear) return OPENCODE_CONFIG;
   let cfg;

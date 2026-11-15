@@ -1,21 +1,20 @@
-"""Feature keys — dashboard-managed API keys for optional capabilities.
+"""ShellTeam's own keys: the API keys that turn on its optional features.
 
-Three keys unlock optional features: FIREWORKS_API_KEY (the OpenCode agent via
-the server-side proxy), ELEVENLABS_API_KEY (voice input / STT), and
-COMPOSIO_API_KEY (the composio module's app connections). Historically they
-could only be set by hand-editing ``.env`` over SSH; this service lets the
-dashboard Settings UI validate and persist them.
+FIREWORKS_API_KEY (the OpenCode agent through the server-side proxy),
+ELEVENLABS_API_KEY (voice in and out), COMPOSIO_API_KEY (app connections) and
+LINEAR_API_KEY (Linear for agents). They are kept in Settings -> Secrets with
+every other key (the vault); the settings router checks a pasted one with its
+provider (``check``) and puts it to work (``apply``).
 
-Persistence is two-layered so fireworks/elevenlabs need no restart:
-- the ``.env`` file (systemd EnvironmentFile + dotenv) survives restarts;
+A key reaches its feature two ways at once:
+- ShellTeam's ``.env`` (systemd EnvironmentFile + dotenv) survives restarts;
 - ``os.environ`` in THIS process updates immediately, so request-time readers
-  (``stt.py``, the fireworks proxy, ``computers.py``'s openCodeAvailable)
-  pick the change up on the very next request.
+  (``stt.py``, the fireworks proxy, the MCP relay) use it on the next request.
 
-The composio key additionally toggles the ``composio`` entry in the MODULES=
-line (pasting the key is the opt-in consent for the module). ``config.MODULES``
-and the agent layer are process-start state, so that one reports
-``needs_restart=True``.
+Composio and Linear are modules: pasting the key is the opt-in consent and
+adds the module to MODULES=, clearing it removes it. ``config.MODULES`` and
+the agent layer are process-start state, so turning one on or off needs a
+restart; replacing the key of a module already on does not.
 
 Key values are NEVER returned by any function here and NEVER logged.
 """
@@ -108,6 +107,21 @@ async def validate_composio(key: str) -> str | None:
     )
 
 
+async def validate_linear(key: str) -> str | None:
+    # A personal API key goes bare in Authorization for Linear's GraphQL API.
+    try:
+        async with httpx.AsyncClient(timeout=VALIDATE_TIMEOUT) as client:
+            resp = await client.post("https://api.linear.app/graphql", json={"query": "{ viewer { id } }"},
+                                     headers={"Authorization": key})
+    except httpx.HTTPError as e:
+        return f"Could not reach Linear to validate the key ({type(e).__name__})."
+    if resp.status_code == 200 and "errors" not in resp.json():
+        return None
+    if resp.status_code in (400, 401, 403) or resp.status_code == 200:
+        return "Linear rejected this key. Use a personal API key: Linear, Settings, Security & access."
+    return f"Linear validation failed (HTTP {resp.status_code})."
+
+
 # --- Spec -------------------------------------------------------------------
 
 
@@ -117,9 +131,6 @@ class FeatureKey:
     env_var: str
     label: str
     validate: Callable[[str], Awaitable[str | None]]
-    # True when setting/clearing this key changes process-start state (MODULES,
-    # the agent layer) that only a service restart re-reads.
-    needs_restart: bool = False
     # The live-capability flags this key unlocks in GET /internal/ai/status
     # (what the cockpit polls). Empty = the key gates no request-time
     # capability. One key can gate several: ElevenLabs is both ears and voice.
@@ -132,6 +143,8 @@ class FeatureKey:
     # dashboard renders whatever status() returns, no client-side shadow map.
     hint: str = ""
     hint_url: str = ""
+    # How the key starts, so Settings can name a pasted key by itself.
+    prefixes: tuple[str, ...] = ()
 
 
 FEATURE_KEYS: dict[str, FeatureKey] = {
@@ -158,11 +171,21 @@ FEATURE_KEYS: dict[str, FeatureKey] = {
         env_var="COMPOSIO_API_KEY",
         label="App connections (Composio)",
         validate=validate_composio,
-        needs_restart=True,
         module="composio",
+        prefixes=("ak_",),
         hint="Unlocks app connections (Gmail, Slack, Notion, …) for agents. "
         "Use a project API key (starts with ak_): Platform, your project, Settings -> API Keys.",
         hint_url="https://dashboard.composio.dev",
+    ),
+    "linear": FeatureKey(
+        name="linear",
+        env_var="LINEAR_API_KEY",
+        label="Linear for agents",
+        validate=validate_linear,
+        module="linear",
+        prefixes=("lin_api_",),
+        hint="Lets agents read and file Linear issues. A project can have its own key in its .env.",
+        hint_url="https://linear.app/settings/account/security",
     ),
 }
 
@@ -270,46 +293,45 @@ def set_module_enabled(module: str, enabled: bool) -> bool:
 
 
 # --- Public API (used by the settings router) --------------------------------
+# ShellTeam's own keys are kept in Settings -> Secrets with every other key
+# (the vault); this module says which names they are, checks a pasted one with
+# its provider, and applies it to ShellTeam.
 
 
-def status() -> dict[str, dict]:
-    """Set/not-set + display copy per key. NEVER returns key values."""
-    return {
-        spec.name: {
-            "set": bool(os.environ.get(spec.env_var)),
-            "label": spec.label,
-            "hint": spec.hint,
-            "hint_url": spec.hint_url,
-        }
-        for spec in FEATURE_KEYS.values()
-    }
+def by_env_var(name: str) -> FeatureKey | None:
+    return next((spec for spec in FEATURE_KEYS.values() if spec.env_var == name), None)
 
 
-async def set_key(name: str, key: str) -> dict:
-    """Validate (unless clearing), persist, and apply side effects for one
-    feature key. Returns ``{"set": bool, "needs_restart": bool}``. Raises
-    ValueError with a user-facing message on an unknown name or a key the
-    provider rejects."""
-    spec = FEATURE_KEYS.get(name)
-    if spec is None:
-        raise ValueError(f"Unknown feature key '{name}' — known: {', '.join(sorted(FEATURE_KEYS))}")
+def suggestions() -> list[dict]:
+    """ShellTeam's own keys, in the shape of the vault's suggestions."""
+    return [{"name": spec.env_var, "service": spec.label, "group": "ShellTeam", "url": spec.hint_url,
+             "hint": spec.hint, **({"prefixes": list(spec.prefixes)} if spec.prefixes else {})}
+            for spec in FEATURE_KEYS.values()]
 
-    key = key.strip()
+
+async def check(spec: FeatureKey, key: str) -> str | None:
+    """Why ``key`` can't be used for ``spec``, or None. Never quotes the key."""
     if any(ord(c) < 0x20 or ord(c) == 0x7F for c in key):
         # A line break inside a key would add a line to .env (any variable,
         # even OWNER_TOKEN) and leaked the key in the validator's error (SHE-148).
-        raise ValueError("This key contains a line break or a control character. Paste it on one line.")
-    if key:
-        error = await spec.validate(key)
-        if error is not None:
-            log.warning("feature-keys: validation failed for %s: %s", spec.env_var, error)
-            raise ValueError(error)
+        return "This key contains a line break or a control character. Paste it on one line."
+    error = await spec.validate(key)
+    if error is not None:
+        log.warning("feature-keys: validation failed for %s: %s", spec.env_var, error)
+    return error
 
+
+def apply(spec: FeatureKey, key: str) -> dict:
+    """Put ``key`` (or nothing, ``""``) to work in ShellTeam: .env and this
+    process at once, and its module on or off. Returns a result row for
+    Settings: ``{"target": "ShellTeam", "ok", "detail"}``."""
     persist(spec.env_var, key)
-
-    if spec.module:
-        # Pasting a module-gated key is the opt-in consent for its module;
-        # clearing it withdraws that consent.
-        set_module_enabled(spec.module, enabled=bool(key))
-
-    return {"set": bool(key), "needs_restart": spec.needs_restart}
+    changed = bool(spec.module) and set_module_enabled(spec.module, enabled=bool(key))
+    what = spec.label
+    if changed:
+        detail = (f"{what} turns {'on' if key else 'off'} after a restart: Settings, then Restart ShellTeam.")
+    elif key:
+        detail = f"{what}: in use now."
+    else:
+        detail = f"{what}: off."
+    return {"target": "ShellTeam", "ok": True, "detail": detail}

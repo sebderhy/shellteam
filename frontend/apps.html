@@ -263,8 +263,8 @@
         || slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
     async function load() {
-        const keys = await api('/api/settings/feature-keys');
-        composio.set = !!(keys.keys && keys.keys.composio && keys.keys.composio.set);
+        const vault = await api('/api/settings/secrets');
+        composio.set = (vault.secrets || []).some((r) => r.name === 'COMPOSIO_API_KEY');
         if (composio.set) {
             try { connections = await api('/api/integrations'); composio.unavailable = false; }
             catch (e) {
@@ -369,9 +369,10 @@
         save.addEventListener('click', async () => {
             const err = $('ck-err'); err.style.display = 'none';
             save.disabled = true; save.textContent = 'Validating…';
+            let saved;
             try {
-                await api('/api/settings/feature-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: 'composio', key: input.value.trim() }) });
+                saved = await api('/api/settings/secrets', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: 'COMPOSIO_API_KEY', value: input.value.trim() }) });
             } catch (e) {
                 save.textContent = 'Save'; save.disabled = false;
                 err.textContent = e.message; err.style.display = 'block';
@@ -379,7 +380,11 @@
             }
             save.textContent = 'Saved';
             input.value = '';
-            $('ck-restart').style.display = 'block';
+            // Kept in Settings → Secrets with every key. A restart is needed only
+            // when this turned app connections on (a replaced key works at once).
+            if ((saved.results || []).some((r) => r.target === 'ShellTeam' && /restart/i.test(r.detail))) {
+                $('ck-restart').style.display = 'block';
+            }
             composio.set = true;
         });
     }

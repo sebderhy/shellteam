@@ -60,7 +60,6 @@ SUGGESTIONS: list[dict] = [
     {"name": "REPLICATE_API_TOKEN", "service": "Replicate", "group": "AI", "url": "https://replicate.com/account/api-tokens", "hint": "starts with r8_", "prefixes": ["r8_"]},
     {"name": "FAL_KEY", "service": "fal.ai", "group": "AI", "url": "https://fal.ai/dashboard/keys", "hint": ""},
     {"name": "HF_TOKEN", "service": "Hugging Face", "group": "AI", "url": "https://huggingface.co/settings/tokens", "hint": "starts with hf_", "prefixes": ["hf_"]},
-    {"name": "ELEVENLABS_API_KEY", "service": "ElevenLabs (voice)", "group": "AI", "url": "https://elevenlabs.io/app/developers/api-keys", "hint": ""},
     {"name": "TAVILY_API_KEY", "service": "Tavily (web search)", "group": "AI", "url": "https://app.tavily.com/home", "hint": "starts with tvly-", "prefixes": ["tvly-"]},
     {"name": "FIRECRAWL_API_KEY", "service": "Firecrawl (web scraping)", "group": "AI", "url": "https://www.firecrawl.dev/app/api-keys", "hint": "starts with fc-", "prefixes": ["fc-"]},
     # Payments
@@ -131,10 +130,11 @@ def _now() -> str:
 def load() -> dict:
     path = vault_path()
     if not path.exists():
-        return {"secrets": {}, "uses": []}
+        return {"secrets": {}, "uses": [], "differs": {}}
     data = json.loads(path.read_text())
     data.setdefault("secrets", {})
     data.setdefault("uses", [])
+    data.setdefault("differs", {})
     return data
 
 
@@ -193,8 +193,12 @@ def status() -> list[dict]:
     out = []
     for name in sorted(data["secrets"]):
         uses = [_describe_use(u) for u in data["uses"] if name in u["vars"].values()]
-        out.append({"name": name, "updated_at": data["secrets"][name]["updated_at"], "uses": uses,
-                    "warning": naming_warning(name, data["secrets"][name]["value"])})
+        row = {"name": name, "updated_at": data["secrets"][name]["updated_at"], "uses": uses,
+               "warning": naming_warning(name, data["secrets"][name]["value"])}
+        if name in data.get("differs", {}):
+            row["differs"] = (f"ShellTeam uses a different value ({data['differs'][name]}). "
+                              "Replace it here to make them one.")
+        out.append(row)
     return out
 
 
@@ -245,6 +249,64 @@ def _upsert_env_file(path: Path, assignments: dict[str, str]) -> None:
     os.replace(tmp, path)
 
 
+# A key ShellTeam's .env holds for the owner (not ShellTeam's own sign-in or
+# internal credentials, which the owner never handles).
+_KEY_NAME_RE = re.compile(r"(?:KEY|TOKEN|SECRET|PASSWORD)$")
+_NOT_THE_OWNERS = {"OWNER_TOKEN"}
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    values = {}
+    for line in path.read_text().splitlines() if path.is_file() else []:
+        m = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$", line)
+        if not m:
+            continue
+        v = m.group(2).strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
+        values[m.group(1)] = v
+    return values
+
+
+def adopt_env_file(path: Path) -> dict:
+    """Bring the keys of ShellTeam's own .env under the vault, so Settings ->
+    Secrets lists every key and replacing one updates ShellTeam too.
+
+    A key only in the file joins the vault. A key with the same value in both
+    is tied to the file. A key whose values differ is left alone and shown
+    (``status()["differs"]``): which one is right is the owner's call.
+    Returns ``{"adopted": [...], "differs": [...]}``, names only."""
+    path = Path(path)
+    data = load()
+    adopted, differs, tie = [], [], {}
+    for name, value in _read_env_file(path).items():
+        if not value or not _KEY_NAME_RE.search(name) or name in _NOT_THE_OWNERS or name.startswith("SHELLTEAM_"):
+            continue
+        held = data["secrets"].get(name)
+        if held is None:
+            data["secrets"][name] = {"value": value, "updated_at": _now()}
+            adopted.append(name)
+        elif held["value"] != value:
+            if data["differs"].get(name) != str(path):
+                differs.append(name)
+            data["differs"][name] = str(path)
+            continue
+        use = next((u for u in data["uses"] if u["kind"] == "file" and u["file"] == str(path)), None)
+        if use is None or use["vars"].get(name) != name:
+            tie[name] = name
+    if tie:
+        use = next((u for u in data["uses"] if u["kind"] == "file" and u["file"] == str(path)), None)
+        if use is None:
+            data["uses"].append({"kind": "file", "file": str(path), "vars": dict(tie), "restart": None})
+        else:
+            use["vars"].update(tie)
+    if adopted or differs or tie:
+        save(data)
+        log.info("secrets: adopted %s from %s; tied %s; differs %s",
+                 adopted or "nothing", path, sorted(tie) or "nothing", differs or "nothing")
+    return {"adopted": adopted, "differs": differs}
+
+
 def parse_mapping(specs: list[str]) -> dict[str, str]:
     """``VAR`` or ``VAR=SECRET_NAME`` -> {VAR: SECRET_NAME}."""
     mapping = {}
@@ -280,6 +342,9 @@ def write_env(file: str, mapping: dict[str, str], restart: str | None = None) ->
     use["vars"].update(mapping)
     if restart:
         use["restart"] = restart
+    for n in mapping.values():
+        if data["differs"].get(n) == str(path):
+            del data["differs"][n]
     save(data)
     log.info("secrets: wrote %s into %s", ", ".join(mapping), path)
     return path

@@ -47,7 +47,7 @@ window.App = {
         hasOpenCode: false,
         // Voice input (STT) needs an ElevenLabs key on the control plane. null =
         // unknown / older server (keep the mic visible); false = server said no
-        // key (hide the mic and point at Settings → Feature keys).
+        // key (hide the mic and point at Settings → Secrets).
         sttAvailable: null,
         // Spoken replies (TTS) need the same key AND the master AI token, so a
         // guest cockpit with only a scoped voice-input token reads false here.
@@ -1772,7 +1772,7 @@ function updateOpenCodeSetup() {
     } else {
         if (title) title.textContent = 'OpenCode needs a Fireworks key';
         if (body) body.textContent = 'OpenCode runs on Fireworks. Add your Fireworks key in '
-            + 'Settings → Feature keys — it activates immediately. Or connect '
+            + 'Settings → Secrets — it activates immediately. Or connect '
             + 'Claude, OpenAI or Antigravity above.';
         if (btn) { btn.disabled = true; btn.textContent = 'Unavailable — needs a Fireworks key'; }
     }

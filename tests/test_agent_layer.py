@@ -180,15 +180,16 @@ def test_browser_mcp_rendered_for_this_box(home: Path):
 
 
 def test_linear_mcp_is_opt_in_on_api_key(home: Path, monkeypatch):
-    """Linear MCP appears only when LINEAR_API_KEY is set, authed via the
-    Authorization: Bearer header on the hosted server (no interactive OAuth)."""
+    """Linear MCP appears only when LINEAR_API_KEY is set, and is reached
+    through ShellTeam's relay, which adds the key (SHE-203)."""
+    monkeypatch.setenv("SHELLTEAM_ENV_FILE", str(home / "empty.env"))
     monkeypatch.delenv("LINEAR_API_KEY", raising=False)
     assert "linear" not in full_mcp(home)
 
     monkeypatch.setenv("LINEAR_API_KEY", "lin_api_secret")
     linear = full_mcp(home)["linear"]
-    assert linear["url"] == "https://mcp.linear.app/mcp"
-    assert linear["headers"]["Authorization"] == "Bearer lin_api_secret"
+    assert linear["url"].endswith("/internal/mcp/linear")
+    assert "lin_api_secret" not in json.dumps(linear)
 
 
 def test_persona_has_no_unrendered_placeholders(home: Path):

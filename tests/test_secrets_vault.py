@@ -187,13 +187,15 @@ def test_missing_key_error_says_where_to_get_it(tmp_path):
 
 
 def test_suggestions_are_well_formed_and_served(client, auth_header):
-    names = [s["name"] for s in vault.SUGGESTIONS]
+    from api.services import feature_keys
+    served = feature_keys.suggestions() + vault.SUGGESTIONS   # ShellTeam's own keys first
+    names = [s["name"] for s in served]
     assert len(names) == len(set(names))
-    for s in vault.SUGGESTIONS:
+    for s in served:
         assert vault.NAME_RE.match(s["name"]) and s["url"].startswith("https://")
         assert s["service"] and s["group"]
     body = client.get("/api/settings/secrets", headers=auth_header).json()
-    assert body["suggestions"] == vault.SUGGESTIONS
+    assert body["suggestions"] == served
 
 
 def test_a_key_saved_under_the_wrong_well_known_name_is_flagged():

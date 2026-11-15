@@ -161,70 +161,72 @@ test("full manifest: everything loads again", () => {
   assert.ok(terminalSpawn("gemini-4-argon-high").args.includes(join(LAYER, "antigravity-workspace")));
 });
 
-test("linear MCP follows the active project cwd", () => {
+const RELAY = { base: "http://127.0.0.1:8001/internal/mcp", authorization: "Bearer relay-capability" };
+
+function linearLayer(manifestExtra) {
   mkdirSync(join(LAYER, "codex"), { recursive: true });
   writeFileSync(join(LAYER, "claude-mcp.json"), JSON.stringify({
     mcpServers: {
       context7: { command: "context7-mcp" },
-      linear: {
-        type: "http",
-        url: "https://mcp.linear.app/mcp",
-        headers: { Authorization: "Bearer lin_api_global" },
-      },
+      linear: { type: "http", url: `${RELAY.base}/linear`, headers: { Authorization: RELAY.authorization } },
     },
   }));
   writeFileSync(join(LAYER, "codex", "overrides.json"), JSON.stringify([
     'mcp_servers.context7.command="context7-mcp"',
-    'mcp_servers.linear.url="https://mcp.linear.app/mcp"',
-    'mcp_servers.linear.http_headers={ "Authorization" = "Bearer lin_api_global" }',
+    `mcp_servers.linear.url="${RELAY.base}/linear"`,
+    'mcp_servers.linear.env_http_headers={ "Authorization" = "SHELLTEAM_MCP_LINEAR_AUTHORIZATION_SECRET" }',
   ]));
   mkdirSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam"), { recursive: true });
-  writeFileSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam", "mcp_config.json"), JSON.stringify({
-    mcpServers: {
-      linear: { serverUrl: "https://mcp.linear.app/mcp", headers: { Authorization: "Bearer lin_api_global" } },
-    },
-  }));
+  writeFileSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam", "mcp_config.json"),
+    JSON.stringify({ mcpServers: {} }));
   writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({ mcp: {} }));
   writeFileSync(join(LAYER, "layer.json"), JSON.stringify({
     modules: ["linear"],
     artifacts: {
-      claude_plugin: false,
-      claude_mcp: true,
-      claude_system_prompt: false,
-      codex_overrides: true,
-      codex_session_home: false,
-      harness_skills: false,
-      antigravity_plugin: true,
-      opencode_config: true,
+      claude_plugin: false, claude_mcp: true, claude_system_prompt: false, codex_overrides: true,
+      codex_session_home: false, harness_skills: false, antigravity_plugin: true, opencode_config: true,
     },
+    ...manifestExtra,
   }));
   mkdirSync(join(FAKE_HOME, "acmeproj", "code"), { recursive: true });
   writeFileSync(join(FAKE_HOME, "acmeproj", "code", ".env"), "LINEAR_API_KEY=lin_api_acmeproj\n");
+}
 
-  const claudeArgs = claudeLayerArgs(join(FAKE_HOME, "acmeproj"));
-  const mcpPath = claudeArgs[claudeArgs.indexOf("--mcp-config") + 1];
-  const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
-  assert.equal(mcp.mcpServers.linear.headers.Authorization, "Bearer lin_api_acmeproj");
-  assert.equal(mcp.mcpServers.context7.command, "context7-mcp");
+function linearServersFor(cwd) {
+  const claudeArgs = claudeLayerArgs(cwd);
+  const claude = JSON.parse(readFileSync(claudeArgs[claudeArgs.indexOf("--mcp-config") + 1], "utf8"));
+  const oc = JSON.parse(readFileSync(opencodeConfigPath(cwd), "utf8"));
+  const agArgs = antigravityLayerArgs(cwd);
+  const ag = JSON.parse(readFileSync(join(agArgs[1], ".agents", "plugins", "shellteam", "mcp_config.json"), "utf8"));
+  const written = [claudeArgs[claudeArgs.indexOf("--mcp-config") + 1], opencodeConfigPath(cwd),
+    join(agArgs[1], ".agents", "plugins", "shellteam", "mcp_config.json")].map((p) => readFileSync(p, "utf8"));
+  return { claude: claude.mcpServers.linear, oc: oc.mcp.linear, ag: ag.mcpServers.linear,
+    codexArgs: codexLayerArgs(cwd), codexEnv: codexSecretEnv(cwd), written, context7: claude.mcpServers.context7 };
+}
 
-  const codexArgs = codexLayerArgs(join(FAKE_HOME, "acmeproj"));
-  // The key travels in Codex's environment, never in argv (SHE-165).
-  assert.ok(codexArgs.includes('mcp_servers.linear.env_http_headers={ "Authorization" = "SHELLTEAM_MCP_LINEAR_AUTHORIZATION_SECRET" }'));
-  assert.ok(!codexArgs.some((a) => a.includes("lin_api_")), "no key in argv");
-  assert.equal(
-    codexSecretEnv(join(FAKE_HOME, "acmeproj")).SHELLTEAM_MCP_LINEAR_AUTHORIZATION_SECRET,
-    "Bearer lin_api_acmeproj",
-  );
+test("linear MCP follows the active project, through the relay: no key in any file (SHE-203)", () => {
+  linearLayer({ mcp_relay: RELAY });
+  const s = linearServersFor(join(FAKE_HOME, "acmeproj", "web"));
+  const url = `${RELAY.base}/linear/acmeproj`;
+  assert.equal(s.claude.url, url);
+  assert.equal(s.claude.headers.Authorization, RELAY.authorization);
+  assert.equal(s.context7.command, "context7-mcp");
+  assert.equal(s.oc.url, url);
+  assert.equal(s.ag.serverUrl, url);
+  assert.ok(s.codexArgs.includes(`mcp_servers.linear.url=${JSON.stringify(url)}`));
+  // The relay token travels in Codex's environment, never in argv (SHE-165).
+  assert.ok(s.codexArgs.includes('mcp_servers.linear.env_http_headers={ "Authorization" = "SHELLTEAM_MCP_LINEAR_AUTHORIZATION_SECRET" }'));
+  assert.equal(s.codexEnv.SHELLTEAM_MCP_LINEAR_AUTHORIZATION_SECRET, RELAY.authorization);
+  for (const text of [...s.written, JSON.stringify(s.codexArgs), JSON.stringify(s.codexEnv)]) {
+    assert.ok(!text.includes("lin_api_"), "no Linear key leaves the project's .env");
+  }
+});
 
-  const ocPath = opencodeConfigPath(join(FAKE_HOME, "acmeproj"));
-  const oc = JSON.parse(readFileSync(ocPath, "utf8"));
-  assert.equal(oc.mcp.linear.headers.Authorization, "Bearer lin_api_acmeproj");
-
-  const agArgs = antigravityLayerArgs(join(FAKE_HOME, "acmeproj"));
-  const agMcp = JSON.parse(readFileSync(
-    join(agArgs[1], ".agents", "plugins", "shellteam", "mcp_config.json"), "utf8",
-  ));
-  assert.equal(agMcp.mcpServers.linear.headers.Authorization, "Bearer lin_api_acmeproj");
+test("an employee box has no relay: its project's own key goes to its own agents", () => {
+  linearLayer({});
+  const s = linearServersFor(join(FAKE_HOME, "acmeproj"));
+  assert.equal(s.claude.url, "https://mcp.linear.app/mcp");
+  assert.equal(s.claude.headers.Authorization, "Bearer lin_api_acmeproj");
 });
 
 test("codex keeps baked linear overrides when no runtime key is available", () => {
@@ -239,9 +241,7 @@ test("codex keeps baked linear overrides when no runtime key is available", () =
 
   try {
     const codexArgs = codexLayerArgs(join(FAKE_HOME, "quiet-repo"));
-    assert.ok(codexArgs.includes(
-      'mcp_servers.linear.http_headers={ "Authorization" = "Bearer lin_api_global" }',
-    ));
+    assert.ok(codexArgs.includes(`mcp_servers.linear.url="${RELAY.base}/linear"`), "the layer's own server stays");
   } finally {
     for (const [name, value] of Object.entries(saved)) {
       if (value === undefined) {

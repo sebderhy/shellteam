@@ -5,6 +5,22 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.64] - 2026-11-15
+
+### Security
+- **No key sits in the files ShellTeam gives agents.** MCP servers that need a
+  key (Composio, Linear, a project's own Linear key) are reached through a
+  relay inside ShellTeam that adds the key itself, answers only on this
+  machine, and reads the current key, so a replaced key works at once.
+
+### Changed
+- **Every key in one list, Settings → Secrets.** ShellTeam's own keys
+  (OpenCode, voice, app connections, Linear) are pasted there like any other:
+  checked with the provider, then used at once. The Feature keys card is gone.
+  Keys already in ShellTeam's settings join the list on their own; if two
+  copies of a key differ, the row says so.
+- On a phone, a key's name gets its own line instead of being cut off.
+
 ## [0.1.63] - 2026-11-15
 
 ### Added

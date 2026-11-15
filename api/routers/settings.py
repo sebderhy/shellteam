@@ -1,4 +1,4 @@
-"""Settings endpoints — dashboard-managed feature keys + auto-update.
+"""Settings endpoints: secrets (every key, ShellTeam's own included), auto-update, layout.
 
 Owner-authed (same ``get_current_user`` gate as the other owner routes). The
 dashboard Settings tab calls these same-origin, riding the HttpOnly session
@@ -31,34 +31,6 @@ async def get_security_warnings(user: dict = Depends(get_current_user)) -> dict:
     return {"warnings": await asyncio.to_thread(security_checks.current)}
 
 
-class FeatureKeyRequest(BaseModel):
-    name: str = Field(..., min_length=1)
-    # Empty string = clear the key (no validation call).
-    key: str = ""
-
-
-@router.get("/feature-keys")
-async def get_feature_keys(user: dict = Depends(get_current_user)) -> dict:
-    """Set/not-set status per feature key. Never returns key values."""
-    return {"keys": feature_keys.status()}
-
-
-@router.post("/feature-keys")
-async def set_feature_key(
-    body: FeatureKeyRequest, user: dict = Depends(get_current_user)
-) -> dict:
-    """Validate + persist one feature key (empty key = clear).
-
-    400 with the validator's precise error string when the provider rejects
-    the key; the .env file is only written after validation passes.
-    """
-    try:
-        result = await feature_keys.set_key(body.name, body.key)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"name": body.name, **result, "keys": feature_keys.status()}
-
-
 # ── Auto-update ──────────────────────────────────────────────────────────────
 # The mode lives in .env (AUTO_UPDATE); scripts/self-update.sh re-reads it on
 # every timer tick, so flipping it here takes effect without any restart.
@@ -74,20 +46,52 @@ class SecretRequest(BaseModel):
 @router.get("/secrets")
 async def get_secrets(user: dict = Depends(get_current_user)) -> dict:
     """Vault names, last update and where each is used. Never values (SHE-135).
-    ``suggestions``: common keys with their usual name and where to get them."""
-    return {"secrets": await asyncio.to_thread(secrets_vault.status),
-            "suggestions": secrets_vault.SUGGESTIONS}
+    ``suggestions``: ShellTeam's own keys first, then common keys with their
+    usual name and where to get them."""
+    return {"secrets": await asyncio.to_thread(_secret_rows),
+            "suggestions": feature_keys.suggestions() + secrets_vault.SUGGESTIONS}
+
+
+def _secret_rows() -> list[dict]:
+    rows = secrets_vault.status()
+    env_file = str(feature_keys.env_file_path())
+    for row in rows:
+        spec = feature_keys.by_env_var(row["name"])
+        if spec:
+            row["shellteam"] = {"label": spec.label, "hint": spec.hint}
+        # ShellTeam's own .env reads as ShellTeam, not as a path.
+        for use in row["uses"]:
+            if use.get("file") == env_file:
+                use["shellteam"] = True
+    return rows
 
 
 @router.post("/secrets")
 async def set_secret(body: SecretRequest, user: dict = Depends(get_current_user)) -> dict:
-    """Store a secret and push it to every file/app/command that uses it."""
+    """Store a secret and push it to every file/app/command that uses it.
+
+    One of ShellTeam's own keys is checked with its provider first (400 and
+    nothing kept when it is refused), then kept in ShellTeam's .env too and
+    put to work at once (SHE-203)."""
+    spec = feature_keys.by_env_var(body.name)
+    value = body.value.strip() if spec else body.value
+    if spec and (error := await feature_keys.check(spec, value)):
+        raise HTTPException(status_code=400, detail=error)
+    env_file = feature_keys.env_file_path()
     try:
-        results = await asyncio.to_thread(secrets_vault.set_secret, body.name, body.value)
+        results = await asyncio.to_thread(secrets_vault.set_secret, body.name, value)
+        if spec:
+            await asyncio.to_thread(secrets_vault.write_env, str(env_file), {body.name: body.name})
     except secrets_vault.SecretsError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if spec:
+        results = [r for r in results if r["target"] != str(env_file)]
+        results.append(feature_keys.apply(spec, value))
+    elif any(u.get("file") == str(env_file) and body.name in u["vars"].values()
+             for u in secrets_vault.load()["uses"]):
+        os.environ[body.name] = value   # ShellTeam reads it: live now, not at the next start
     return {"name": body.name, "results": results,
-            "secrets": await asyncio.to_thread(secrets_vault.status)}
+            "secrets": await asyncio.to_thread(_secret_rows)}
 
 
 class RenameRequest(BaseModel):
@@ -100,7 +104,7 @@ async def rename_secret(name: str, body: RenameRequest, user: dict = Depends(get
         await asyncio.to_thread(secrets_vault.rename_secret, name, body.to)
     except secrets_vault.SecretsError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"secrets": await asyncio.to_thread(secrets_vault.status)}
+    return {"secrets": await asyncio.to_thread(_secret_rows)}
 
 
 @router.delete("/secrets/{name}")
@@ -109,7 +113,9 @@ async def delete_secret(name: str, user: dict = Depends(get_current_user)) -> di
         await asyncio.to_thread(secrets_vault.delete_secret, name)
     except secrets_vault.SecretsError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    return {"secrets": await asyncio.to_thread(secrets_vault.status)}
+    if spec := feature_keys.by_env_var(name):
+        feature_keys.apply(spec, "")   # ShellTeam stops using it too
+    return {"secrets": await asyncio.to_thread(_secret_rows)}
 
 
 def _update_state_path() -> Path:

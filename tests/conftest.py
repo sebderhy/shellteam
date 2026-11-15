@@ -29,6 +29,10 @@ os.environ["AI_CHAT_PORT"] = "3456"
 os.environ["RUNTIME"] = "native"  # the OSS default; docker-backend tests import containers directly
 os.environ["MODULES"] = ""  # pure core — tests opt into modules explicitly (purity gate)
 os.environ["PASSWORDLESS_SUDO_OK"] = ""  # the dev box sets it; tests assert the warning
+# ShellTeam's .env is read live for keys (the MCP relay, SHE-203): never the
+# box's real one. Tests that need keys write their own file.
+os.environ["SHELLTEAM_ENV_FILE"] = os.path.join(os.environ["DATA_DIR"], "shellteam.env")
+os.environ["SHELLTEAM_SECRETS_FILE"] = os.path.join(os.environ["DATA_DIR"], "secrets.json")
 
 # Single-user (OSS) owner identity. Pinning OWNER_TOKEN here means the suite
 # exercises the real token gate (auth ON), and pinning the id/email/username to

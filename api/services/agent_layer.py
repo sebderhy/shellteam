@@ -186,36 +186,39 @@ def canonical_mcp_servers(
     if "browser" in modules and "browser" in template_servers:
         servers["browser"] = _browser_server(BROWSER_CDP_ENDPOINT, str(home_dir / "tmp"))
 
+    # Servers that need a key are reached through ShellTeam's relay, which adds
+    # the key itself: no file agents are given holds one (SHE-203).
+    from api.services import mcp_relay
+
     if "composio" in modules:
-        if user_id and os.environ.get("COMPOSIO_API_KEY"):
+        if user_id and mcp_relay.current_key("COMPOSIO_API_KEY"):
             try:
                 from api.services.composio import generate_mcp_config
-                servers["composio"] = generate_mcp_config(user_id)
+                session = generate_mcp_config(user_id)
+                if set(session.get("headers") or {}) != {"x-api-key"}:
+                    raise ValueError(f"unexpected Composio session headers {sorted(session.get('headers') or {})}")
+                mcp_relay.remember_composio_session(session["url"])
+                servers["composio"] = mcp_relay.relay_server("composio")
             except Exception:
                 log.warning("Composio MCP generation failed for %s", user_id, exc_info=True)
         else:
             log.warning(
                 "Module 'composio' is enabled but COMPOSIO_API_KEY is not set — "
-                "Composio MCP NOT added. Set the key in .env or drop the module."
+                "Composio MCP NOT added. Add the key in Settings -> Secrets or drop the module."
             )
 
-    # Linear's hosted server accepts a personal API key straight in the
-    # Authorization header, so agents can file/read issues with no interactive
-    # OAuth — the right fit for a single-owner box. (Get a key at Linear →
-    # Settings → Security & access → Personal API keys.) https://linear.app/docs/mcp
+    # Linear's hosted server accepts a personal API key in the Authorization
+    # header, so agents can file/read issues with no interactive OAuth — the
+    # right fit for a single-owner box. https://linear.app/docs/mcp
+    # A project's own key is chosen per chat by the cockpit (agent-layer.mjs).
     if "linear" in modules:
-        linear_key = os.environ.get("LINEAR_API_KEY")
-        if linear_key:
-            servers["linear"] = {
-                "type": "http",
-                "url": "https://mcp.linear.app/mcp",
-                "headers": {"Authorization": f"Bearer {linear_key}"},
-            }
-            log.info("Linear MCP enabled (LINEAR_API_KEY set)")
+        if mcp_relay.current_key("LINEAR_API_KEY"):
+            servers["linear"] = mcp_relay.relay_server("linear")
+            log.info("Linear MCP enabled through the relay (LINEAR_API_KEY set)")
         else:
             log.warning(
                 "Module 'linear' is enabled but LINEAR_API_KEY is not set — "
-                "Linear MCP NOT added. Set the key in .env or drop the module."
+                "Linear MCP NOT added. Add the key in Settings -> Secrets or drop the module."
             )
 
     return servers
@@ -549,6 +552,18 @@ def _build_antigravity_plugin(
     return workspace
 
 
+def _remove_runtime_mcp_files(home_dir: Path) -> None:
+    """The cockpit writes per-project MCP configs at each spawn. Older ones
+    held keys (before SHE-203): a build removes them all; the next spawn
+    writes them again from this build."""
+    runtime = layer_dir(home_dir) / "runtime"
+    if not runtime.is_dir():
+        return
+    for pattern in ("claude-mcp-*.json", "opencode-*.json", "antigravity-*"):
+        for path in runtime.glob(pattern):
+            _remove_artifact(path)
+
+
 def _symlink_session_home_entry(link: Path, target: Path) -> None:
     """Expose an existing owner-home entry from Codex's ShellTeam-owned overlay.
 
@@ -749,6 +764,15 @@ def build_agent_layer(
             "opencode_config": True,
         },
     }
+    # The cockpit adds a project's own Linear server per chat: it needs the
+    # relay's address and token, never a key (SHE-203). An employee box has
+    # no relay: its project key is already its own.
+    if {"linear", "composio"} & set(modules) and not employee_on:
+        from api.services import mcp_relay
+        relay = mcp_relay.relay_server("linear")
+        manifest["mcp_relay"] = {"base": relay["url"].rsplit("/", 1)[0],
+                                 "authorization": relay["headers"]["Authorization"]}
+    _remove_runtime_mcp_files(home_dir)
     layer_manifest_file(home_dir).write_text(json.dumps(manifest, indent=2))
 
     if modules:
