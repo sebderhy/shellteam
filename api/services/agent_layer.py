@@ -353,6 +353,22 @@ def _render_persona(username: str, home_dir: Path) -> str:
     return _render_box_template(_persona_template_with_environment(), username, home_dir)
 
 
+def drop_section(text: str, name: str) -> str:
+    """``text`` without its ``<!-- BEGIN:name -->…<!-- END:name -->`` block
+    (and the blank line after it)."""
+    return re.sub(rf"[ \t]*<!-- BEGIN:{name} -->.*?<!-- END:{name} -->[ \t]*\n?\n?",
+                  "", text, flags=re.DOTALL)
+
+
+def _owner_persona(username: str, home_dir: Path, modules: frozenset | set) -> str:
+    """The persona as the owner's agents receive it. With memory on
+    (``dreaming``), its section asking each agent to keep a memory of its own
+    goes: there is one memory, and the launch text says how to search it and
+    leave it a note (K15)."""
+    text = _render_persona(username, home_dir)
+    return drop_section(text, "memory") if "dreaming" in modules else text
+
+
 def _scaffold_plugin(home_dir: Path, description: str) -> Path:
     """A fresh, empty plugin dir with its plugin.json — shared scaffolding for
     the persona and employee plugins (rebuilt from scratch so updates propagate)."""
@@ -641,7 +657,7 @@ def build_agent_layer(
     plugin = claude_plugin_dir(home_dir)
     prompt_file = claude_system_prompt_file(home_dir)
     if persona_on:
-        prompt_file.write_text(_render_persona(username, home_dir))
+        prompt_file.write_text(_owner_persona(username, home_dir, modules))
     else:
         _remove_artifact(prompt_file)
 

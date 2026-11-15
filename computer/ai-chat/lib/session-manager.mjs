@@ -763,6 +763,42 @@ async function sendNotice(slotId, message) {
   return sendMessage(slotId, message);
 }
 
+// SHE-189: a turn that died on an API error stays dead until someone looks.
+// Errors a second try can fix (a proxy or Cloudflare block, an overloaded or
+// failing server, a dropped connection) get one automatic resume; the ones it
+// cannot (bad request, login, rate limit, too large) are left to the owner.
+const API_ERRORS_NOT_RETRIED = new Set([400, 401, 404, 413, 429]);
+let apiErrorRetryMs = 30_000;
+
+function apiErrorNotice(status, errors) {
+  return [
+    "<cockpit-notice>",
+    `Your last request to the model failed${status ? ` (API error ${status})` : ""}: ${(errors || []).join(" ").slice(0, 300)}`,
+    "This is usually temporary. The cockpit resumed you automatically: carry on with the task where you left off. Check the state of anything you were changing first.",
+    "</cockpit-notice>",
+  ].join("\n");
+}
+
+function maybeRetryAfterApiError(slotId, slot, data) {
+  if (!data.is_error) { slot.apiErrorRetried = false; return; }
+  const status = data.api_error?.status ?? null;
+  if (!data.api_error || API_ERRORS_NOT_RETRIED.has(status)) return;
+  if (slot.apiErrorRetried) {
+    console.log(`[session-mgr] Slot ${slotId}: API error ${status ?? "-"} again after the automatic resume — leaving it to the owner`);
+    return;
+  }
+  slot.apiErrorRetried = true;
+  console.log(`[session-mgr] Slot ${slotId}: turn ended on API error ${status ?? "-"} — resuming once in ${apiErrorRetryMs / 1000}s`);
+  const historyAt = slot.history.length;
+  setTimeout(() => {
+    const live = slots.get(slotId);
+    // The owner already moved on (a new message, a running turn, a closed tab).
+    if (!live || live !== slot || live.isGenerating || live.history.length !== historyAt) return;
+    sendNotice(slotId, apiErrorNotice(status, data.errors))
+      .catch((e) => console.error(`[session-mgr] Slot ${slotId}: resuming after an API error failed: ${e.message}`));
+  }, apiErrorRetryMs);
+}
+
 function mergeNotice({ title, family, model, cwd, file, messages }) {
   return [
     "<cockpit-notice>",
@@ -1225,6 +1261,7 @@ function wireAgentEvents(slotId, agent) {
     }
     if (data.is_error) recordAuthFailure(data.errors);
     sendAfterCompact(slotId, data);
+    if (!["interrupted", "stopped", "watchdog_timeout"].includes(data.subtype)) maybeRetryAfterApiError(slotId, slot, data);
 
     // Auto-restart on watchdog timeout: resume session and resend last message
     if (data.subtype === "watchdog_timeout") {
@@ -1348,6 +1385,11 @@ export function _testInjectAgent(slotId, agent) {
   if (slot.agent) slot.agent.stop();
   slot.agent = agent;
   wireAgentEvents(slotId, agent);
+}
+
+/** Test-only: resume after an API error without the real delay. */
+export function _testSetApiErrorRetryDelay(ms) {
+  apiErrorRetryMs = ms;
 }
 
 /** Test-only: override agent creation so startAgent() doesn't spawn real CLI processes. */

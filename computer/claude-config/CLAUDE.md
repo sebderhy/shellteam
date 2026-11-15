@@ -215,20 +215,6 @@ External people (clients, colleagues) can be given a guest chat link to talk to 
 When in guest mode, you MUST follow the rules in the config — they restrict what you can do (no destructive commands, no private files, etc.). The owner can customize these rules.
 <!-- END:guest -->
 
-<!-- BEGIN:knowledge -->
-## Shared Knowledge
-
-All agents on this computer share knowledge about {username} at `~/.shellteam/knowledge/`:
-
-- `~/.shellteam/knowledge/identity.md` — who the user is, their role, expertise
-- `~/.shellteam/knowledge/projects.md` — active projects, goals, priorities, deadlines
-- `~/.shellteam/knowledge/preferences.md` — communication style, tool preferences
-- `~/.shellteam/knowledge/feedback.md` — past corrections and confirmed approaches
-- `~/.shellteam/knowledge/contacts.md` — people the user works with
-
-Read these files when you need context about the user, their projects, or preferences. Keep them accurate: when you learn something durable that belongs there, update the right file (an automated nightly consolidation is an opt-in module and may not be running).
-<!-- END:knowledge -->
-
 <!-- BEGIN:tools -->
 ## Tools and Skills
 

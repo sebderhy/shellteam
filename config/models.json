@@ -165,7 +165,7 @@
     {
       "id": "antigravity",
       "label": "Antigravity",
-      "$comment": "Google Antigravity CLI (`agy`). `cli` = the exact --model display name agy expects (from `agy models`); the cockpit id stays a clean slug. Non-streaming: one JSON envelope per turn, resume via --conversation.",
+      "$comment": "Google Antigravity CLI (`agy` >= 1.5). Each id is agy's own model name from `agy models`, effort included (agy reads the effort from the name), so no `cli` field is needed. Gemini only: agy's Claude and GPT-OSS models are not offered (owner decision, 14 Nov 2026). Streams via --output-format stream-json, resumes via --conversation. agy does not publish context sizes: 1M is assumed.",
       "match": {
         "prefixes": [
           "gemini-"
@@ -173,15 +173,25 @@
       },
       "models": [
         {
-          "id": "gemini-3.1-pro",
-          "name": "Gemini 3.1 Pro",
-          "cli": "Gemini 3.1 Pro (High)",
-          "limit": { "context": 2000000 }
+          "id": "gemini-4-argon-high",
+          "name": "Gemini 4 Argon (high)",
+          "replaces": ["gemini-3.1-pro"],
+          "limit": { "context": 1048576 }
         },
         {
-          "id": "gemini-3.6-flash",
-          "name": "Gemini 3.6 Flash",
-          "cli": "Gemini 3.6 Flash (Medium)",
+          "id": "gemini-4-hydrogen-xhigh",
+          "name": "Gemini 4 Hydrogen (xhigh)",
+          "limit": { "context": 1048576 }
+        },
+        {
+          "id": "gemini-4-hydrogen-high",
+          "name": "Gemini 4 Hydrogen (high)",
+          "limit": { "context": 1048576 }
+        },
+        {
+          "id": "gemini-3.8-flash-medium",
+          "name": "Gemini 3.8 Flash (medium)",
+          "replaces": ["gemini-3.6-flash"],
           "limit": { "context": 1048576 }
         }
       ]

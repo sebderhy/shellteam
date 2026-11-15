@@ -222,6 +222,11 @@ async function loadBoxInfo() {
     if (!r.ok) throw new Error(`/api/box returned ${r.status}`);
     BOX = await r.json();
 }
+// Settles when the box settings are in (or could not be loaded, which is
+// logged: the placeholder then stands and dashboard messages stay refused).
+const boxReady = loadBoxInfo().catch(err => {
+    console.error('[box] failed to load /api/box — file links may use the wrong home/origin:', err);
+});
 
 function fileBaseUrl() {
     if (BOX.appDomain && BOX.appDomain !== 'localhost') return `https://${BOX.appDomain}`;
@@ -723,8 +728,12 @@ function modelDisplayName(id) {
 // old code assigned modelSelect.value.
 function setModelDisplay(model) {
     const name = modelDisplayName(model);
+    const harness = catalogAgents().find(a => (a.models || []).some(m => m.id === model))?.label;
+    const full = harness ? `${harness} · ${name}` : name;
     const btn = document.getElementById('btnAIModel');
-    if (btn) { btn.textContent = name; btn.title = name; }
+    if (btn) { btn.textContent = name; btn.title = full; }
+    // Say which harness and model this is, and that the button changes them (SHE-187).
+    document.getElementById('btnAI')?.setAttribute('aria-label', `${full}. Change the model, folder or session`);
     const row = document.getElementById('aiMenuModel');
     if (row) row.textContent = name;
 }
@@ -2562,10 +2571,7 @@ function handleStatusMessage(msg) {
                 local.locallyCreated = false; // the server knows it now
                 local.sessionId = serverSlot.sessionId || local.sessionId;
                 local.isGenerating = serverSlot.isGenerating;
-                // The server now reflects this slot's real state, so the
-                // optimistic in-flight guard has done its job — retiring it here
-                // keeps a stale pendingSend from outliving the turn.
-                if (serverSlot.isGenerating) local.pendingSend = false;
+                settlePendingSend(local, serverSlot, _connectCount);
                 local.totalCost = serverSlot.totalCost || local.totalCost;
                 syncReadState(local, serverSlot);
                 if (_connectCount <= 1 && serverSlot.label) local.label = serverSlot.label;
@@ -2827,7 +2833,7 @@ function handleSend({ compactFirst = false } = {}) {
     // Stop button + running dot against a status snapshot racing this send
     // (SHE-90/88/89); cleared on the first event or turn_done for this slot.
     const activeSlot = sessionSlots.find(s => s.id === activeSlotId);
-    if (activeSlot) { activeSlot.pendingSend = true; renderSessionTabs(); }
+    if (activeSlot) { activeSlot.pendingSend = true; activeSlot.pendingSendOn = _connectCount; renderSessionTabs(); }
     // Use "send" type (new protocol) instead of "user"
     S.ws?.send(JSON.stringify({ type: 'send', content, slot: activeSlotId, ...(compactFirst ? { compactFirst: true } : {}) }));
 
@@ -2841,6 +2847,20 @@ function handleSend({ compactFirst = false } = {}) {
     E.input.focus();
     const sentSlot = sessionSlots.find(s => s.id === activeSlotId);
     if (sentSlot) { sentSlot.draft = ''; sentSlot.quotes = []; }
+}
+
+/**
+ * Retire the optimistic in-flight guard (pendingSend, SHE-90) once the
+ * server's snapshot can speak for the turn: when it reports the slot running,
+ * or when the send went out on an earlier connection. The server marks a slot
+ * generating the moment it takes a message, so after a reconnect its snapshot
+ * is the truth: the turn is running, or it ended (or the send never arrived)
+ * while this page was offline and its turn_done will never reach it. Without
+ * the second case a phone that slept through the end of a reply showed
+ * "Working..." forever (SHE-200).
+ */
+function settlePendingSend(local, serverSlot, connection) {
+    if (serverSlot.isGenerating || local.pendingSendOn !== connection) local.pendingSend = false;
 }
 
 /** Reset the active slot's session state. */
@@ -3000,11 +3020,15 @@ async function copyToClipboard(text) {
 window.addEventListener('message', (e) => {
     const d = e.data;
     // From the dashboard itself: a page that framed the cockpit is also
-    // "the parent" (SHE-162).
-    if (e.source !== window.parent || e.origin !== fileBaseUrl()) return;
-    if (!d || d.source !== 'shellteam-dashboard') return;
-    if (d.kind === 'report-comment') window.QuoteReview?.addFromReport(d);
-    else window.Projects?.onDashboardMessage(d);
+    // "the parent" (SHE-162). Its address comes from /api/box, and its first
+    // message can arrive before that answer: wait for it, or the message is
+    // judged against a placeholder address and dropped (SHE-197).
+    if (e.source !== window.parent || !d || d.source !== 'shellteam-dashboard') return;
+    boxReady.then(() => {
+        if (e.origin !== fileBaseUrl()) return;
+        if (d.kind === 'report-comment') window.QuoteReview?.addFromReport(d);
+        else window.Projects?.onDashboardMessage(d);
+    });
 });
 
 // Report links open in the right-side panel, delegated on the stable #messages
@@ -4659,8 +4683,7 @@ initUseCaseSuggestions();
 Promise.allSettled([
     loadModelCatalog()
         .catch(err => { console.error('[models] failed to load /api/models — model dropdown will be empty:', err); throw err; }),
-    loadBoxInfo()
-        .catch(err => { console.error('[box] failed to load /api/box — file links may use the wrong home/origin:', err); throw err; }),
+    boxReady,
 ]).then(() => {
     initUseCaseSuggestions(); // re-render: BOX.modules is known now
     connect();

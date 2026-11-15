@@ -93,7 +93,7 @@ def test_reports_and_knowledge_pages_can_show_one_project():
     assert "PARAMS.get('workspace')" in REPORTS_HTML
     assert "j.reports.filter(r => groupName(r) === ONLY_WORKSPACE)" in REPORTS_HTML
     assert "PARAMS.get('project')" in KNOWLEDGE_HTML
-    assert "t.nodes.find(n => n.node === ONLY_PROJECT)" in KNOWLEDGE_HTML
+    assert "levels.includes(ONLY_PROJECT) ? ONLY_PROJECT" in KNOWLEDGE_HTML
 
 
 def test_the_editor_can_open_on_a_folder():
@@ -178,3 +178,12 @@ def test_reports_page_is_one_pane_inside_the_project_panel():
     assert "classList.toggle('one-pane', !!PARAMS.get('panel') || PHONE.matches)" in html
     assert "body.one-pane.previewing .side { display: none; }" in html
     assert "body.one-pane.previewing #back { display: inline-block; }" in html
+
+
+def test_tapping_a_level_shows_what_memory_knows_there():
+    """SHE-198: tapping "You" in the tree opened a chat's launch text. A level
+    tap must open what memory holds at that level; a chat's text is the
+    second view, chosen on purpose."""
+    select = KNOWLEDGE_HTML.split("function selectLevel(lv) {", 1)[1].split("\n        }", 1)[0]
+    assert "setMode('known')" in select and "show('middle')" in select
+    assert 'data-mode="known" aria-selected="true"' in KNOWLEDGE_HTML

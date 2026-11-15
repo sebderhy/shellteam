@@ -31,7 +31,7 @@ already covers — the edits are unnecessary). Pinned by
 | Self-update timer (inert unless `AUTO_UPDATE` is on in `.env`) | `~/.config/systemd/user/shellteam-update.{service,timer}` | `uninstall.sh` |
 | Runtime state (rendered nginx config, etc.) | `~/.local/state/shellteam/` | `uninstall.sh` |
 | **Agent launch-layer** (skills, hooks, MCP, persona) | `~/.shellteam/agent-layer/` | `uninstall.sh` |
-| Knowledge layer (your accumulated memory, incl. the per-folder `tree/`) | `~/.shellteam/knowledge/` | `uninstall.sh --purge` |
+| Memory (facts, printed views, bookmarks, its own git history; a box that had the old knowledge files keeps them 30 days at `~/.shellteam/knowledge/`) | `~/.shellteam/memory/` | `uninstall.sh --purge` |
 | Dream run artifacts (audit trail: prompts, deltas, reports) | `~/.shellteam/dream/` | `uninstall.sh --purge` |
 | Images pasted into the chat for Codex, OpenCode and Antigravity (kept 7 days) | `~/.shellteam/attachments/` | `uninstall.sh --purge` |
 | Secrets vault: your API keys (Settings -> Secrets), owner-only `0600`, plus where agents wrote each one | `~/.shellteam/secrets.json` | `uninstall.sh --purge` |

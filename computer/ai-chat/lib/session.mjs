@@ -28,7 +28,7 @@ import {
 } from "./constants.mjs";
 import { agentIdFor } from "./agents/registry.mjs";
 import { agentIdForModel, includedModelsByFamily, opencodeOutputTokenMax, resolveModelId } from "./model-catalog.mjs";
-import { opencodeConfigPath } from "./agent-layer.mjs";
+import { opencodeConfigPath, ownMemoryEnv } from "./agent-layer.mjs";
 // clearAllHistory removed — history is now managed by SessionManager
 
 // --- State ---
@@ -596,6 +596,8 @@ export function getCliEnv(cwd = HOME) {
   // degraded API-key backend. No agent we launch needs these keys — always strip.
   applyKeyVars(env, ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"], null);
   console.log(`[ai-chat] Auth mode — claude=${claudeMode} codex=${codexMode}`);
+  // One memory (K15): with the owner's setting, agents' own memory is off.
+  Object.assign(env, ownMemoryEnv());
 
   // OpenCode loads ShellTeam's additive layer (Fireworks provider + MCP + skills)
   // via OPENCODE_CONFIG — it MERGES with the user's own OpenCode config, never

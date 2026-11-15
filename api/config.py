@@ -22,9 +22,14 @@ OWNER_TOKEN = os.environ.get("OWNER_TOKEN", "")
 # Control-plane state (profile, port/report visibility). The default lives
 # under the owner's home so a fresh native install works without any
 # privileged directory setup; Cloud deployments override with DATA_DIR=/data/users.
-DATA_DIR = Path(
-    os.environ.get("DATA_DIR", str(Path.home() / ".local/state/shellteam/data"))
-)
+# The single owner's home directory — where agent config is materialized and
+# where the cloud-computer file server is rooted. In the native edition this is
+# the VPS user's $HOME (no per-user partitioning).
+HOME_DIR = Path(os.environ.get("SHELLTEAM_HOME", str(Path.home())))
+# Under HOME_DIR, not Path.home(): an isolated copy of the API (SHELLTEAM_HOME
+# set, its own OWNER_TOKEN) must not share the live box's sessions store, or its
+# first sign-in revokes every real session as a "token change" (SHE-196).
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(HOME_DIR / ".local/state/shellteam/data")))
 # True when DATA_DIR was set explicitly (Cloud, or a custom native path); the
 # startup migration below only touches the default location.
 DATA_DIR_OVERRIDDEN = bool(os.environ.get("DATA_DIR"))
@@ -100,11 +105,11 @@ RUNTIME = "native"
 #   browser  — the shared Steel browser MCP (part of install.sh --full)
 #   composio — Composio app connections over MCP (also needs COMPOSIO_API_KEY)
 #   linear   — Linear MCP (also needs LINEAR_API_KEY)
-#   dreaming — nightly knowledge consolidation: a systemd --user timer sweeps the
-#              day's agent sessions into ~/.shellteam/knowledge/ (per-folder
-#              tree), agents spawn with their folder's knowledge, and the
+#   dreaming — memory: a systemd --user timer reads the day's conversations
+#              into ~/.shellteam/memory/ (a knowledge tree that mirrors the
+#              folders), agents spawn with their folder's card, and the
 #              dashboard gains a Knowledge tab
-#              (see docs/decisions/20260708-dreaming-v1.md)
+#              (see docs/decisions/20261113-memory-nightly-operations.md)
 KNOWN_MODULES = {"persona", "browser", "composio", "linear", "dreaming"}
 def parse_modules(value: str) -> list[str]:
     """Normalize a MODULES= comma list (shared with the feature-keys .env
@@ -126,10 +131,6 @@ def validate_modules() -> None:
             sorted(unknown), sorted(KNOWN_MODULES),
         )
 
-# The single owner's home directory — where agent config is materialized and
-# where the cloud-computer file server is rooted. In the native edition this is
-# the VPS user's $HOME (no per-user partitioning).
-HOME_DIR = Path(os.environ.get("SHELLTEAM_HOME", str(Path.home())))
 # Trial banner: when this file exists ({"ends_at": <epoch>, "label", "cta_url",
 # "cta_label"}), the dashboard shows a countdown to ends_at plus the link. Written
 # by whoever runs a time-boxed box (the shellteam.sh live demo); absent otherwise.

@@ -5,6 +5,49 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.63] - 2026-11-15
+
+### Added
+- **Memory is rebuilt as a tree of what each folder needs to know.** Every
+  agent started in a folder gets a short card for that folder plus the
+  essentials of the levels above it, instead of one long file. A box moves its
+  existing memory in on its first night. The nightly job reads conversations
+  from where it stopped and changes memory by small logged operations, each of
+  which can be undone.
+- **The Knowledge tab** shows the tree, how full each card is, exactly what a
+  chat was told when it started, and what last night changed, with Undo per
+  change or per night.
+- **`shellteam-memory search` and `shellteam-memory note`** for every agent:
+  look further than the launch card, and leave a note the next chats in that
+  folder see today and the night files.
+- **A full card hands a group of facts about one sub-folder to a card of its
+  own**, and the project keeps the lines that hold for all of it.
+- Claude Code's, Codex's and Antigravity's own notes are read into the same
+  memory.
+
+### Changed
+- **Antigravity streams.** An Antigravity tab now shows the answer as it is
+  written and each shell command, file and tool call as it happens, like the
+  other agents, instead of the whole answer at the end. Needs agy 1.5 or later.
+- **Antigravity offers today's Gemini models**: Gemini 4 Argon, Gemini 4
+  Hydrogen (two effort levels) and Gemini 3.8 Flash. Chats on Gemini 3.1 Pro or
+  3.6 Flash move to their successors.
+
+### Fixed
+- **A reply that finished while the page was offline no longer shows
+  "Working" forever.**
+- **No more false "background task lost" notices**: background commands are
+  tracked from the agent's own task id, never from text in a command's output.
+- **The Telegram bot token no longer reaches the system log.**
+- **The project header keeps its Knowledge button after a reload.**
+- **Antigravity tabs answer again.** The two Gemini names they used are no
+  longer accepted by agy, so every message failed.
+- **When Google refuses Gemini for the server's location**, the chat says so
+  in plain words instead of a raw error code.
+- **Memory search finds more of what is stored**: facts that are no longer
+  current (as history), words with another ending, and, when this project has
+  little, the best facts of other projects under their own heading.
+
 ## [0.1.62] - 2026-11-13
 
 ### Fixed

@@ -22,6 +22,10 @@ import os
 import httpx
 
 log = logging.getLogger(__name__)
+# Telegram puts the bot token in the request URL, and httpx logs every URL at
+# INFO: in any process that sends an alert (the API, the daily security check,
+# the nightly memory job) that wrote the token into the journal (SHE-199).
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 NTFY_BASE = os.environ.get("NOTIFY_NTFY_SERVER", "https://ntfy.sh")
 

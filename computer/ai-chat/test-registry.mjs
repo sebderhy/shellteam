@@ -48,8 +48,8 @@ describe("agent registry — model routing", () => {
   });
 
   it("routes Antigravity/Gemini model families", () => {
-    assert.equal(pickAgent("gemini-3.1-pro").id, "antigravity");
-    assert.equal(pickAgent("gemini-3.6-flash").id, "antigravity");
+    assert.equal(pickAgent("gemini-4-argon-high").id, "antigravity");
+    assert.equal(pickAgent("gemini-3.8-flash-medium").id, "antigravity");
   });
 
   it("routes OpenCode (Fireworks) model families", () => {
@@ -78,7 +78,7 @@ describe("agent registry — capabilities", () => {
     assert.equal(supports("gpt-5.5", "resume"), true);
     assert.equal(supports("gpt-5.5", "cliOwnsHistory"), false);
 
-    assert.equal(supports("gemini-3.1-pro", "resume"), true);
+    assert.equal(supports("gemini-4-argon-high", "resume"), true);
 
     assert.equal(supports("kimi-k3", "rewind"), false);
     assert.equal(supports("kimi-k3", "resume"), true);
@@ -113,8 +113,8 @@ describe("agent registry — terminal spawn", () => {
       { cmd: "codex", args: ["--dangerously-bypass-approvals-and-sandbox", ...codexLayerArgs(), "-c", 'model_reasoning_effort="max"', "-m", "gpt-6-luna"] },
     );
     assert.deepEqual(
-      terminalSpawn("gemini-3.1-pro", { sessionId: "xyz" }),
-      { cmd: "agy", args: ["--dangerously-skip-permissions", "--model", "Gemini 3.1 Pro (High)", "--conversation", "xyz"] },
+      terminalSpawn("gemini-4-argon-high", { sessionId: "xyz" }),
+      { cmd: "agy", args: ["--dangerously-skip-permissions", "--model", "gemini-4-argon-high", "--conversation", "xyz"] },
     );
     assert.deepEqual(
       terminalSpawn("kimi-k3"),

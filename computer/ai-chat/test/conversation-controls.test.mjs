@@ -45,14 +45,14 @@ const { readSessionForReplay, findSessionFile } = await import("../lib/history.m
 const CHEAP = {
   claude: "claude-haiku-5-5",
   codex: "gpt-5.6-luna",
-  antigravity: "gemini-3.6-flash",
+  antigravity: "gemini-3.8-flash-medium",
   opencode: "glm-5p3-flash",
 };
 // A second same-family model, for "switching model within a family keeps the session".
 const SAME_FAMILY_ALT = {
   claude: "claude-sonnet-5-5",
   codex: "gpt-5.6-terra",
-  antigravity: "gemini-3.1-pro",
+  antigravity: "gemini-4-argon-high",
   opencode: "kimi-k3",
 };
 // Gemini was retired in favour of Google's Antigravity CLI (`agy`) on 2026-07-03;

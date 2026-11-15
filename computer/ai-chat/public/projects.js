@@ -185,7 +185,7 @@ const Projects = (() => {
         const list = document.getElementById('pjList');
         const scroll = list.scrollTop;
         list.innerHTML = groups().map(groupHtml).join('')
-            + (S.workspaceLock ? '' : `<button class="pj-add" type="button" id="pjAddProject">${icon('plus')}Add a project</button>`)
+            + (S.workspaceLock ? '' : `<button class="pj-add" type="button" id="pjAddProject">${icon('plus')}Open a folder or add a project</button>`)
             // With every chat in a project there is no "General" row to start a loose one from.
             + (projects.length && sessionSlots.every(projectOf) ? `<button class="pj-add" type="button" data-new="">${icon('chat')}New chat in ${GENERAL} (~)</button>` : '');
         list.scrollTop = scroll;
@@ -238,7 +238,9 @@ const Projects = (() => {
         const top = rel.split('/')[0];
         if (kind === 'files') return `${base}/_editor/${rel ? encodeRelPath(rel) + '/?dir=1' : ''}`;
         if (kind === 'reports') return `${base}/reports?panel=1${p ? '&workspace=' + encodeURIComponent(top) : ''}`;
-        return `${base}/knowledge?panel=1${p ? '&project=' + encodeURIComponent(top) : ''}`;
+        // The open chat too: the Knowledge page shows what it was told (K16).
+        const chat = activeSlotId != null ? '&chat=' + encodeURIComponent(activeSlotId) : '';
+        return `${base}/knowledge?panel=1${p ? '&project=' + encodeURIComponent(top) : ''}${chat}`;
     }
 
     function togglePanel(kind) {
@@ -422,8 +424,9 @@ const Projects = (() => {
         return _workspaces.filter(w => w.path !== BOX.home && !taken.has(w.path));
     }
 
-    /** "Add a project": a new folder, a folder that exists, or a GitHub repository. */
-    function openAddDialog(startMode = 'new') {
+    /** "Add a project": a new folder, a folder that exists, or a GitHub repository.
+     *  Past the first project, the usual wish is a folder already on the box (SHE-184). */
+    function openAddDialog(startMode = projects.length && freeFolders().length ? 'open' : 'new') {
         send({ type: 'list_workspaces' });
         const box = openDialog(`
             <h2>Add a project</h2>
@@ -590,6 +593,8 @@ const Projects = (() => {
             items.push({ kind: st.kind, label: slotDisplayLabel(slot), sub: g.project ? g.project.name : `${GENERAL} ~`, tag: st.text, run: () => openAgent(slot.id) });
         }
         for (const p of projects) items.push({ icon: 'plus', label: `New agent in ${p.name}`, sub: p.label, run: () => newAgentIn(p.path) });
+        // A folder with no agent yet is one step away: it becomes a project and the agent starts there (SHE-184).
+        if (!S.workspaceLock) for (const w of freeFolders()) items.push({ icon: 'plus', label: `Start an agent in ${w.label}`, sub: 'Folder, added as a project', run: () => openFolder(w.path) });
         if (!S.workspaceLock) items.push({ icon: 'plus', label: 'Add a project', sub: 'New, existing folder or GitHub', run: () => openAddDialog() });
         if (EMBEDDED) {
             for (const [tab, label] of TOOLS) if (tab !== 'browser' || shell.caps.browser) items.push({ icon: tab, label, sub: 'Tool', run: () => openTool(tab) });
@@ -598,8 +603,17 @@ const Projects = (() => {
         return items;
     }
 
+    function openFolder(path) {
+        addProject({ how: 'open', path }, (msg) => {
+            // Said where the owner can pick another folder, never dropped.
+            if (msg.error) { openAddDialog('open'); dialogError(dialogEl.firstElementChild, msg.error); return; }
+            startIn(msg.path);
+        });
+    }
+
     function openJump() {
         if (EMBEDDED && !reportsCache) post('reports-list');
+        if (!S.workspaceLock) send({ type: 'list_workspaces' });
         const box = openDialog(`
             <div class="pj-jump-in">${icon('search')}<input id="pjJumpInput" type="text" placeholder="Jump to an agent, a project or a report" autocomplete="off" aria-label="Jump to" aria-controls="pjJumpList"></div>
             <div class="pj-jump-list" id="pjJumpList" role="listbox"></div>`, { wide: true });
@@ -656,7 +670,7 @@ const Projects = (() => {
         if (!slot) return;
         if (msg.type === 'ask_user') { slot.asking = true; render(); }
         else if (['turn_done', 'text_delta', 'tool_start'].includes(msg.type) && slot.asking) { slot.asking = false; render(); }
-        if (msg.type === 'workspaces_list' && dialogEl?.firstElementChild._drawFolders) setTimeout(() => dialogEl?.firstElementChild._drawFolders?.(), 0);
+        if (msg.type === 'workspaces_list') setTimeout(() => { dialogEl?.firstElementChild._drawFolders?.(); dialogEl?.firstElementChild._redraw?.(); }, 0);
     }
 
     function onDashboardMessage(d) {
@@ -763,9 +777,16 @@ const Projects = (() => {
             if (a) beginRenameOn(a, activeSlotId);
         });
         document.getElementById('pjBack').addEventListener('click', () => {
-            if (isPhone()) document.documentElement.classList.add('pj-list-open');
+            if (isPhone()) showList(true);
             else toggleSide();
         });
+        // On a phone the back arrow sits in the hardest corner to reach: the
+        // chat's name opens the list too, and so does a swipe (SHE-187).
+        document.getElementById('pjAgent').addEventListener('click', (e) => {
+            if (isPhone() && e.target.closest('.pj-crumb-agent')) showList(true);
+        });
+        onSwipe(document.querySelector('.chat-main'), 'right', () => isPhone() && showList(true));
+        onSwipe(side, 'left', () => isPhone() && showList(false));
         document.getElementById('pjFirst').addEventListener('click', (e) => {
             const b = e.target.closest('[data-first]');
             if (!b) return;
@@ -782,6 +803,26 @@ const Projects = (() => {
         setInterval(() => { if (!document.hidden && !dialogEl) render(); }, 30000);
         post('side-ready');
         render();
+    }
+
+    function showList(open) { document.documentElement.classList.toggle('pj-list-open', open); }
+
+    /** A deliberate horizontal swipe: mostly sideways, long enough, and not one
+     *  that scrolls something wide (a code block, a table) or edits text. */
+    function onSwipe(el, dir, run) {
+        let x0 = null, y0 = 0;
+        el.addEventListener('touchstart', (e) => {
+            const t = e.touches[0];
+            const inScroller = e.target.closest('pre, table, textarea, input, [contenteditable], .pj-dialog');
+            x0 = e.touches.length === 1 && !inScroller && !dialogEl ? t.clientX : null;
+            y0 = t.clientY;
+        }, { passive: true });
+        el.addEventListener('touchend', (e) => {
+            if (x0 === null) return;
+            const t = e.changedTouches[0], dx = t.clientX - x0, dy = Math.abs(t.clientY - y0);
+            x0 = null;
+            if ((dir === 'right' ? dx : -dx) > 70 && dy < Math.abs(dx) / 2) run();
+        }, { passive: true });
     }
 
     function openMoveDialogTo(slotId, path) {

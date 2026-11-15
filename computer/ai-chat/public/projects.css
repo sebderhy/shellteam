@@ -420,9 +420,16 @@ html.layout-projects .subscription-monitor, html.layout-projects .quota-meter { 
     html.layout-projects #pjCrumb, html.layout-projects .pj-crumb-sep { display: none; }
     html.layout-projects .pj-crumb-chat { height: 48px; align-items: center; }
     html.layout-projects .pj-crumb-agent { font-size: 15px; }
-    /* Room for the agent's name: the model button keeps its icon, its menu says the rest. */
-    html.layout-projects .btn-ai-model { display: none; }
-    html.layout-projects .btn-ai { padding: 5px 8px; }
+    /* The model is worth its room (SHE-187): its name stays, short. The usage
+       meter keeps only its bar on a subscription; a metered key still says so. */
+    /* :is() matches the specificity of the wide-header rules above, with or without the column shut. */
+    html.layout-projects:is(*, .pj-side-shut) .btn-ai { padding: 5px 8px; gap: 5px; max-width: 128px; }
+    html.layout-projects .btn-ai-model { display: inline; font-size: 13px; }
+    html.layout-projects #authBadge.sub:has(+ .quota-meter-track:not([hidden])) { display: none; }
+    html.layout-projects .quota-meter { min-width: 44px; justify-content: center; }
+    html.layout-projects:is(*, .pj-side-shut) .quota-meter-track { width: 34px; }
+    /* The chat's name is the big, reachable way back to the list. */
+    html.layout-projects .pj-crumb-agent { cursor: pointer; }
     html.layout-projects .pj-tools:not([hidden]) {
         order: 3; flex: 0 0 calc(100% + 20px); margin: 0 -10px; padding: 4px 8px;
         border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg);

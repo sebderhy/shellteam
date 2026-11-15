@@ -24,7 +24,6 @@ import subprocess
 from pathlib import Path
 
 from api.config import HOME_DIR, OWNER_ID, OWNER_USERNAME
-from api.services.agent_config import _setup_knowledge_layer
 from api.services.agent_layer import build_agent_layer, canonical_mcp_servers
 
 log = logging.getLogger(__name__)
@@ -99,7 +98,6 @@ def _materialize_config(username: str, email: str = "") -> None:
     uname = username or OWNER_USERNAME
     mcp = canonical_mcp_servers(home, OWNER_ID)
     build_agent_layer(home, uname, OWNER_ID, email, mcp_servers=mcp)
-    _setup_knowledge_layer(home, uname)
 
 
 async def get_status(user_id: str = "") -> dict:

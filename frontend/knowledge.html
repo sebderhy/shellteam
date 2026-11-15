@@ -13,7 +13,7 @@
 
         .bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
             background: var(--surface-1); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-        .bar h1 { font-size: var(--text-md); margin: 0; font-weight: var(--weight-bold); }
+        .bar h1 { font: var(--weight-bold) var(--text-xl)/1.1 var(--font-serif); margin: 0; }
         .bar .sub { color: var(--text-tertiary); font-size: var(--text-xs); }
         .bar .spacer { margin-left: auto; }
         button { font-family: inherit; font-size: var(--text-sm); border-radius: var(--radius-md);
@@ -22,71 +22,141 @@
         button:hover { background: var(--surface-3, #2a3344); }
         button.primary { background: var(--brand); border-color: transparent; color: var(--surface-0); }
         button:disabled { opacity: .5; cursor: default; }
+        button.link { border: none; background: none; color: var(--brand); padding: 4px 0; }
         a { color: var(--brand); }
-
-        .wrap { display: flex; flex: 1; min-height: 0; }
-        .side { width: 280px; flex-shrink: 0; overflow-y: auto; padding: 12px;
-            border-right: 1px solid var(--border); background: var(--surface-1); }
-        .side h2 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .06em;
-            color: var(--text-tertiary); margin: 14px 4px 6px; }
-        .side .item { display: block; width: 100%; text-align: left; padding: 6px 10px;
-            margin: 1px 0; border: none; background: none; border-radius: var(--radius-md);
-            color: var(--text-secondary); font-size: var(--text-sm); cursor: pointer;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .side .item:hover { background: var(--surface-2); }
-        .side .item.active { background: var(--surface-2); color: var(--text-primary); }
-        .side .item .dim { color: var(--text-tertiary); }
-        .side .detail { padding-left: 24px; font-size: var(--text-xs); }
-
-        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-        .editor-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px;
-            border-bottom: 1px solid var(--border); font-size: var(--text-sm);
-            color: var(--text-tertiary); }
-        .editor-bar code { background: var(--surface-2); padding: 2px 8px;
-            border-radius: var(--radius-sm, 4px); color: var(--text-secondary);
-            /* Long node paths truncate instead of pushing Save off-screen —
-               same intrinsic-width bug class as the header (audit P1-02). */
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-        textarea { flex: 1; width: 100%; resize: none; border: none; outline: none;
-            background: var(--surface-0); color: var(--text-primary); padding: 16px;
-            font: 13px/1.6 var(--font-mono, ui-monospace, monospace); }
-        .placeholder { flex: 1; display: flex; align-items: center; justify-content: center;
-            color: var(--text-tertiary); font-size: var(--text-sm); text-align: center;
-            padding: 40px; }
-
-        .review { border-top: 1px solid var(--border); background: var(--surface-1);
-            max-height: 40%; overflow-y: auto; flex-shrink: 0; }
-        .review h2 { font-size: var(--text-sm); margin: 0; padding: 10px 14px 4px; }
-        .review .entry { display: flex; gap: 10px; align-items: flex-start;
-            padding: 8px 14px; border-top: 1px solid var(--border); font-size: var(--text-sm); }
-        .review .entry .txt { flex: 1; min-width: 0; }
-        .review .entry .meta { color: var(--text-tertiary); font-size: var(--text-xs); }
-        .review .entry button { padding: 3px 10px; font-size: var(--text-xs); }
-        .toast { position: fixed; bottom: 18px; right: 18px; background: var(--surface-2);
-            border: 1px solid var(--border); border-radius: var(--radius-md);
-            padding: 10px 16px; font-size: var(--text-sm); display: none; }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
-        .status-dot.running { background: #fbbf24; animation: pulse 1.2s infinite; }
+        select { font: inherit; font-size: var(--text-sm); background: var(--surface-2); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 8px;
+            max-width: 100%; min-width: 0; flex: 1; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; flex-shrink: 0; }
+        .status-dot.running { background: var(--brand); animation: pulse 1.2s infinite; }
         @keyframes pulse { 50% { opacity: .35; } }
-        /* Inside the cockpit's project panel (?panel=1): the panel has its
-           own title bar. */
-        body.in-panel .bar, body.in-panel #review { display: none !important; }
-        @media (max-width: 720px) {
-            .wrap { flex-direction: column; }
-            .side { width: 100%; max-height: 38%; border-right: none;
-                border-bottom: 1px solid var(--border); }
+
+        /* Three questions on one screen: where does this chat stand, what was
+           it told, what did last night change (docs/plans/active/knowledge/mockup.html). */
+        .cols { display: grid; grid-template-columns: 270px minmax(0, 1fr) 420px; flex: 1; min-height: 0; }
+        .col { overflow-y: auto; padding: 14px 16px 28px; min-width: 0; }
+        .col + .col { border-left: 1px solid var(--border); }
+        .col h2 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em;
+            color: var(--text-secondary); margin: 2px 0 12px; font-weight: var(--weight-semibold); }
+        .note { color: var(--text-tertiary); font-size: var(--text-xs); line-height: 1.5; }
+        .tabs { display: none; }
+
+        /* The tree. A bar says how full a view is: amber near its limit
+           (the nightly job is choosing what stays), green with room. */
+        .level { display: block; width: 100%; text-align: left; border: 1px solid transparent; background: none;
+            border-radius: var(--radius-md); padding: 8px 10px; margin: 2px 0; }
+        .level:hover { background: var(--surface-2); }
+        .level.sub { margin-left: 14px; width: calc(100% - 14px); }
+        .level.on { background: var(--surface-2); border-color: var(--border-hover); box-shadow: inset 3px 0 0 var(--brand); }
+        .level .name { display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+            font-weight: var(--weight-semibold); font-size: var(--text-base); }
+        .level .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .level .name small { font-weight: var(--weight-normal); color: var(--text-tertiary); font-size: var(--text-xs); white-space: nowrap; }
+        .meter { margin: 5px 0 2px; }
+        .meter .lbl { display: flex; justify-content: space-between; font-size: var(--text-xs); color: var(--text-secondary); }
+        .meter .track { height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin-top: 3px; }
+        .meter .fill { height: 100%; background: var(--positive); }
+        .meter.full .fill { background: var(--brand); }
+
+        /* Two ways to read a level: what memory holds there, or what one
+           chat was given at its start. */
+        .switch { display: flex; gap: 4px; margin-bottom: 14px; padding: 3px; border: 1px solid var(--border);
+            border-radius: var(--radius-md); background: var(--surface-1); }
+        .switch button { flex: 1; border: none; background: none; color: var(--text-secondary); padding: 7px 8px; }
+        .switch button[aria-selected="true"] { background: var(--surface-3); color: var(--text-primary); }
+        .block h3 .edit { margin-left: auto; padding: 0; font-size: var(--text-xs); }
+        .records { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+        .records .row { display: flex; justify-content: space-between; gap: 10px; width: 100%; text-align: left;
+            border: none; border-radius: 0; background: none; padding: 10px 14px; font-size: var(--text-sm); }
+        .records .row + .row, .records .page + .row { border-top: 1px solid var(--border); }
+        .records .row .n { color: var(--text-tertiary); white-space: nowrap; }
+        .records .row[aria-expanded="true"] { background: var(--surface-2); }
+        .records .page { padding: 4px 14px 12px; background: var(--surface-1); }
+        .records .page ul { margin: 0; padding-left: 18px; }
+        .records .page li { font-size: var(--text-sm); line-height: 1.5; margin: 3px 0; overflow-wrap: anywhere; }
+        .records .page li::marker { color: var(--brand); }
+        h2.sub { margin-top: 22px; }
+
+        /* What a chat was told: the launch text, block by block. */
+        .pick { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+        .pick label { font-size: var(--text-sm); color: var(--text-secondary); }
+        .block { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1);
+            padding: 12px 14px; margin-bottom: 10px; }
+        .block.quiet { background: none; border-style: dashed; }
+        .block h3 { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap;
+            margin: 0 0 6px; font-size: var(--text-base); font-weight: var(--weight-semibold); }
+        .block h3 small { font-weight: var(--weight-normal); color: var(--text-secondary); font-size: var(--text-xs); }
+        .block .part { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-tertiary); margin: 10px 0 2px; }
+        .block ul { margin: 0; padding-left: 18px; }
+        .block li { font-size: var(--text-sm); line-height: 1.5; margin: 3px 0; overflow-wrap: anywhere; }
+        .block li::marker { color: var(--brand); }
+        .block p { margin: 4px 0; font-size: var(--text-sm); line-height: 1.5; color: var(--text-secondary); overflow-wrap: anywhere; }
+        .when { color: var(--text-tertiary); font-size: var(--text-xs); margin-left: 6px; white-space: nowrap; }
+        code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px;
+            border-radius: var(--radius-sm); word-break: break-all; }
+        .empty { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.6;
+            border: 1px dashed var(--border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 10px; }
+
+        /* Editing a view (an edit pins the line; a deletion sticks). */
+        .editor { display: none; flex-direction: column; min-height: 100%; }
+        .editor.on { display: flex; }
+        .editor .top { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+        .editor .top code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+        textarea { flex: 1; min-height: 360px; width: 100%; resize: vertical; border: 1px solid var(--border);
+            border-radius: var(--radius-md); outline: none; background: var(--surface-1);
+            color: var(--text-primary); padding: 12px; font: 13px/1.6 var(--font-mono); }
+
+        /* Last night: one colour per kind of change. */
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+        .chip { font-size: var(--text-xs); border-radius: 999px; background: var(--surface-2);
+            border: 1px solid var(--border); padding: 2px 9px; color: var(--text-secondary); }
+        .change { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: start;
+            padding: 10px 0; border-top: 1px solid var(--border); }
+        .tag { font-size: 11px; font-weight: var(--weight-semibold); text-align: center; border-radius: var(--radius-sm);
+            padding: 2px 6px; margin-top: 1px; }
+        .tag.added { color: var(--positive); background: oklch(0.70 0.15 155 / .14); }
+        .tag.replaced, .tag.merged { color: var(--info); background: oklch(0.70 0.12 240 / .14); }
+        .tag.moved, .tag.retired, .tag.not_kept { color: var(--text-secondary); background: var(--surface-2); }
+        .change .txt { font-size: var(--text-sm); line-height: 1.45; overflow-wrap: anywhere; }
+        .change .was { display: block; color: var(--text-tertiary); text-decoration: line-through; margin-top: 2px; }
+        .change .why { display: block; color: var(--text-tertiary); font-size: var(--text-xs); margin-top: 2px; }
+        .change.undone .txt { color: var(--text-tertiary); text-decoration: line-through; }
+        .change button { padding: 3px 10px; font-size: var(--text-xs); }
+        .undone-label { font-size: var(--text-xs); color: var(--text-tertiary); padding-top: 3px; }
+        details { border-top: 1px solid var(--border); padding: 10px 0; font-size: var(--text-sm); }
+        summary { cursor: pointer; color: var(--text-secondary); }
+        .foot { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+
+        .toast { position: fixed; bottom: 18px; right: 18px; background: var(--surface-2);
+            border: 1px solid var(--border); border-radius: var(--radius-md); max-width: calc(100vw - 36px);
+            padding: 10px 16px; font-size: var(--text-sm); display: none; z-index: 5; }
+
+        /* Inside the cockpit's project panel (?panel=1): the panel has its own title bar. */
+        body.in-panel .bar { display: none !important; }
+
+        /* Narrow (phone, or the cockpit's side panel): one question at a time. */
+        @media (max-width: 900px) {
+            .cols { display: block; overflow-y: auto; }
+            .col { overflow: visible; display: none; padding: 12px 14px 28px; }
+            .col.show { display: block; }
+            .col + .col { border-left: none; }
+            .tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--border);
+                background: var(--surface-1); flex-shrink: 0; }
+            .tabs button { flex: 1; min-height: 40px; padding: 6px 4px; background: none; border-color: transparent;
+                color: var(--text-secondary); white-space: nowrap; }
+            .tabs button[aria-selected="true"] { background: var(--surface-2); color: var(--text-primary);
+                border-color: var(--border-hover); }
+            .change { grid-template-columns: minmax(0, 1fr) auto; }
+            .change .tag { grid-column: 1 / -1; justify-self: start; }
         }
-        /* Phone: the header was one non-wrapping flex row with an intrinsic
-           ~434px minimum — it clipped "Dream now" off-screen at every phone
-           width (release-audit P1-02). Wrap it: title row, then a full-width
-           status/action row. The status text truncates so a long dream error
-           can never push the actions out of the viewport. */
+        /* Phone: the header wraps (release-audit P1-02): title row, then a
+           full-width status/action row whose status text truncates. */
         @media (max-width: 480px) {
             .bar { flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
             .bar .tagline { display: none; }
             .bar .spacer { flex-basis: 100%; margin: 0; height: 0; }
-            #dream-status { flex: 1; min-width: 0; overflow: hidden;
-                text-overflow: ellipsis; white-space: nowrap; }
+            #dream-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             #report-link { flex-shrink: 0; }
             .bar button { min-height: 44px; }
         }
@@ -94,179 +164,431 @@
 </head>
 <body>
     <header class="bar">
-        <h1>🌙 Knowledge</h1>
-        <span class="sub tagline">what your computer knows — consolidated nightly, yours to edit</span>
+        <h1>Memory</h1>
+        <span class="sub tagline">what agents are told, and what each night changed</span>
         <span class="spacer"></span>
         <span class="status-dot" id="dot"></span>
         <span class="sub" id="dream-status">…</span>
         <a class="sub" id="report-link" href="#" target="_blank" style="display:none">last report</a>
-        <button class="primary" id="dream-now">Dream now</button>
+        <button class="primary" id="dream-now">Run tonight's job now</button>
     </header>
-    <div class="wrap">
-        <nav class="side" id="side"></nav>
-        <main class="main">
-            <div class="editor-bar">
-                <code id="path">no file selected</code>
-                <span class="spacer" style="margin-left:auto"></span>
-                <button id="save" disabled>Save</button>
-            </div>
-            <div class="placeholder" id="placeholder">
-                <!-- One child span: the placeholder is a flex container, so bare
-                     text nodes + <b> tags each become flex ITEMS and render as
-                     broken columns at narrow widths. -->
-                <span>Pick a file on the left.<br><br>
-                The <b>user layer</b> is injected into every agent; each <b>project node</b>
-                only into agents spawned in that folder. Your edits always win over the
-                nightly sweep — this is your memory, the machine just maintains it.</span>
-            </div>
-            <textarea id="editor" style="display:none" spellcheck="false"></textarea>
-            <div class="review" id="review" style="display:none">
-                <h2>Review queue <span class="sub" id="review-count"></span></h2>
-                <div id="review-entries"></div>
-            </div>
-            <div class="toast" id="toast" role="status" aria-live="polite"></div>
-        </main>
+    <div class="tabs" role="tablist" aria-label="Memory">
+        <button role="tab" data-col="tree" aria-selected="false">Tree</button>
+        <button role="tab" data-col="middle" aria-selected="true">Memory</button>
+        <button role="tab" data-col="night" aria-selected="false">Last night</button>
     </div>
+    <main class="cols">
+        <section class="col" data-col="tree">
+            <h2>The tree</h2>
+            <div id="tree"></div>
+            <p class="note">A card is what an agent started at that level receives in full. Essentials are the
+                lines passed down to every level below. Record pages have no limit: agents search them.</p>
+        </section>
+        <section class="col show" data-col="middle">
+            <div id="reading">
+                <div class="switch" role="tablist" aria-label="Read this level">
+                    <button role="tab" data-mode="known" aria-selected="true">What it knows</button>
+                    <button role="tab" data-mode="told" aria-selected="false">What a chat was told</button>
+                </div>
+                <div id="known">
+                    <h2 id="known-title">What memory knows</h2>
+                    <div id="known-body"></div>
+                </div>
+                <div id="told" hidden>
+                    <h2 id="told-title">What a chat was told</h2>
+                    <div class="pick"><label for="chat">Chat</label><select id="chat"></select></div>
+                    <div id="told-body"></div>
+                </div>
+            </div>
+            <div class="editor" id="editor-wrap">
+                <div class="top">
+                    <button class="link" id="back">← Back</button>
+                    <code id="path"></code>
+                    <button id="save" disabled>Save</button>
+                </div>
+                <p class="note">Change a line and it is pinned: the nightly job keeps it as you wrote it.
+                    Delete a line and it stays deleted. Add a line and it is pinned at this level.</p>
+                <textarea id="editor" spellcheck="false" aria-label="View text"></textarea>
+            </div>
+        </section>
+        <section class="col" data-col="night">
+            <h2 id="night-title">Last night</h2>
+            <div class="pick"><label for="night">Night</label><select id="night"></select></div>
+            <div id="night-body"></div>
+        </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script>
         const $ = (id) => document.getElementById(id);
-        let currentPath = null, dirty = false;
-
+        // Labels here are folder names, chat titles and facts: text only,
+        // never HTML (SHE-146). Every node is built with textContent.
+        function el(tag, props = {}, ...kids) {
+            const n = document.createElement(tag);
+            for (const [k, v] of Object.entries(props)) {
+                if (k === 'class') n.className = v;
+                else if (k === 'text') n.textContent = v;
+                else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+                else n.setAttribute(k, v);
+            }
+            for (const kid of kids) if (kid != null) n.append(kid);
+            return n;
+        }
         function toast(msg) {
             const t = $('toast'); t.textContent = msg; t.style.display = 'block';
-            setTimeout(() => t.style.display = 'none', 2500);
+            clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = 'none', 3000);
         }
-        // Every click handler here is async — a rejected save/approve/dream call
-        // must surface, not vanish as an unhandled rejection.
-        window.addEventListener('unhandledrejection', (e) => {
-            console.error('knowledge action failed:', e.reason);
-            toast('Failed: ' + (e.reason && e.reason.message || e.reason));
-        });
         async function api(path, opts) {
             const r = await fetch(path, opts);
             if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
             return r.json();
         }
+        const fmt = (n) => Number(n).toLocaleString('en-US');
+        const where = (lv) => lv === '' ? 'You' : '~/' + lv;
+        const day = (ts) => new Date(ts * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        const nightName = (run) => {
+            const d = new Date(`${run.slice(0, 4)}-${run.slice(4, 6)}-${run.slice(6, 8)}T${run.slice(9, 11)}:${run.slice(11, 13)}`);
+            return d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        };
 
-        // Labels are folder and file names (an agent's cwd, a name the dream
-        // LLM chose): text only, never HTML (SHE-146).
-        function sideItem(label, path, cls = '', empty = false) {
-            const b = document.createElement('button');
-            b.className = 'item ' + cls;
-            b.textContent = label;
-            if (empty) {
-                const dim = document.createElement('span');
-                dim.className = 'dim';
-                dim.textContent = ' (empty)';
-                b.appendChild(dim);
-            }
-            if (path) b.onclick = () => openFile(path, b);
-            else { b.disabled = true; b.classList.add('dim'); }
-            return b;
-        }
-
-        // ?project=<folder> shows one project's memory only (the projects
-        // column's Knowledge button, SHE-168); ?panel=1 drops the page header.
+        // ?project=<folder> opens on one project (the projects column's
+        // Knowledge button, SHE-168); ?chat=<id> on one chat (K16); ?panel=1
+        // drops the page header.
         const PARAMS = new URLSearchParams(location.search);
         const ONLY_PROJECT = PARAMS.get('project');
+        const CHAT = PARAMS.get('chat') ? Number(PARAMS.get('chat')) : null;
         if (PARAMS.get('panel')) document.body.classList.add('in-panel');
 
-        async function loadProject(t) {
-            const side = $('side'); side.innerHTML = '';
-            const node = t.nodes.find(n => n.node === ONLY_PROJECT);
-            if (!node) {
-                const p = document.createElement('div');
-                p.className = 'item dim';
-                p.style.whiteSpace = 'normal';
-                p.textContent = 'Nothing yet for this project. The nightly dream writes what agents learned here after you have worked in it.';
-                side.appendChild(p);
+        let data = null, level = '', dirty = false, currentPath = null;
+
+        function meter(label, view) {
+            if (!view) return null;
+            const share = view.limit ? view.chars / view.limit : 0;
+            return el('div', { class: 'meter' + (share >= 0.85 ? ' full' : '') },
+                el('div', { class: 'lbl' }, el('span', { text: label }),
+                    el('span', { text: `${fmt(view.chars)} of ${fmt(view.limit)}` })),
+                el('div', { class: 'track' }, el('div', { class: 'fill', style: `width:${Math.min(100, share * 100).toFixed(1)}%` })));
+        }
+
+        // A chat's launch key is "" for ~, "/" outside home, else its folder.
+        function inLevel(key, lv) {
+            if (lv === '') return key === '' || key === '/';
+            return key === lv || key.startsWith(lv + '/');
+        }
+
+        function renderTree() {
+            const box = $('tree'); box.replaceChildren();
+            if (!data.levels.length) {
+                box.append(el('div', { class: 'empty', text: 'Nothing yet. The nightly job fills memory after your first conversations.' }));
                 return;
             }
-            const first = sideItem('Project notes', node.index);
-            side.appendChild(first);
-            for (const d of node.details) side.appendChild(sideItem(d.split('/').pop(), d, 'detail'));
-            if (node.index) openFile(node.index, first);
+            for (const l of data.levels) {
+                const b = el('button', { class: 'level' + (l.level.includes('/') ? ' sub' : '') + (l.level === level ? ' on' : ''), onclick: () => selectLevel(l.level) },
+                    el('div', { class: 'name' }, el('span', { text: treeName(l.level), title: where(l.level) }),
+                        el('small', { text: `${fmt(l.facts)} facts${l.notes ? ` · ${l.notes} note${l.notes > 1 ? 's' : ''} today` : ''}` })),
+                    meter('card', l.card), meter('essentials', l.essentials));
+                if (l.level === level) b.setAttribute('aria-current', 'true');
+                box.append(b);
+            }
         }
 
-        async function loadTree() {
-            const t = await api('/api/knowledge/tree');
-            if (ONLY_PROJECT) return loadProject(t);
-            const side = $('side'); side.innerHTML = '';
-            let h = document.createElement('h2'); h.textContent = 'You (injected everywhere)';
-            side.appendChild(h);
-            for (const f of t.user_layer)
-                side.appendChild(sideItem(f.path, f.exists ? f.path : null, '', !f.exists));
-            h = document.createElement('h2'); h.textContent = 'Cross-project (root scope)';
-            side.appendChild(h);
-            for (const f of t.root_layer)
-                side.appendChild(sideItem(f.path, f.exists ? f.path : null, '', !f.exists));
-            h = document.createElement('h2'); h.textContent = 'Projects (per-folder memory)';
-            side.appendChild(h);
-            if (!t.nodes.length) {
-                const p = document.createElement('div');
-                p.className = 'item dim';
-                p.textContent = 'nothing yet — the first dream fills this';
-                side.appendChild(p);
-            }
-            for (const n of t.nodes) {
-                side.appendChild(sideItem('📁 ~/' + n.node, n.index));
-                for (const d of n.details)
-                    side.appendChild(sideItem(d.split('/').pop(), d, 'detail'));
-            }
-            loadReview();
+        // A sub-area sits indented under its level: named by the part below it.
+        function treeName(lv) {
+            const parent = data.levels.map(l => l.level).filter(l => l && lv.startsWith(l + '/')).sort((a, b) => b.length - a.length)[0];
+            return parent ? lv.slice(parent.length + 1) : where(lv);
         }
 
-        async function openFile(path, btn) {
+        // A sub-area's chats also receive the essentials of each level above it.
+        function aboveEssentials(lv) {
+            const above = data.levels.map(l => l.level).filter(l => l && lv.startsWith(l + '/'));
+            return above.map(l => ` and the essentials of ~/${l}`).join('');
+        }
+
+        // Tapping a level shows what memory holds there (SHE-198), never a
+        // chat's launch text: that is the second view, chosen on purpose.
+        function selectLevel(lv) {
+            if (dirty && !confirm('Discard unsaved changes?')) return;
+            level = lv; dirty = false;
+            showEditor(false);
+            setMode('known');
+            renderTree(); renderChats(); renderNight();
+            show('middle');
+        }
+
+        let mode = 'known';
+        function setMode(m) {
+            mode = m;
+            document.querySelectorAll('.switch button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
+            $('known').hidden = m !== 'known';
+            $('told').hidden = m !== 'told';
+            return m === 'known' ? renderKnown() : loadTold();
+        }
+        document.querySelectorAll('.switch button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+
+        // --- what memory knows at a level --------------------------------------------------
+        async function renderKnown() {
+            const l = data.levels.find(x => x.level === level);
+            $('known-title').textContent = level === '' ? 'What memory knows about you' : `What memory knows about ~/${level}`;
+            const body = $('known-body');
+            if (!l) { body.replaceChildren(el('div', { class: 'empty', text: 'Nothing here yet. The nightly job fills it after conversations in this folder.' })); return; }
+            body.replaceChildren(el('p', { class: 'note', text: 'Loading…' }));
+            const read = (view) => view ? api('/api/knowledge/file?path=' + encodeURIComponent(view.path)) : null;
+            const [card, essentials] = await Promise.all([read(l.card), read(l.essentials)]);
+            body.replaceChildren(el('p', { class: 'note', text: level === ''
+                ? 'Your card is what a chat started in ~ receives. Your essentials go to chats in every project.'
+                : `This card is what a chat started in ~/${level} receives, after your essentials${aboveEssentials(level)}.` }));
+            for (const [view, f] of [[l.card, card], [l.essentials, essentials]]) {
+                if (!f) continue;
+                const shown = blocks(f.content);
+                const head = shown[0] && shown[0].querySelector('h3');
+                if (head) head.append(el('button', { class: 'link edit', text: 'Edit', onclick: () => openFile(view.path) }));
+                body.append(...shown);
+            }
+            if (l.records.length) {
+                body.append(el('h2', { class: 'sub', text: `Record pages: ${l.records.length}, looked up when needed` }));
+                const box = el('div', { class: 'records' });
+                for (const r of l.records) {
+                    const row = el('button', { class: 'row', 'aria-expanded': 'false' },
+                        el('span', { text: r.topic }), el('span', { class: 'n', text: `${r.facts} fact${r.facts === 1 ? '' : 's'}` }));
+                    row.onclick = async () => {
+                        const open = row.getAttribute('aria-expanded') === 'true';
+                        row.setAttribute('aria-expanded', String(!open));
+                        if (open) { row.nextSibling?.classList?.contains('page') && row.nextSibling.remove(); return; }
+                        const f = await api('/api/knowledge/file?path=' + encodeURIComponent(r.path));
+                        const list = el('ul', {}, ...f.content.split('\n').slice(1).filter(x => x.startsWith('- ')).map(factItem));
+                        row.after(el('div', { class: 'page' }, list,
+                            el('button', { class: 'link', text: 'Edit this page', onclick: () => openFile(r.path) })));
+                    };
+                    box.append(row);
+                }
+                body.append(box);
+            }
+        }
+
+        // One printed line ("- text  [13 Nov]") as a list item with its date apart.
+        function factItem(line) {
+            const m = line.slice(2).match(/^(.*?)\s+\[([^\]]+)\]$/);
+            return el('li', {}, m ? m[1] : line.slice(2), m ? el('span', { class: 'when', text: m[2] }) : null);
+        }
+
+        // --- what a chat was told (K16) -------------------------------------------------
+        function renderChats(prefer) {
+            const sel = $('chat'); sel.replaceChildren();
+            const mine = data.chats.filter(c => inLevel(c.key, level));
+            for (const c of mine) sel.append(el('option', { value: 'c' + c.id, text: c.title }));
+            sel.append(el('option', { value: 'f', text: `The last chat started in ${level ? '~/' + level : '~'}` }));
+            sel.value = prefer != null && mine.some(c => c.id === prefer) ? 'c' + prefer : (mine.length ? 'c' + mine[0].id : 'f');
+            if (mode === 'told') loadTold();
+        }
+        $('chat').onchange = loadTold;
+
+        async function loadTold() {
+            const v = $('chat').value;
+            const q = v.startsWith('c') ? 'chat=' + v.slice(1) : 'folder=' + encodeURIComponent(level);
+            const body = $('told-body'); body.replaceChildren(el('p', { class: 'note', text: 'Loading…' }));
+            const t = await api('/api/knowledge/told?' + q);
+            $('told-title').textContent = t.chat ? `What "${t.chat}" was told when it started` : `What the last chat in ${t.where} was told`;
+            body.replaceChildren();
+            if (!t.text) { body.append(el('div', { class: 'empty', text: t.note })); return; }
+            if (!t.exact) body.append(el('div', { class: 'empty', text: t.note }));
+            else body.append(el('p', { class: 'note', text: (t.started ? `Started ${day(t.started)} in ${t.where}. ` : `In ${t.where}. `) +
+                `Given from ${day(t.recorded)}: exactly what the agent received, after ShellTeam's own instructions.` }));
+            for (const b of blocks(t.text)) body.append(b);
+        }
+
+        // The launch text: a header, one block per view (its first line is its
+        // title, with how full it is), then the closing lines.
+        function blocks(text) {
+            const out = [];
+            for (const chunk of text.split(/\n\n+/)) {
+                const lines = chunk.split('\n').filter(Boolean);
+                if (!lines.length) continue;
+                const first = lines[0];
+                if (first.startsWith('# ')) { out.push(el('div', { class: 'block quiet' }, el('p', { text: first.slice(2) }))); continue; }
+                const size = first.match(/^(.*?)\s+([\d,]+ of [\d,]+)\s*$/);
+                if (!size && !/^[A-Z]{3,}/.test(first)) {
+                    out.push(el('div', { class: 'block quiet' }, ...lines.map(l => el('p', {}, ...withCode(l)))));
+                    continue;
+                }
+                const block = el('div', { class: 'block' }, el('h3', {}, el('span', { text: size ? size[1].trim() : first }),
+                    size ? el('small', { text: size[2] + ' characters' }) : null));
+                const rest = lines.slice(1), extra = [];
+                let list = null, shown = 0;
+                for (const line of rest) {
+                    let node;
+                    if (line.startsWith('- ')) {
+                        node = factItem(line);
+                    } else {
+                        node = el('div', { class: 'part', text: line });
+                    }
+                    if (shown >= 12) { extra.push(node); continue; }
+                    shown++;
+                    if (node.tagName === 'LI') { if (!list) { list = el('ul'); block.append(list); } list.append(node); }
+                    else { list = null; block.append(node); }
+                }
+                // A part heading never stays behind without its lines.
+                if (extra.length && block.lastChild.classList?.contains('part')) extra.unshift(block.lastChild);
+                if (extra.length) {
+                    const more = el('ul'); more.hidden = true;
+                    for (const n of extra) more.append(n.tagName === 'LI' ? n : el('li', { style: 'list-style:none' }, n));
+                    const btn = el('button', { class: 'link', text: `Show all ${rest.length} lines`, onclick: () => { more.hidden = false; btn.remove(); } });
+                    block.append(more, btn);
+                }
+                out.push(block);
+            }
+            return out;
+        }
+        function withCode(line) {
+            return line.split(/(`[^`]+`)/).map(p => p.length > 1 && p.startsWith('`') && p.endsWith('`') ? el('code', { text: p.slice(1, -1) }) : p);
+        }
+
+        // --- editing a view (K17a) -----------------------------------------------------
+        function showEditor(on) {
+            $('editor-wrap').classList.toggle('on', on);
+            $('reading').style.display = on ? 'none' : '';
+            if (!on) currentPath = null;
+        }
+        async function openFile(path) {
             if (dirty && !confirm('Discard unsaved changes?')) return;
             const f = await api('/api/knowledge/file?path=' + encodeURIComponent(path));
             currentPath = path; dirty = false;
             $('path').textContent = path;
             $('editor').value = f.content;
-            $('editor').style.display = 'block';
-            $('placeholder').style.display = 'none';
             $('save').disabled = true;
-            document.querySelectorAll('.side .item').forEach(el => el.classList.remove('active'));
-            if (btn) btn.classList.add('active');
+            showEditor(true);
+            show('middle');
         }
-
-        $('editor').addEventListener('input', () => {
-            dirty = true; $('save').disabled = false;
-        });
+        $('back').onclick = () => { if (!dirty || confirm('Discard unsaved changes?')) { dirty = false; showEditor(false); } };
+        $('editor').addEventListener('input', () => { dirty = true; $('save').disabled = false; });
         $('save').onclick = async () => {
-            await api('/api/knowledge/file', {
-                method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: currentPath, content: $('editor').value }),
-            });
-            dirty = false; $('save').disabled = true; toast('Saved ' + currentPath);
+            try {
+                const saved = await api('/api/knowledge/file', {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: currentPath, content: $('editor').value }),
+                });
+                // A view is printed from the facts: show it as it now stands.
+                $('editor').value = saved.content;
+                const n = (saved.taken_in || []).length;
+                toast(`Saved: ${n} change${n === 1 ? '' : 's'} taken in`);
+                dirty = false; $('save').disabled = true;
+                await refresh();
+            } catch (e) { toast('Not saved: ' + e.message); }
         };
 
-        async function loadReview() {
-            const q = await api('/api/knowledge/review');
-            const box = $('review'), list = $('review-entries');
-            if (!q.entries.length) { box.style.display = 'none'; return; }
-            box.style.display = 'block';
-            $('review-count').textContent = q.entries.length + ' proposal(s) the dream was not sure about';
-            list.innerHTML = '';
-            for (const e of q.entries) {
-                const div = document.createElement('div'); div.className = 'entry';
-                const scope = e.node ? '~/' + e.node : 'root';
-                div.innerHTML = `<div class="txt">${escapeHtml(e.op.text)}
-                    <div class="meta">${scope} · ${e.op.file || 'index'} · ${e.op.confidence} · ${e.run}</div></div>`;
-                const ok = document.createElement('button'); ok.textContent = '✓ keep';
-                const no = document.createElement('button'); no.textContent = '✗ drop';
-                ok.onclick = () => decide(e.id, true);
-                no.onclick = () => decide(e.id, false);
-                div.appendChild(ok); div.appendChild(no);
-                list.appendChild(div);
-            }
+        // --- last night (K17b) ----------------------------------------------------------
+        const KINDS = [['added', 'Added'], ['replaced', 'Replaced'], ['merged', 'Merged'], ['moved', 'Moved'], ['retired', 'Retired']];
+
+        function renderNights() {
+            const sel = $('night'); sel.replaceChildren();
+            for (const n of data.nights) sel.append(el('option', { value: n.run, text: `${nightName(n.run)} · ${n.new_facts} new` }));
+            sel.disabled = !data.nights.length;
         }
-        async function decide(id, approve) {
-            await api('/api/knowledge/review/' + id, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ approve }),
-            });
-            toast(approve ? 'Learned it.' : 'Dropped it.');
-            loadTree();
+        $('night').onchange = renderNight;
+
+        async function renderNight() {
+            const body = $('night-body');
+            $('night-title').textContent = `Last night in ${level === '' ? 'your own memory' : '~/' + level}`;
+            const run = $('night').value;
+            if (!run) { body.replaceChildren(el('div', { class: 'empty', text: 'No night has run yet. The nightly job runs at 03:44 UTC, or now with the button above.' })); return; }
+            const n = await api('/api/knowledge/night/' + encodeURIComponent(run));
+            body.replaceChildren();
+            const mine = n.levels[level];
+            const counts = mine ? KINDS.filter(([k]) => mine[k].length).map(([k, label]) => `${mine[k].length} ${label.toLowerCase()}`) : [];
+            if (mine && mine.confirmed) counts.push(`${mine.confirmed} confirmed`);
+            if (mine && mine.split) counts.push(`new card for ~/${mine.split.folder}`);
+            body.append(el('div', { class: 'chips' }, ...(counts.length ? counts : ['nothing changed here']).map(c => el('span', { class: 'chip', text: c }))));
+            if (mine) {
+                for (const u of mine.untouched) body.append(el('div', { class: 'empty', text: `Left untouched: ${u.why}. Its ${u.candidates} candidate(s) wait for the next night.` }));
+                if (mine.split) body.append(splitChange(run, mine.split));
+                for (const [k, label] of KINDS) for (const item of mine[k]) body.append(change(run, k, label, item));
+                if (mine.not_kept.length) {
+                    const d = el('details', {}, el('summary', { text: `Not kept: ${mine.not_kept.length}, each with its reason` }));
+                    for (const item of mine.not_kept) d.append(el('div', { class: 'change' }, el('span', { class: 'tag not_kept', text: 'Not kept' }),
+                        el('span', { class: 'txt' }, item.text, el('span', { class: 'why', text: item.why })), el('span')));
+                    body.append(d);
+                }
+            }
+            const foot = el('div', { class: 'foot' });
+            if (n.undone) foot.append(el('span', { class: 'note', text: 'This whole night has been undone.' }));
+            else foot.append(el('button', { text: 'Undo the whole night', onclick: () => undoNight(run) }));
+            if (n.report) foot.append(el('a', { href: '/reports/' + encodeURIComponent(n.report), target: '_blank', text: 'Full report' }));
+            body.append(foot);
+            if (n.not_read.length) body.append(el('p', { class: 'note', text: 'Not read that night: ' + n.not_read.join('; ') + '.' }));
+        }
+
+        function change(run, kind, label, item) {
+            const txt = el('span', { class: 'txt' }, item.text);
+            if (kind === 'replaced') txt.append(el('span', { class: 'was', text: item.old }));
+            if (kind === 'merged') for (const o of item.others) txt.append(el('span', { class: 'was', text: o }));
+            if (kind === 'moved') txt.append(el('span', { class: 'why', text: 'now under ' + item.to }));
+            const action = item.undone ? el('span', { class: 'undone-label', text: 'Undone' })
+                : el('button', { text: 'Undo', 'aria-label': `Undo: ${item.text}`, onclick: () => undoOne(run, item.id) });
+            return el('div', { class: 'change' + (item.undone ? ' undone' : '') }, el('span', { class: `tag ${kind}`, text: label }), txt, action);
+        }
+
+        // K18: a full card handed a group of facts to a sub-folder's own card.
+        function splitChange(run, s) {
+            const txt = el('span', { class: 'txt' }, `~/${s.folder} has its own card: ${s.facts} facts moved there (${s.card} from this card).`);
+            if (s.why) txt.append(el('span', { class: 'why', text: s.why }));
+            for (const e of s.essentials) txt.append(el('span', { class: 'why', text: 'Also given to its chats: ' + e }));
+            const action = s.undone ? el('span', { class: 'undone-label', text: 'Undone' })
+                : el('button', { text: 'Undo', 'aria-label': `Undo the card of ~/${s.folder}`, onclick: () => undoSplit(run, s.folder) });
+            return el('div', { class: 'change' + (s.undone ? ' undone' : '') }, el('span', { class: 'tag moved', text: 'New card' }), txt, action);
+        }
+        async function undoSplit(run, folder) {
+            if (!confirm(`Take back the card of ~/${folder}? Its facts return to the level above.`)) return;
+            try {
+                await api(`/api/knowledge/night/${encodeURIComponent(run)}/undo-split/${folder.split('/').map(encodeURIComponent).join('/')}`, { method: 'POST' });
+                toast('Undone. The cards are printed again.');
+                await refresh();
+            } catch (e) { toast('Not undone: ' + e.message); }
+        }
+
+        async function undoOne(run, id) {
+            try {
+                await api(`/api/knowledge/night/${encodeURIComponent(run)}/undo/${encodeURIComponent(id)}`, { method: 'POST' });
+                toast('Undone. The cards are printed again.');
+                await refresh();
+            } catch (e) { toast('Not undone: ' + e.message); }
+        }
+        async function undoNight(run) {
+            if (!confirm(`Put every level back as it was before the night of ${nightName(run)}? What it read stays read.`)) return;
+            try {
+                const r = await api(`/api/knowledge/night/${encodeURIComponent(run)}/undo`, { method: 'POST' });
+                toast(`Night undone (${r.undone} level change${r.undone === 1 ? '' : 's'}).`);
+                await refresh();
+            } catch (e) { toast('Not undone: ' + e.message); }
+        }
+
+        // --- narrow screens: one column at a time ------------------------------------------
+        function show(col) {
+            document.querySelectorAll('.col').forEach(c => c.classList.toggle('show', c.dataset.col === col));
+            document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.col === col)));
+            if (col === 'tree') scrollToLevel();
+        }
+        function scrollToLevel() {
+            const on = document.querySelector('.level.on');
+            if (on) on.scrollIntoView({ block: 'nearest' });
+        }
+        document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => show(b.dataset.col));
+
+        async function refresh() {
+            const keepNight = $('night').value;
+            data = await api('/api/knowledge/overview');
+            renderTree(); renderNights();
+            if (keepNight && data.nights.some(n => n.run === keepNight)) $('night').value = keepNight;
+            await renderNight();
+            if (!$('editor-wrap').classList.contains('on')) await (mode === 'known' ? renderKnown() : loadTold());
+        }
+
+        async function start() {
+            data = await api('/api/knowledge/overview');
+            const chat = CHAT != null ? data.chats.find(c => c.id === CHAT) : null;
+            const levels = data.levels.map(l => l.level);
+            const fit = (key) => levels.filter(l => inLevel(key, l)).sort((a, b) => b.length - a.length)[0] ?? '';
+            level = chat ? fit(chat.key) : (ONLY_PROJECT && levels.includes(ONLY_PROJECT) ? ONLY_PROJECT : '');
+            renderTree(); renderNights(); renderChats(chat ? chat.id : null); renderNight(); renderKnown();
+            scrollToLevel();
         }
 
         async function refreshStatus() {
@@ -274,38 +596,31 @@
                 const s = await api('/api/knowledge/dream/status');
                 $('dot').classList.toggle('running', s.running);
                 const st = s.state || {};
-                $('dream-status').textContent = s.running ? 'dreaming…'
+                $('dream-status').textContent = s.running ? 'the nightly job is running…'
                     : s.error ? 'last run failed'
-                    : st.last_run ? `last dream ${st.last_run} (${st.last_status})`
-                    : 'never dreamed yet';
-                if (s.latest_report) {
-                    $('report-link').href = s.latest_report;
-                    $('report-link').style.display = '';
-                }
+                    : st.last_run ? `last run ${nightName(st.last_run)} (${st.last_status})`
+                    : 'not run yet';
+                if (s.latest_report) { $('report-link').href = s.latest_report; $('report-link').style.display = ''; }
                 $('dream-now').disabled = s.running;
-                if (s.error) toast('Dream failed: ' + s.error);
+                if (s.error) toast('The nightly job failed: ' + s.error);
                 return s.running;
             } catch (e) {
                 // A transient fetch failure must not silently stop the poll and
-                // declare a still-running dream finished — keep polling, loudly.
-                console.error('dream status poll failed:', e);
+                // declare a still-running job finished: keep polling, loudly.
+                console.error('status poll failed:', e);
                 return true;
             }
         }
         $('dream-now').onclick = async () => {
             await api('/api/knowledge/dream/run', { method: 'POST' });
-            toast('Dreaming started — this can take a few minutes.');
+            toast('The nightly job started. It takes a few minutes.');
             const poll = setInterval(async () => {
-                if (!await refreshStatus()) { clearInterval(poll); loadTree(); }
+                if (!await refreshStatus()) { clearInterval(poll); refresh(); }
             }, 4000);
             refreshStatus();
         };
 
-        function escapeHtml(s) {
-            return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-        }
-
-        loadTree().catch(e => toast('Failed to load: ' + e.message));
+        start().catch(e => toast('Failed to load: ' + e.message));
         refreshStatus();
     </script>
 </body>

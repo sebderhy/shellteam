@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { CodingAgent } from "./coding-agent.mjs";
 import { claudeLayerArgs } from "./agent-layer.mjs";
 import { hasWriter } from "./task-liveness.mjs";
+import { messageText } from "./history.mjs";
 
 const WATCHDOG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;    // 10 minutes — kill idle CLI process
@@ -466,6 +467,17 @@ export class ClaudeCliAgent extends CodingAgent {
       return;
     }
 
+    // --- API error (main agent) ---
+    // Claude Code reports a failed API call as a SYNTHETIC assistant message
+    // carrying the error text, then a `result` with is_error. Those are not
+    // words the agent said: the `result` turns them into the turn's error, so
+    // the chat shows a red notice instead of an ordinary reply (SHE-189).
+    if (msg.type === "assistant" && !isSubagent && msg.is_api_error_message) {
+      console.warn(`[claude-cli] API error (status=${msg.api_error_status ?? "-"}, ${msg.error || "-"}): ${messageText(msg).slice(0, 300)}`);
+      this._hadStreamEvents = false;
+      return;
+    }
+
     // --- assistant (complete message, main agent) ---
     if (msg.type === "assistant" && !isSubagent) {
       // Flush streaming text if we were accumulating it
@@ -528,7 +540,7 @@ export class ClaudeCliAgent extends CodingAgent {
     if (msg.type === "user" && msg.message?.content && !isSubagent) {
       const content = Array.isArray(msg.message.content) ? msg.message.content : [msg.message.content];
       for (const block of content) {
-        this._trackBackgroundTask(block);
+        this._trackBackgroundTask(block, msg.tool_use_result);
         if (block.type === "tool_result" && block.tool_use_id) {
           let resultContent = block.content;
           if (Array.isArray(resultContent)) {
@@ -578,7 +590,9 @@ export class ClaudeCliAgent extends CodingAgent {
         // context-window occupancy the meter needs (SHE-48).
         usage: this._lastMainUsage || msg.usage,
         is_error: msg.is_error || false,
-        errors: msg.errors,
+        // An API error's `result` carries its text in `result`, not `errors`.
+        errors: msg.errors || (msg.is_error && msg.result ? [msg.result] : undefined),
+        api_error: msg.terminal_reason === "api_error" ? { status: msg.api_error_status ?? null } : undefined,
       });
       this._lastMainUsage = null;
       return;
@@ -801,18 +815,24 @@ export class ClaudeCliAgent extends CodingAgent {
     this.emit("background_tasks", { tasks: this._bgTasksSnapshot() });
   }
 
-  _trackBackgroundTask(block) {
+  _trackBackgroundTask(block, toolUseResult) {
     const text = this._blockText(block);
-    if (!text) return;
-    // Launch: the Bash tool's own result announces the background ID and the
-    // output file its shell writes to — the handle the reaper tests liveness on.
-    const launched = text.match(/running in background with ID:?\s*([A-Za-z0-9_-]+)/i);
-    if (launched) {
+    if (block?.type === "tool_result") {
+      // Launch: the CLI's structured backgroundTaskId, for run_in_background
+      // and for a command its timeout moved to the background. Never the
+      // result's text: that is the command's own output, and a grep or a log
+      // can quote the launch sentence (a phantom task "263", 14 Nov 2026).
+      const id = toolUseResult?.backgroundTaskId;
+      if (!id) return;
+      // The output file its shell writes to: the handle the reaper tests
+      // liveness on. A result with a backgroundTaskId is the CLI's own launch
+      // sentence, not command output.
       const outputFile = text.match(/Output is being written to:\s*(\S+)/i)?.[1]?.replace(/\.$/, "") || null;
-      this._trackTaskStart(launched[1], { outputFile });
+      this._trackTaskStart(id, { outputFile });
       return;
     }
-    // Completion: the harness injects a <task-notification> user message.
+    // Completion: the harness injects a <task-notification> user message
+    // (text, never a tool's output).
     if (text.includes("<task-notification>")) {
       this._trackTaskEnd(
         text.match(/<task-id>([A-Za-z0-9_-]+)<\/task-id>/)?.[1],

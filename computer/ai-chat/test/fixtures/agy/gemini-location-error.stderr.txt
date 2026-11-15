@@ -1,0 +1,2 @@
+error: FAILED_PRECONDITION (code 400): User location is not supported for the API use.
+AGY_ERROR: {"short_error":"FAILED_PRECONDITION (code 400): User location is not supported for the API use.","status":"INVALID_ARGUMENT","error_code":400,"code_kind":"http","retryable":false,"error_id":"0d6e3e53-39bc-4e6b-8601-6a0fb066375c-1"}

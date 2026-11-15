@@ -73,7 +73,7 @@ test("core: managed-terminal codex argv is EXACTLY the bare CLI's", () => {
 });
 
 test("core: no spawn argv references ~/.shellteam", () => {
-  for (const model of ["claude-opus-5", "gpt-5.6-sol", "gemini-3.1-pro", "kimi-k3"]) {
+  for (const model of ["claude-opus-5", "gpt-5.6-sol", "gemini-4-argon-high", "kimi-k3"]) {
     const { args } = terminalSpawn(model);
     for (const a of args) {
       assert.ok(!String(a).includes(".shellteam"),

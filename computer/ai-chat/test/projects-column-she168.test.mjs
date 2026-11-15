@@ -231,3 +231,36 @@ test("SHE-169: home-folder chats are 'General ~', and feedback is a bug, not a c
   assert.match(feedback, /m8 2 1\.88 1\.88/, "the bug icon");
   assert.doesNotMatch(feedback, /M21 15a2 2 0 0 1-2 2H7l-4 4V5/, "not the chat bubble");
 });
+
+test("SHE-184: a folder with no agent yet is findable and one step from a chat", () => {
+  const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
+  assert.match(js, /for \(const w of freeFolders\(\)\) items\.push\(\{[^}]*Start an agent in/, "Ctrl+K lists the free folders");
+  assert.match(js, /openAddDialog\(startMode = projects\.length && freeFolders\(\)\.length \? 'open' : 'new'\)/,
+    "past the first project the dialog opens on Existing folder");
+  assert.match(js, /Open a folder or add a project/, "the button says it opens existing folders");
+});
+
+test("SHE-187: on a phone the chat's name and a swipe open the list; the model name stays visible", () => {
+  const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
+  assert.match(js, /getElementById\('pjAgent'\)\.addEventListener\('click'[\s\S]{0,120}showList\(true\)/);
+  assert.match(js, /onSwipe\(document\.querySelector\('\.chat-main'\), 'right'/);
+  assert.match(js, /onSwipe\(side, 'left'/);
+  const css = readFileSync(join(PUBLIC, "projects.css"), "utf8");
+  const phone = css.slice(css.indexOf("@media (max-width: 480px)"));
+  assert.match(phone, /\.btn-ai-model \{ display: inline;/);
+  assert.doesNotMatch(phone.slice(0, phone.indexOf("\n}\n")), /\.btn-ai-model \{ display: none; \}/);
+});
+
+test("SHE-197: a dashboard message is judged only once the box settings are known", () => {
+  // The cockpit learns the dashboard's address from /api/box. The dashboard's
+  // first message (which says the Knowledge page exists) can arrive earlier;
+  // judged against the placeholder address it was dropped, and the project
+  // header lost its Knowledge button until something resent the state.
+  const js = readFileSync(join(PUBLIC, "app.js"), "utf8");
+  const listener = js.slice(js.indexOf("// From the dashboard itself"));
+  const handler = listener.slice(0, listener.indexOf("});") + 3);
+  assert.match(handler, /boxReady\.then\(/, "the origin check waits for /api/box");
+  assert.ok(handler.indexOf("boxReady.then(") < handler.indexOf("fileBaseUrl()"),
+    "nothing is compared with the dashboard address before it is known");
+  assert.match(js, /const boxReady = loadBoxInfo\(\)/, "one load, shared by startup and the listener");
+});

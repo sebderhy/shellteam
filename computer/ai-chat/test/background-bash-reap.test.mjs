@@ -33,19 +33,47 @@ function agentWithFakeProcess() {
   return { agent, killed };
 }
 
+// As the CLI streams it: the structured backgroundTaskId beside the text
+// (fixture: claude-stream-background-task.jsonl).
 function bashLaunchResult(id, outputFile = `/tmp/${id}.output`) {
+  return toolResult(`Command running in background with ID: ${id}. Output is being written to: ${outputFile}. You will be notified when it completes.`,
+    { backgroundTaskId: id });
+}
+
+function toolResult(content, toolUseResult = {}) {
   return {
     type: "user",
-    message: {
-      role: "user",
-      content: [{
-        type: "tool_result",
-        tool_use_id: "toolu_bash1",
-        content: `Command running in background with ID: ${id}. Output is being written to: ${outputFile}. You will be notified when it completes.`,
-      }],
-    },
+    message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_bash1", content }] },
+    tool_use_result: { stdout: "", stderr: "", interrupted: false, ...toolUseResult },
   };
 }
+
+test("a command whose OUTPUT quotes the launch sentence starts no task", () => {
+  // Seb's box, 14 Nov: grepping the cockpit's own source printed the comment
+  // "...(\"running in background with ID:" with "263:" on the next line. The
+  // cockpit tracked a task "263" that never existed and later reported it
+  // lost when the CLI restarted.
+  const { agent } = agentWithFakeProcess();
+  agent._handleMessage(toolResult('44:    // Launch is observed in the tool_result ("running in background with ID:\n263:      // Background tasks live inside'));
+  agent._handleMessage(toolResult("Command running in background with ID: fake1. Output is being written to: /tmp/fake1.output."));
+  assert.equal(agent._bgTasks.size, 0);
+});
+
+test("a command moved to the background by its timeout is tracked", () => {
+  const { agent } = agentWithFakeProcess();
+  agent._handleMessage(toolResult(
+    "Command did not complete within its 120s timeout and was moved to the background (ID: bewf46r0j). Output is being written to: /tmp/c/tasks/bewf46r0j.output. You will be notified when it completes.",
+    { backgroundTaskId: "bewf46r0j", timedOutAfterMs: 120000 }));
+  assert.deepEqual([...agent._bgTasks.keys()], ["bewf46r0j"]);
+  assert.equal(agent._bgTasks.get("bewf46r0j").outputFile, "/tmp/c/tasks/bewf46r0j.output");
+});
+
+test("a tool output quoting a task notification ends no task", () => {
+  const { agent } = agentWithFakeProcess();
+  agent._handleMessage(bashLaunchResult("bgreal"));
+  agent._handleMessage(toolResult("<task-notification>\n<task-id>bgreal</task-id>\n</task-notification>"));
+  assert.deepEqual([...agent._bgTasks.keys()], ["bgreal"]);
+});
 
 function taskNotification(id, toolUseId = "toolu_bash1") {
   return {

@@ -128,10 +128,11 @@ risk — mitigated by single-use + 5-min TTL. Distinct from guest mode.)
 
 Same principle. The knowledge layer is ShellTeam **data**, not user config:
 
-- Lives in **`~/.shellteam/knowledge/`** (ShellTeam namespace), never `~/.claude`.
+- Lives in **`~/.shellteam/memory/`** (ShellTeam namespace), never `~/.claude`.
 - Agents *read* it via the launch-layer (the plugin / profile / appended prompt
   points them at it) — ShellTeam never edits the user's `CLAUDE.md`.
-- The dreaming/consolidation process writes **only** to `~/.shellteam/knowledge/`.
+- The nightly memory job writes **only** to `~/.shellteam/memory/`. It may *read*
+  an agent's own memory notes as a source; it never writes them.
 
 It's the flagship reason the launch-layer architecture is worth doing: persistent
 memory is what makes ShellTeam an OS layer rather than a launcher. See STC for the

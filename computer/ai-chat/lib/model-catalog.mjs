@@ -126,9 +126,9 @@ export function resolveModelId(model) {
 
 /**
  * The value to pass to a CLI's `--model` flag for a catalog model id. For most
- * agents the id IS the CLI model id, but Antigravity's `agy --model` wants the
- * human display name ("Gemini 3.1 Pro (High)"), so its catalog entries carry a
- * `cli` override. Falls back to the id when none is set.
+ * agents the id IS the CLI model id; a `cli` override names the upstream model
+ * when one id stands for a model plus a setting (Codex's effort variants).
+ * Falls back to the id when none is set.
  */
 export function cliModelForId(model) {
   for (const a of agents()) {

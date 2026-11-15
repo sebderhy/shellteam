@@ -9,7 +9,7 @@
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +18,7 @@ process.env.HOME = FAKE_HOME;
 
 const LAYER = join(FAKE_HOME, ".shellteam", "agent-layer");
 
-let agentLaunchEnv, antigravityLayerArgs, claudeLayerArgs, codexHarnessEnv, codexLayerArgs, codexSecretEnv, harnessPromptPath, opencodeConfigPath, terminalSpawn;
+let agentLaunchEnv, antigravityLayerArgs, claudeLayerArgs, codexHarnessEnv, codexLayerArgs, codexSecretEnv, harnessPromptPath, opencodeConfigPath, ownMemoryEnv, terminalSpawn;
 
 before(async () => {
   ({
@@ -29,6 +29,7 @@ before(async () => {
     codexSecretEnv,
     harnessPromptPath,
     opencodeConfigPath,
+    ownMemoryEnv,
   } = await import("../lib/agent-layer.mjs"));
   ({ agentLaunchEnv, terminalSpawn } = await import("../lib/agents/registry.mjs"));
 });
@@ -157,7 +158,7 @@ test("full manifest: everything loads again", () => {
     HOME: join(LAYER, "codex-home"),
     CODEX_HOME: join(FAKE_HOME, ".codex"),
   });
-  assert.ok(terminalSpawn("gemini-3.1-pro").args.includes(join(LAYER, "antigravity-workspace")));
+  assert.ok(terminalSpawn("gemini-4-argon-high").args.includes(join(LAYER, "antigravity-workspace")));
 });
 
 test("linear MCP follows the active project cwd", () => {
@@ -266,9 +267,9 @@ test("manifest/disk mismatch: promised-but-missing artifact is skipped loudly, n
   assert.deepEqual(args, ["--plugin-dir", join(LAYER, "claude")]);
 });
 
-// --- knowledge composition (dreaming module) -----------------------------------------
+// --- memory: the knowledge tree (dreaming module; K3, K4, K12, K20) ------------------
 
-const KNOWLEDGE = join(FAKE_HOME, ".shellteam", "knowledge");
+const MEMORY = join(FAKE_HOME, ".shellteam", "memory");
 
 function writeManifest(modules, artifacts = {}) {
   writeFileSync(join(LAYER, "layer.json"), JSON.stringify({
@@ -281,149 +282,269 @@ function writeManifest(modules, artifacts = {}) {
   }));
 }
 
-function seedKnowledge() {
-  mkdirSync(join(KNOWLEDGE, "tree", "acmeproj"), { recursive: true });
-  mkdirSync(join(KNOWLEDGE, "tree", "otherproj"), { recursive: true });
-  writeFileSync(join(KNOWLEDGE, "identity.md"), "# identity\n- The owner is Seb.\n");
-  writeFileSync(join(KNOWLEDGE, "projects.md"), "# projects\n- acmeproj: client project\n");
-  writeFileSync(join(KNOWLEDGE, "tree", "acmeproj", "index.md"),
-    "# acmeproj\n- Deploys via deploy-all.sh\n");
-  writeFileSync(join(KNOWLEDGE, "tree", "otherproj", "index.md"),
-    "# otherproj\n- SIBLING-SECRET fact\n");
+function view(rel, text) {
+  mkdirSync(join(MEMORY, "views", rel, ".."), { recursive: true });
+  writeFileSync(join(MEMORY, "views", rel), text);
 }
 
-test("dreaming ON: claude spawn in a project folder composes persona + that node's knowledge", () => {
+function seedTree() {
+  rmSync(MEMORY, { recursive: true, force: true });
+  view("header.md", "Memory. Reference notes compiled on 14 Nov 2026. The owner's message and the actual code win over anything written here.\n");
+  view("_top/card.md", "THE OWNER  100 of 10,000\n- TOP-CARD career fact\n- ~/acmeproj  client project\n");
+  view("_top/essentials.md", "ABOUT THE OWNER (essentials)  50 of 3,000\n- TOP-ESSENTIAL plain words\n");
+  view("acmeproj/card.md", "PROJECT: acmeproj   ~/acmeproj  80 of 8,000\n- ACME-CARD deploys via deploy-all.sh\n");
+  view("acmeproj/essentials.md", "ABOUT ~/acmeproj (essentials)\n- ACME-ESSENTIAL rule\n");
+  view("acmeproj/web/card.md", "PROJECT: web   ~/acmeproj/web\n- WEB-CARD fact\n");
+  view("otherproj/card.md", "PROJECT: otherproj   ~/otherproj\n- OTHER-CARD secret\n");
+}
+
+function launchText(cwd) {
+  const path = harnessPromptPath(cwd);
+  return path ? readFileSync(path, "utf8") : null;
+}
+
+function promptFileOf(args) {
+  return args[args.indexOf("--append-system-prompt-file") + 1];
+}
+
+test("dreaming ON: claude spawn in a project folder composes persona + that level's card", () => {
   writeFileSync(join(LAYER, "system-prompt.md"), "PERSONA-CONTENT");
   writeManifest(["persona", "dreaming"], { claude_system_prompt: true });
-  seedKnowledge();
-
-  const args = claudeLayerArgs(join(FAKE_HOME, "acmeproj"));
-  const i = args.indexOf("--append-system-prompt-file");
-  assert.notEqual(i, -1);
-  const path = args[i + 1];
-  assert.match(path, /runtime\/harness-prompt-acmeproj-[0-9a-f]{6}\.md$/);
+  seedTree();
+  const path = promptFileOf(claudeLayerArgs(join(FAKE_HOME, "acmeproj")));
+  assert.match(path, /runtime\/harness-prompt-tree-acmeproj-[0-9a-f]{6}\.md$/);
   const content = readFileSync(path, "utf8");
   assert.ok(content.includes("PERSONA-CONTENT"), "persona kept");
-  assert.ok(content.includes("The owner is Seb"), "user layer injected");
-  assert.ok(content.includes("Deploys via deploy-all.sh"), "own node injected");
-  assert.ok(!content.includes("SIBLING-SECRET"), "sibling node NOT injected");
-  assert.ok(!content.includes("acmeproj: client project"),
-    "cross-project map only at root scope");
+  assert.ok(content.includes("TOP-ESSENTIAL"), "the owner's essentials");
+  assert.ok(content.includes("ACME-CARD"), "own card");
+  assert.ok(!content.includes("OTHER-CARD"), "another project's card NOT injected");
+  assert.ok(!content.includes("TOP-CARD"), "the owner's card only at home");
 });
 
-test("dreaming ON: Claude, Codex, Antigravity, and OpenCode receive the same composed prompt", () => {
-  const cwd = join(FAKE_HOME, "acmeproj");
-  writeFileSync(join(LAYER, "system-prompt.md"), "PERSONA-CONTENT");
-  mkdirSync(join(LAYER, "codex"), { recursive: true });
-  writeFileSync(join(LAYER, "codex", "overrides.json"), "[]");
-  mkdirSync(join(LAYER, "codex-home"), { recursive: true });
-  mkdirSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam", "rules"), { recursive: true });
-  writeFileSync(
-    join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam", "rules", "shellteam.md"),
-    "PERSONA-CONTENT",
-  );
-  writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({
-    instructions: [join(LAYER, "system-prompt.md")],
-  }));
-  writeManifest(["persona", "dreaming"], {
-    claude_system_prompt: true,
-    codex_overrides: true,
-    codex_session_home: true,
-    harness_skills: true,
-    antigravity_plugin: true,
-  });
-
-  const sharedPath = harnessPromptPath(cwd);
-  const shared = readFileSync(sharedPath, "utf8");
-  const claudeArgs = claudeLayerArgs(cwd);
-  assert.equal(claudeArgs[claudeArgs.indexOf("--append-system-prompt-file") + 1], sharedPath);
-
-  const codexDeveloper = codexLayerArgs(cwd).find((value) => String(value).startsWith("developer_instructions="));
-  assert.equal(JSON.parse(codexDeveloper.slice("developer_instructions=".length)), shared);
-
-  const oc = JSON.parse(readFileSync(opencodeConfigPath(cwd), "utf8"));
-  assert.ok(oc.instructions.includes(sharedPath));
-
-  const agArgs = antigravityLayerArgs(cwd);
-  const agRule = readFileSync(join(
-    agArgs[1], ".agents", "plugins", "shellteam", "rules", "shellteam.md",
-  ), "utf8");
-  assert.equal(agRule, shared);
-});
-
-test("dreaming ON: root-scope spawn (~) gets the cross-project map, not node internals", () => {
+test("dreaming ON: a chat in ~ gets the owner's card", () => {
   writeManifest(["persona", "dreaming"], { claude_system_prompt: true });
-  const args = claudeLayerArgs(FAKE_HOME);
-  const path = args[args.indexOf("--append-system-prompt-file") + 1];
-  assert.match(path, /runtime\/harness-prompt-root\.md$/);
+  seedTree();
+  const path = promptFileOf(claudeLayerArgs(FAKE_HOME));
+  assert.match(path, /runtime\/harness-prompt-tree-root\.md$/);
   const content = readFileSync(path, "utf8");
-  assert.ok(content.includes("acmeproj: client project"), "projects.md at root");
-  assert.ok(!content.includes("SIBLING-SECRET"), "no node internals at root");
+  assert.ok(content.includes("TOP-CARD"));
+  assert.ok(!content.includes("ACME-CARD") && !content.includes("OTHER-CARD"));
 });
 
-test("dreaming ON: dot-dir cwd is an excluded scope — persona file only", () => {
+test("dreaming ON: no memory printed yet means the static persona file", () => {
   writeManifest(["persona", "dreaming"], { claude_system_prompt: true });
-  const args = claudeLayerArgs(join(FAKE_HOME, ".shellteam", "dream", "runs"));
-  assert.deepEqual(args, ["--append-system-prompt-file", join(LAYER, "system-prompt.md")]);
+  rmSync(MEMORY, { recursive: true, force: true });
+  assert.deepEqual(claudeLayerArgs(join(FAKE_HOME, "acmeproj")),
+    ["--append-system-prompt-file", join(LAYER, "system-prompt.md")]);
 });
 
 test("dreaming OFF: the system-prompt flag is byte-identical to the static persona path", () => {
   writeManifest(["persona"], { claude_system_prompt: true });
+  seedTree();
   const args = claudeLayerArgs(join(FAKE_HOME, "acmeproj"));
   assert.deepEqual(args, ["--append-system-prompt-file", join(LAYER, "system-prompt.md")]);
 });
 
-test("employee module: the synced knowledge node composes without 'dreaming' in the manifest", () => {
-  // An employee sandbox: manifest carries employee+linear, and the host synced
-  // ONLY tree/<folder>/ into this HOME (no user layer, no siblings) — the
-  // teammate's agents must still receive their project's knowledge.
+test("SHE-134: an oversized view keeps both ends, so its last line still reaches the agent", () => {
+  writeManifest(["dreaming"]);
+  seedTree();
+  const filler = Array.from({ length: 600 }, (_, i) => `- old fact number ${i} padded to a realistic line length`).join("\n");
+  view("acmeproj/card.md", `PROJECT: acmeproj\n- FIRST-FACT\n${filler}\n- NEWEST-FACT learned last night\n`);
+
+  const text = readFileSync(harnessPromptPath(join(FAKE_HOME, "acmeproj")), "utf8");
+  assert.ok(text.includes("FIRST-FACT"), "the start of the view is kept");
+  assert.ok(text.includes("NEWEST-FACT learned last night"), "the end of the view is kept");
+  const full = join(MEMORY, "views", "acmeproj", "card.md");
+  const note = text.split("\n").find((l) => l.includes("left out"));
+  assert.ok(note, "one line says something was left out");
+  assert.ok(note.includes(full), "it names the full file");
+  assert.match(note, /[\d,]+ characters/, "and how many characters are missing");
+  assert.ok(text.length < 24000 + 2000, "the view still fits its allowance");
+});
+
+test("SHELLTEAM_MEMORY=off: the launch carries no knowledge (the recall exam's memory-off arm)", () => {
+  writeFileSync(join(LAYER, "system-prompt.md"), "PERSONA-CONTENT");
+  writeManifest(["persona", "dreaming"], { claude_system_prompt: true });
+  seedTree();
+  process.env.SHELLTEAM_MEMORY = "off";
+  try {
+    assert.equal(harnessPromptPath(join(FAKE_HOME, "acmeproj")), join(LAYER, "system-prompt.md"));
+  } finally {
+    delete process.env.SHELLTEAM_MEMORY;
+  }
+});
+
+test("knowledge tree: the folder a chat starts in decides what it receives", () => {
+  writeManifest(["dreaming"]);
+  seedTree();
+  const has = (text, ...marks) => marks.forEach((m) => assert.ok(text.includes(m), `expected ${m}`));
+  const lacks = (text, ...marks) => marks.forEach((m) => assert.ok(!text.includes(m), `unexpected ${m}`));
+
+  const home = launchText(FAKE_HOME);
+  has(home, "TOP-CARD");
+  lacks(home, "ACME-CARD", "OTHER-CARD", "TOP-ESSENTIAL");
+  assert.ok(home.startsWith("# Memory. Reference notes compiled on 14 Nov 2026."), "the first line says what this is");
+  has(home, "actual code win");
+
+  const project = launchText(join(FAKE_HOME, "acmeproj"));
+  has(project, "TOP-ESSENTIAL", "ACME-CARD");
+  lacks(project, "TOP-CARD", "OTHER-CARD", "ACME-ESSENTIAL", "WEB-CARD");
+
+  // A folder with no card of its own, hidden or not: its nearest level's card.
+  assert.equal(launchText(join(FAKE_HOME, "acmeproj", "api", "v2")), project);
+  assert.equal(launchText(join(FAKE_HOME, "acmeproj", ".git")), project);
+
+  const sub = launchText(join(FAKE_HOME, "acmeproj", "web", "src"));
+  has(sub, "TOP-ESSENTIAL", "ACME-ESSENTIAL", "WEB-CARD");
+  lacks(sub, "ACME-CARD", "TOP-CARD", "OTHER-CARD");
+
+  const fresh = launchText(join(FAKE_HOME, "brandnew"));
+  has(fresh, "TOP-ESSENTIAL", "No notes yet for ~/brandnew.");
+  lacks(fresh, "TOP-CARD", "ACME-CARD");
+
+  for (const cwd of [join(FAKE_HOME, ".config", "x"), join(FAKE_HOME, ".shellteam", "dream", "runs"), "/", "/tmp/elsewhere"]) {
+    const text = launchText(cwd);
+    has(text, "TOP-ESSENTIAL");
+    lacks(text, "TOP-CARD", "ACME-CARD", "OTHER-CARD", "No notes yet");
+  }
+});
+
+test("K14: today's notes reach the next chats at their level only; the footer names the memory command", () => {
+  writeManifest(["dreaming"]);
+  seedTree();
+  mkdirSync(join(MEMORY, "today"), { recursive: true });
+  writeFileSync(join(MEMORY, "today", "acmeproj.md"), "TODAY, NOT YET FILED\n- [14:05] ACME-NOTE staging is heron\n");
+  writeFileSync(join(MEMORY, "today", "_top.md"), "TODAY, NOT YET FILED\n- [09:00] HOME-NOTE travelling\n");
+  view("footer.md", "To look further: `/opt/x/bin/shellteam-memory search <words>`.\n");
+
+  const project = launchText(join(FAKE_HOME, "acmeproj", "api"));
+  assert.ok(project.includes("ACME-NOTE") && !project.includes("HOME-NOTE"));
+  assert.ok(project.trimEnd().endsWith("To look further: `/opt/x/bin/shellteam-memory search <words>`."));
+  const home = launchText(FAKE_HOME);
+  assert.ok(home.includes("HOME-NOTE") && !home.includes("ACME-NOTE"));
+  for (const cwd of [join(FAKE_HOME, "otherproj"), join(FAKE_HOME, "brandnew"), "/tmp/elsewhere"]) {
+    const text = launchText(cwd);
+    assert.ok(!text.includes("ACME-NOTE") && !text.includes("HOME-NOTE"), cwd);
+  }
+});
+
+test("K15: the owner's setting switches each agent's own memory off in cockpit chats, and only with the module", () => {
+  seedTree();
+  writeManifest(["dreaming"], { codex_overrides: true });
+  mkdirSync(join(LAYER, "codex"), { recursive: true });
+  writeFileSync(join(LAYER, "codex", "overrides.json"), "[]");
+  assert.deepEqual(ownMemoryEnv(), {}, "on by default");
+  assert.ok(!codexLayerArgs(FAKE_HOME, {}).includes("features.memories=false"));
+
+  writeFileSync(join(MEMORY, "settings.json"), JSON.stringify({ agents_own_memory: "off" }));
+  assert.deepEqual(ownMemoryEnv(), { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" });
+  assert.ok(codexLayerArgs(FAKE_HOME, {}).includes("features.memories=false"));
+
+  writeManifest(["persona"], { codex_overrides: true });
+  assert.deepEqual(ownMemoryEnv(), {}, "nothing changes without the memory module");
+  assert.ok(!codexLayerArgs(FAKE_HOME, {}).includes("features.memories=false"));
+  rmSync(join(MEMORY, "settings.json"));
+});
+
+test("K16: each distinct launch text of a folder is kept once, with when it was first given", () => {
+  writeManifest(["dreaming"]);
+  seedTree();
+  const launches = () => readFileSync(join(MEMORY, "told", "launches.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const first = launchText(join(FAKE_HOME, "acmeproj"));
+  launchText(join(FAKE_HOME, "acmeproj", "api"));          // same text: nothing new
+  assert.deepEqual(launches().map((l) => l.key), ["acmeproj"]);
+  assert.ok(first.endsWith(readFileSync(join(MEMORY, "told", `${launches()[0].sha}.md`), "utf8") + "\n"));
+  view("acmeproj/card.md", "PROJECT: acmeproj\n- ACME-CARD changed overnight\n");
+  launchText(join(FAKE_HOME, "acmeproj"));
+  launchText(FAKE_HOME);
+  launchText("/tmp/elsewhere");
+  assert.deepEqual(launches().map((l) => l.key), ["acmeproj", "acmeproj", "", "/"]);
+  assert.ok(launches().every((l) => l.at > 1.7e9));
+
+  // A project with no card yet and a chat outside home have different texts: their own files.
+  const fresh = harnessPromptPath(join(FAKE_HOME, "brandnew"));
+  const outside = harnessPromptPath("/tmp/elsewhere");
+  assert.notEqual(fresh, outside);
+  assert.ok(readFileSync(fresh, "utf8").includes("No notes yet for ~/brandnew."));
+  assert.ok(!readFileSync(outside, "utf8").includes("No notes yet"));
+});
+
+test("knowledge tree: all four agents receive the same launch text", () => {
+  writeFileSync(join(LAYER, "system-prompt.md"), "PERSONA-CONTENT\nPERSONA-END");
+  writeManifest(["persona", "dreaming"], { claude_system_prompt: true, codex_overrides: true, antigravity_plugin: true });
+  mkdirSync(join(LAYER, "codex"), { recursive: true });
+  writeFileSync(join(LAYER, "codex", "overrides.json"), "[]");
+  mkdirSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam"), { recursive: true });
+  writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({ instructions: [] }));
+  seedTree();
+  const cwd = join(FAKE_HOME, "acmeproj");
+  const shared = launchText(cwd);
+  assert.ok(shared.includes("PERSONA-CONTENT") && shared.includes("PERSONA-END") && shared.includes("ACME-CARD"));
+
+  const claude = claudeLayerArgs(cwd);
+  assert.equal(readFileSync(promptFileOf(claude), "utf8"), shared);
+  const codex = codexLayerArgs(cwd, {}).find((a) => a.startsWith("developer_instructions="));
+  assert.equal(JSON.parse(codex.slice("developer_instructions=".length)), shared);
+  const antigravity = antigravityLayerArgs(cwd);
+  assert.equal(readFileSync(join(antigravity[1], ".agents", "plugins", "shellteam", "rules", "shellteam.md"), "utf8"), shared);
+  const opencode = JSON.parse(readFileSync(opencodeConfigPath(cwd), "utf8"));
+  assert.ok(opencode.instructions.some((p) => readFileSync(p, "utf8") === shared));
+});
+
+test("knowledge tree: an exam run on another tree never writes the file live chats read", () => {
+  writeManifest(["dreaming"]);
+  seedTree();
+  const live = harnessPromptPath(join(FAKE_HOME, "acmeproj"));
+  process.env.SHELLTEAM_MEMORY_ROOT = join(FAKE_HOME, "elsewhere");
+  try {
+    cpSync(MEMORY, join(FAKE_HOME, "elsewhere"), { recursive: true });
+    view("acmeproj/card.md", "PROJECT: acmeproj\n- LIVE-ONLY line\n");
+    const exam = harnessPromptPath(join(FAKE_HOME, "acmeproj"));
+    assert.notEqual(exam, live);
+    assert.ok(readFileSync(exam, "utf8").includes("ACME-CARD"));
+  } finally {
+    delete process.env.SHELLTEAM_MEMORY_ROOT;
+    rmSync(join(FAKE_HOME, "elsewhere"), { recursive: true, force: true });
+  }
+});
+
+test("knowledge tree: an employee box has its project's card and nothing of the owner's", () => {
+  // An employee sandbox: the manifest carries employee (no dreaming), and the
+  // host synced ONLY its project's branch into this HOME.
   writeFileSync(join(LAYER, "system-prompt.md"), "EMPLOYEE-HARNESS");
   writeManifest(["employee", "linear"], { claude_system_prompt: true });
-  mkdirSync(join(KNOWLEDGE, "tree", "acmeproj"), { recursive: true });
-  writeFileSync(join(KNOWLEDGE, "tree", "acmeproj", "index.md"),
-    "# acmeproj\n- Deploys via deploy-all.sh\n");
-
-  const args = claudeLayerArgs(join(FAKE_HOME, "acmeproj"));
-  const path = args[args.indexOf("--append-system-prompt-file") + 1];
-  const content = readFileSync(path, "utf8");
-  assert.ok(content.includes("EMPLOYEE-HARNESS"), "harness kept");
-  assert.ok(content.includes("Deploys via deploy-all.sh"), "project node injected");
+  seedTree();
+  rmSync(join(MEMORY, "views", "_top"), { recursive: true });
+  rmSync(join(MEMORY, "views", "otherproj"), { recursive: true });
+  const text = launchText(join(FAKE_HOME, "acmeproj"));
+  assert.ok(text.includes("EMPLOYEE-HARNESS") && text.includes("ACME-CARD"));
+  assert.ok(!text.includes("TOP-") && !text.includes("OTHER-CARD"));
 });
 
-test("dreaming ON without persona: knowledge still reaches the agent alone", () => {
-  writeManifest(["dreaming"]);
-  const args = claudeLayerArgs(join(FAKE_HOME, "acmeproj"));
-  const path = args[args.indexOf("--append-system-prompt-file") + 1];
-  const content = readFileSync(path, "utf8");
-  assert.ok(content.includes("Deploys via deploy-all.sh"));
-  assert.ok(!content.includes("PERSONA-CONTENT"));
+test("knowledge tree: module off means no memory, whatever is on disk", () => {
+  writeManifest([]);
+  seedTree();
+  assert.equal(harnessPromptPath(join(FAKE_HOME, "acmeproj")), null);
 });
 
-test("dreaming ON without persona: all four agents receive the same knowledge-only prompt", () => {
+test("dreaming ON without persona: all four agents receive the same memory-only prompt", () => {
   const cwd = join(FAKE_HOME, "acmeproj");
   mkdirSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam"), { recursive: true });
   writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({ provider: { fireworks: {} } }));
   writeManifest(["dreaming"], { antigravity_plugin: true });
+  seedTree();
 
   const sharedPath = harnessPromptPath(cwd);
   const shared = readFileSync(sharedPath, "utf8");
-  assert.ok(shared.includes("Deploys via deploy-all.sh"));
+  assert.ok(shared.includes("ACME-CARD"));
   assert.ok(!shared.includes("PERSONA-CONTENT"));
-
-  const claudeArgs = claudeLayerArgs(cwd);
-  assert.equal(claudeArgs[claudeArgs.indexOf("--append-system-prompt-file") + 1], sharedPath);
-
+  assert.equal(promptFileOf(claudeLayerArgs(cwd)), sharedPath);
   const codexDeveloper = codexLayerArgs(cwd).find((value) => String(value).startsWith("developer_instructions="));
   assert.equal(JSON.parse(codexDeveloper.slice("developer_instructions=".length)), shared);
-
   const oc = JSON.parse(readFileSync(opencodeConfigPath(cwd), "utf8"));
   assert.deepEqual(oc.instructions, [sharedPath]);
-
   const agArgs = antigravityLayerArgs(cwd);
-  const agRule = readFileSync(join(
-    agArgs[1], ".agents", "plugins", "shellteam", "rules", "shellteam.md",
-  ), "utf8");
-  assert.equal(agRule, shared);
+  assert.equal(readFileSync(join(agArgs[1], ".agents", "plugins", "shellteam", "rules", "shellteam.md"), "utf8"), shared);
 });
 
 test("pure core: dreaming absent → no knowledge, no flags beyond core", () => {
@@ -431,16 +552,15 @@ test("pure core: dreaming absent → no knowledge, no flags beyond core", () => 
   assert.deepEqual(claudeLayerArgs(join(FAKE_HOME, "acmeproj")), []);
 });
 
-test("opencode: dreaming ON adds the composed knowledge file to instructions", () => {
+test("opencode: dreaming ON adds the composed memory file to instructions", () => {
   writeFileSync(join(LAYER, "opencode.json"),
     JSON.stringify({ instructions: ["~/.claude/CLAUDE.md"] }));
   writeManifest(["dreaming"]);
-  const path = opencodeConfigPath(join(FAKE_HOME, "acmeproj"));
-  assert.match(path, /runtime\/opencode-acmeproj\.json$/);
-  const cfg = JSON.parse(readFileSync(path, "utf8"));
+  seedTree();
+  const cfg = JSON.parse(readFileSync(opencodeConfigPath(join(FAKE_HOME, "acmeproj")), "utf8"));
   assert.equal(cfg.instructions.length, 2);
-  assert.match(cfg.instructions[1], /runtime\/harness-prompt-acmeproj-[0-9a-f]{6}\.md$/);
-  assert.ok(readFileSync(cfg.instructions[1], "utf8").includes("Deploys via deploy-all.sh"));
+  assert.match(cfg.instructions[1], /runtime\/harness-prompt-tree-acmeproj-[0-9a-f]{6}\.md$/);
+  assert.ok(readFileSync(cfg.instructions[1], "utf8").includes("ACME-CARD"));
 });
 
 test("opencode: dreaming OFF returns exactly the static config path", () => {
@@ -450,26 +570,18 @@ test("opencode: dreaming OFF returns exactly the static config path", () => {
 
 test("dreaming ON: trailing-slash cwds resolve like their normalized form (no crash)", () => {
   writeManifest(["persona", "dreaming"], { claude_system_prompt: true });
-  // HOME with a trailing slash is the root scope, not a crash.
-  const rootArgs = claudeLayerArgs(FAKE_HOME + "/");
-  const rootPath = rootArgs[rootArgs.indexOf("--append-system-prompt-file") + 1];
-  assert.match(rootPath, /runtime\/harness-prompt-root\.md$/);
-  // A project cwd with a trailing slash routes to the same node file.
-  const a = claudeLayerArgs(join(FAKE_HOME, "acmeproj"));
-  const b = claudeLayerArgs(join(FAKE_HOME, "acmeproj") + "/");
-  assert.deepEqual(a, b);
+  seedTree();
+  assert.match(promptFileOf(claudeLayerArgs(FAKE_HOME + "/")), /runtime\/harness-prompt-tree-root\.md$/);
+  assert.deepEqual(claudeLayerArgs(join(FAKE_HOME, "acmeproj")), claudeLayerArgs(join(FAKE_HOME, "acmeproj") + "/"));
 });
 
-test("dreaming ON: nodes whose names collide after slugging get distinct runtime files", () => {
+test("dreaming ON: levels whose names collide after slugging get distinct runtime files", () => {
   writeManifest(["persona", "dreaming"], { claude_system_prompt: true });
-  mkdirSync(join(KNOWLEDGE, "tree", "My-App"), { recursive: true });
-  mkdirSync(join(KNOWLEDGE, "tree", "my-app"), { recursive: true });
-  writeFileSync(join(KNOWLEDGE, "tree", "My-App", "index.md"), "# My-App\n- UPPER fact\n");
-  writeFileSync(join(KNOWLEDGE, "tree", "my-app", "index.md"), "# my-app\n- lower fact\n");
-  const upper = claudeLayerArgs(join(FAKE_HOME, "My-App"));
-  const lower = claudeLayerArgs(join(FAKE_HOME, "my-app"));
-  const upperPath = upper[upper.indexOf("--append-system-prompt-file") + 1];
-  const lowerPath = lower[lower.indexOf("--append-system-prompt-file") + 1];
+  seedTree();
+  view("My-App/card.md", "PROJECT: My-App\n- UPPER fact\n");
+  view("my-app/card.md", "PROJECT: my-app\n- lower fact\n");
+  const upperPath = promptFileOf(claudeLayerArgs(join(FAKE_HOME, "My-App")));
+  const lowerPath = promptFileOf(claudeLayerArgs(join(FAKE_HOME, "my-app")));
   assert.notEqual(upperPath, lowerPath);
   assert.ok(readFileSync(upperPath, "utf8").includes("UPPER fact"));
   assert.ok(!readFileSync(upperPath, "utf8").includes("lower fact"));

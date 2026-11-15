@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./uninstall.sh            # remove ShellTeam's services, state, and browser
-#   ./uninstall.sh --purge    # ALSO remove ~/.shellteam (incl. your knowledge layer)
+#   ./uninstall.sh --purge    # ALSO remove ~/.shellteam (incl. your memory)
 #                             #   and stop keeping user services alive after logout
 #
 # What it removes:
@@ -21,7 +21,7 @@
 #   - Caddy and /etc/caddy/Caddyfile (a shared reverse proxy)
 #   - the repo + its .env (your config/secrets)
 #   - your coding-agent dotfiles (~/.claude, ~/.codex, … — ShellTeam never owned them)
-#   - ~/.shellteam/knowledge (your accumulated memory) unless --purge
+#   - ~/.shellteam/memory (your accumulated memory) unless --purge
 
 set -euo pipefail
 
@@ -210,6 +210,6 @@ echo "  by --purge)."
 # if-form: a bare `[ ] && echo` as the last line makes a --purge run exit 1
 # under set -e even though everything succeeded.
 if [ "$PURGE" -eq 0 ]; then
-    echo "  Kept your knowledge layer at ~/.shellteam/knowledge (use --purge to remove)."
+    echo "  Kept your memory at ~/.shellteam/memory (use --purge to remove)."
 fi
 echo "  See docs/FOOTPRINT.md for the full list of what ShellTeam touches."

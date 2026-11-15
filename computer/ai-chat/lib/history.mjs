@@ -534,6 +534,11 @@ function capReplay(messages) {
   return capped;
 }
 
+/** The text blocks of a transcript or stream-json assistant message, joined. */
+export function messageText(obj) {
+  return (obj.message?.content || []).filter((b) => b.type === "text").map((b) => b.text).join(" ");
+}
+
 export function readSessionForReplay(filePath) {
   let raw;
   try { raw = readFileSync(filePath, "utf8"); } catch { return []; }
@@ -608,6 +613,11 @@ export function readSessionForReplay(filePath) {
           ...(isInternalUserContent(msgText) ? { internal: true } : {}),
         });
       }
+    } else if (obj.type === "assistant" && obj.isApiErrorMessage) {
+      // A failed API call, logged as a synthetic assistant line: it ended the
+      // turn with an error, it is not something the agent said (SHE-189).
+      const text = messageText(obj);
+      messages.push({ type: "turn_done", is_error: true, errors: [text || `API error ${obj.apiErrorStatus ?? ""}`.trim()] });
     } else if (obj.type === "assistant" && obj.message?.content) {
       // Convert assistant content blocks to protocol messages
       for (const block of obj.message.content) {

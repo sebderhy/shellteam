@@ -189,3 +189,24 @@ class TestNotifyEndpoint:
                 headers={"Authorization": f"Bearer {notify_token()}"},
             )
         assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_she199_the_bot_token_never_reaches_the_log(monkeypatch, caplog):
+    """SHE-199: httpx logged the Telegram URL, bot token included, at INFO in
+    every process that sends an alert, not only in the API."""
+    import logging
+
+    import respx
+
+    import api.services.notify as notify
+    monkeypatch.setenv("NOTIFY_TELEGRAM_BOT_TOKEN", "123456:SECRET-BOT-TOKEN")
+    monkeypatch.setenv("NOTIFY_TELEGRAM_CHAT_ID", "42")
+    logging.getLogger("httpx").setLevel(logging.INFO)    # as a fresh CLI process has it
+    importlib.reload(notify)
+    caplog.set_level(logging.DEBUG)
+    with respx.mock:
+        respx.post(url__regex=r"https://api\.telegram\.org/.*").mock(
+            return_value=httpx.Response(200, json={"ok": True}))
+        await notify.send_notification("t", "b")
+    assert "SECRET-BOT-TOKEN" not in caplog.text

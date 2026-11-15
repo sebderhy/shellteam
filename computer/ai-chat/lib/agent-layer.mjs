@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { HOME } from "./constants.mjs";
@@ -149,17 +149,11 @@ function isLinearCodexOverride(o) {
   return typeof o === "string" && o.startsWith("mcp_servers.linear.");
 }
 
-// --- knowledge composition (dreaming module) -----------------------------------------
+// --- memory (dreaming module) ---------------------------------------------------------
 //
 // The "AI employee" mechanic: an agent spawned in a folder gets that folder's
-// knowledge node (+ the user layer), never a sibling's. The nightly dream sweep
-// (api/services/dreaming.py) fills the tree; this composes it at spawn time.
-// Node resolution mirrors api/services/knowledge_tree.node_for_cwd — keep in sync.
-
-const KNOWLEDGE_DIR = join(HOME, ".shellteam", "knowledge");
-const USER_LAYER_FILES = ["identity.md", "preferences.md", "feedback.md"];
-const ROOT_LAYER_FILES = ["projects.md", "contacts.md"];
-const MAX_KNOWLEDGE_FILE_CHARS = 8000;
+// card (+ the owner's essentials), never a sibling's. The nightly job
+// (api/services/memory/nightly.py) prints the views; this composes them at spawn.
 
 function knowledgeModuleEnabled(manifest) {
   // dreaming = the owner box (the nightly sweep fills the tree). employee = a
@@ -170,65 +164,147 @@ function knowledgeModuleEnabled(manifest) {
   return modules.includes("dreaming") || modules.includes("employee");
 }
 
-function knowledgeNodeForCwd(cwd) {
-  // Strip trailing slashes first: "HOME/" would otherwise slip past the HOME
-  // check and resolve to an undefined node (crashing composition).
-  const c = (cwd || HOME).replace(/\/+$/, "") || "/";
-  if (c === HOME || !c.startsWith(`${HOME}/`)) return "";
-  const parts = c.slice(HOME.length + 1).split("/").filter(Boolean);
-  if (!parts.length) return "";
-  if (parts.some((p) => p.startsWith("."))) return null; // dot-dirs: excluded scope
-  for (let depth = parts.length; depth >= 1; depth--) {
-    const cand = parts.slice(0, depth).join("/");
-    if (existsSync(join(KNOWLEDGE_DIR, "tree", cand, "index.md"))) return cand;
-  }
-  return parts[0];
+// A view over its allowance keeps its first and last halves (SHE-134): never
+// only the head. Always visible in the text: one line says what is missing
+// and where it is.
+function keepBothEnds(text, path, allowance) {
+  if (text.length <= allowance) return text;
+  const half = Math.floor(allowance / 2);
+  const head = text.slice(0, text.lastIndexOf("\n", half) + 1 || half);
+  const tailFrom = text.indexOf("\n", text.length - half) + 1 || text.length - half;
+  const left = (text.length - head.length - (text.length - tailFrom)).toLocaleString("en-US");
+  console.warn(`[agent-layer] ${path} is over its launch allowance: ${left} characters left out of the middle`);
+  return `${head.trimEnd()}\n\n*(${left} characters left out here: this file is over its launch allowance. Full file: ${path})*\n\n${text.slice(tailFrom)}`;
 }
 
-function readKnowledgeFile(path) {
-  if (!existsSync(path)) return null;
-  const text = readFileSync(path, "utf8").trim();
-  if (!text) return null;
-  return text.length > MAX_KNOWLEDGE_FILE_CHARS
-    ? text.slice(0, MAX_KNOWLEDGE_FILE_CHARS) + "\n\n*(truncated for spawn injection)*"
-    : text;
+// --- memory as a knowledge tree (docs/plans/active/knowledge) -------------------------
+//
+// The folder a chat starts in is the level of the tree the agent stands at. It
+// receives that level's card, the essentials of every level above, and nothing
+// else. The views are printed at night within their limits
+// (api/services/memory/views.py); this only puts files together, so the same
+// text reaches every agent.
+
+// A printed view is inside its limit by construction. This is the visible
+// safety net for one that is not (a hand edit, a bug): far above any limit.
+const MAX_VIEW_CHARS = 24000;
+const TOP_VIEWS = "_top";
+const OUTSIDE = "/";      // the launch key of chats outside home, or in a hidden folder of it
+
+function memoryRoot() {
+  return process.env.SHELLTEAM_MEMORY_ROOT || join(HOME, ".shellteam", "memory");
 }
 
 /**
- * The knowledge markdown an agent spawned in `cwd` should carry, or null when
- * there is none (fresh box) / the scope is excluded. User layer everywhere;
- * cross-project map only at root/manager scope; a project cwd gets its node's
- * ancestor chain root-down — never siblings.
+ * Whether cockpit chats switch off each agent's own built-in memory (K15):
+ * the owner's memory setting "agents_own_memory": "off", memory module on.
+ * Nothing changes without the module, or in chats started outside the cockpit.
  */
-function composeKnowledge(node) {
+function agentsOwnMemoryOff(manifest) {
+  if (!knowledgeModuleEnabled(manifest)) return false;
+  const path = join(memoryRoot(), "settings.json");
+  if (!existsSync(path)) return false;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")).agents_own_memory === "off";
+  } catch (err) {
+    console.error(`[agent-layer] Unreadable ${path} (${err.message}); agents keep their own memory`);
+    return false;
+  }
+}
+
+/** Environment a cockpit agent gets on top of the box's: Claude Code's own memory off when the setting says so. */
+export function ownMemoryEnv() {
+  return agentsOwnMemoryOff(readManifest()) ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {};
+}
+
+/** Whether a launch carries memory. The recall exam turns it off per process with SHELLTEAM_MEMORY=off. */
+function memoryOff() {
+  const asked = process.env.SHELLTEAM_MEMORY;
+  if (asked && asked !== "off") console.error(`[agent-layer] SHELLTEAM_MEMORY=${asked} is not "off"; ignored`);
+  return asked === "off";
+}
+
+function readMemoryFile(path) {
+  if (!existsSync(path)) return null;
+  const text = readFileSync(path, "utf8").trim();
+  return text ? keepBothEnds(text, path, MAX_VIEW_CHARS) : null;
+}
+
+function readView(...parts) {
+  return readMemoryFile(join(memoryRoot(), "views", ...parts));
+}
+
+/** Today's notes for a level, filed by agents since the last night (K14). */
+function readToday(level) {
+  return readMemoryFile(join(memoryRoot(), "today", `${level}.md`));
+}
+
+/** The launch text for a chat started in `cwd`, as {knowledge, slug}, or null when there is none. */
+/**
+ * The launch text for a chat started in `cwd`, as {knowledge, key, slug}, or
+ * null when there is none. `key` names whose text it is: "" for ~, "/" for
+ * outside home (or a hidden folder of it), else the level, or the top folder
+ * of a project that has no card yet. Mirrored by
+ * api/services/memory/told.py:launch_key.
+ */
+function composeTree(cwd) {
+  const c = (cwd || HOME).replace(/\/+$/, "") || "/";
+  const parts = c.startsWith(`${HOME}/`) ? c.slice(HOME.length + 1).split("/").filter(Boolean) : [];
   const sections = [];
-  for (const f of USER_LAYER_FILES) {
-    const text = readKnowledgeFile(join(KNOWLEDGE_DIR, f));
-    if (text) sections.push(`## About the owner — ${f}\n\n${text}`);
-  }
-  if (node === "") {
-    for (const f of ROOT_LAYER_FILES) {
-      const text = readKnowledgeFile(join(KNOWLEDGE_DIR, f));
-      if (text) sections.push(`## Cross-project map — ${f}\n\n${text}`);
-    }
+  let key = OUTSIDE;
+  if (c === HOME) {
+    key = "";
+    sections.push(readView(TOP_VIEWS, "card.md"), readToday(TOP_VIEWS));
   } else {
-    const parts = node.split("/");
-    for (let depth = 1; depth <= parts.length; depth++) {
-      const rel = parts.slice(0, depth).join("/");
-      const text = readKnowledgeFile(join(KNOWLEDGE_DIR, "tree", rel, "index.md"));
-      if (text) sections.push(`## Project knowledge — ~/${rel}\n\n${text}`);
+    sections.push(readView(TOP_VIEWS, "essentials.md"));
+    // Outside home, or a hidden folder directly under it: the owner's
+    // essentials only. Inside a project, hidden or not: the project's view.
+    if (parts.length && !parts[0].startsWith(".")) {
+      let depth = parts.length;
+      while (depth > 0 && !existsSync(join(memoryRoot(), "views", ...parts.slice(0, depth), "card.md"))) depth--;
+      if (depth === 0) {
+        key = parts[0];
+        sections.push(`No notes yet for ~/${parts[0]}.`);
+      } else {
+        for (let above = 1; above < depth; above++) {
+          sections.push(readView(...parts.slice(0, above), "essentials.md"));
+        }
+        key = parts.slice(0, depth).join("/");
+        sections.push(readView(key, "card.md"), readToday(key));
+      }
     }
   }
-  if (!sections.length) return null;
-  return [
-    "# What this computer knows (consolidated nightly by ShellTeam dreaming)",
-    "",
-    "The owner reads and edits this in the dashboard's Knowledge tab. Treat it",
-    "as trusted background context, but verify current state before acting on",
-    "anything time-sensitive. Details live under ~/.shellteam/knowledge/.",
-    "",
-    ...sections,
-  ].join("\n");
+  const body = sections.filter(Boolean);
+  if (!body.some((s) => !s.startsWith("No notes yet"))) return null;
+  const header = readView("header.md") ||
+    "Memory. Reference notes. The owner's message and the actual code win over anything written here.";
+  // The footer names the memory command with its path on this box; a box
+  // without it (an employee sandbox) points at the record pages instead.
+  const footer = readView("footer.md") || ("To look further, open a record page listed above. " +
+    "Do not edit these files: tell the owner, or the nightly job, what should change.");
+  return {
+    knowledge: [`# ${header}`, ...body, footer].join("\n\n"),
+    key,
+    slug: key === OUTSIDE ? "tree-outside" : `tree-${knowledgeSlug(key)}`,
+  };
+}
+
+/**
+ * K16: keep every distinct launch text a folder's chats were given, with the
+ * time it was first given, so the Knowledge tab can show any chat exactly
+ * what it started with. A text is stored once (told/<hash>.md); a line in
+ * told/launches.jsonl marks each change of text for a key.
+ */
+function recordLaunchText(key, knowledge) {
+  const told = join(memoryRoot(), "told");
+  const sha = createHash("sha1").update(knowledge).digest("hex").slice(0, 16);
+  const current = join(told, "current", `${createHash("sha1").update(key).digest("hex").slice(0, 12)}.txt`);
+  if (existsSync(current) && readFileSync(current, "utf8") === sha) return;
+  mkdirSync(join(told, "current"), { recursive: true });
+  const text = join(told, `${sha}.md`);
+  if (!existsSync(text)) writeFileSync(text, knowledge);
+  appendFileSync(join(told, "launches.jsonl"), `${JSON.stringify({ at: Date.now() / 1000, key, sha })}\n`);
+  writeFileSync(current, sha);
 }
 
 function knowledgeSlug(node) {
@@ -246,12 +322,15 @@ function knowledgeSlug(node) {
  * place node resolution runs per spawn.
  */
 function composedKnowledgeFor(manifest, cwd) {
-  if (!knowledgeModuleEnabled(manifest)) return null;
-  const node = knowledgeNodeForCwd(cwd);
-  if (node === null) return null;
-  const knowledge = composeKnowledge(node);
-  if (!knowledge) return null;
-  return { knowledge, slug: knowledgeSlug(node) };
+  if (!knowledgeModuleEnabled(manifest) || memoryOff()) return null;
+  const composed = composeTree(cwd);
+  if (!composed) return null;
+  recordLaunchText(composed.key, composed.knowledge);
+  // A process pointed at another memory (the exam) must not write over the
+  // runtime file live chats read.
+  const other = process.env.SHELLTEAM_MEMORY_ROOT
+    ? `-${createHash("sha1").update(memoryRoot()).digest("hex").slice(0, 6)}` : "";
+  return { knowledge: composed.knowledge, slug: composed.slug + other };
 }
 
 function writeRuntimeFile(name, content) {
@@ -484,6 +563,7 @@ export function codexLayerArgs(cwd = HOME, env = process.env) {
   if (promptPath) {
     overrides.push(`developer_instructions=${JSON.stringify(readFileSync(promptPath, "utf8"))}`);
   }
+  if (agentsOwnMemoryOff(manifest)) overrides.push("features.memories=false");
   overrides.push(...codexProviderOverrides(env));
   return overrides.flatMap((o) => ["-c", o]);
 }
