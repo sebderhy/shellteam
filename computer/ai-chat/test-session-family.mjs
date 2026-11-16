@@ -2,7 +2,7 @@
  * Tests for cross-agent-family session safety.
  *
  * Session IDs are agent-family-specific (Codex thread IDs ≠ Claude UUIDs ≠
- * OpenCode ses_…). Resuming a session with the wrong CLI fails with
+ * Pi pi-…; OpenCode's retired ses_… ids are still recognized so old tabs migrate). Resuming a session with the wrong CLI fails with
  * "No conversation found with session ID". These tests verify the two guards
  * that prevent a cross-family pairing from ever reaching the CLI:
  *
@@ -84,7 +84,8 @@ describe("Cross-family session safety", () => {
       assert.equal(history.familyOfSession("7ea43598-583d-4af1-aebc-a3849c64045a"), "claude");
     });
 
-    it("classifies an OpenCode session by its ses_ prefix", () => {
+    it("classifies a Pi session by its pi- prefix, and a retired OpenCode one by ses_", () => {
+      assert.equal(history.familyOfSession("pi-0b6c1d2e-3f40-4a5b-8c7d-9e0f1a2b3c4d"), "pi");
       assert.equal(history.familyOfSession("ses_19c8ef078ffe40JjcprDWGPHvn"), "opencode");
     });
 

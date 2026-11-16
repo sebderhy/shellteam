@@ -526,6 +526,17 @@ window.Chat = {
             marker.className = 'compact-marker';
             marker.textContent = `Moved to ${shortPath(msg.toCwd || '') || '~'}. The conversation continues here.`;
             App.el.messages.appendChild(marker);
+        } else if (msg.event === 'retired_agent') {
+            // A chat on an agent ShellTeam no longer ships (OpenCode) was carried
+            // over to its replacement (Pi) on its first restart.
+            const from = familyLabel(msg.fromFamily);
+            const to = familyLabel(msg.toFamily);
+            const marker = document.createElement('div');
+            marker.className = 'compact-marker handoff-marker';
+            marker.textContent = msg.carried
+                ? `${from} is no longer part of ShellTeam. This chat now runs on ${to} and keeps its conversation.`
+                : `${from} is no longer part of ShellTeam. This chat now runs on ${to}, but its earlier conversation could not be carried over, so ${to} starts fresh.`;
+            App.el.messages.appendChild(marker);
         } else if (msg.event === 'transcript_lost') {
             // SHE-173: the transcript was deleted before the cockpit kept its own link.
             const marker = document.createElement('div');
@@ -554,8 +565,7 @@ window.Chat = {
     // agent families. Rendered both live (from model_changed.handoff) and on
     // history replay (session_event event:"handoff"). No invisible magic.
     renderHandoffMarker(msg) {
-        const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', opencode: 'OpenCode' };
-        const to = FAMILY_LABEL[msg.toFamily] || msg.toFamily || 'another agent';
+        const to = familyLabel(msg.toFamily);
         const model = msg.toModel ? `, ${modelDisplayName(msg.toModel)}` : '';
         const marker = document.createElement('div');
         marker.className = 'compact-marker handoff-marker';
@@ -568,11 +578,10 @@ window.Chat = {
     // it is the shared history copied from the source tab; everything below is
     // this fork's own path. Rendered on history replay (session_event:"fork").
     renderForkMarker(msg) {
-        const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', opencode: 'OpenCode' };
         const marker = document.createElement('div');
         marker.className = 'compact-marker fork-marker';
         marker.textContent = msg.crossFamily
-            ? `⑃ Forked from here, now on ${FAMILY_LABEL[msg.toFamily] || msg.toFamily}${msg.toModel ? `, ${modelDisplayName(msg.toModel)}` : ''}`
+            ? `⑃ Forked from here, now on ${familyLabel(msg.toFamily)}${msg.toModel ? `, ${modelDisplayName(msg.toModel)}` : ''}`
             : '⑃ Forked from here. This is a new branch of the conversation.';
         App.el.messages.appendChild(marker);
         scrollToBottom();
@@ -581,8 +590,7 @@ window.Chat = {
     // Merge marker (SHE-128): another tab's conversation was handed to this
     // one, which carries on its work. Rendered live and on history replay.
     renderMergeMarker(msg) {
-        const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', opencode: 'OpenCode' };
-        const agent = FAMILY_LABEL[msg.fromFamily] || msg.fromFamily || 'another agent';
+        const agent = familyLabel(msg.fromFamily);
         const marker = document.createElement('div');
         marker.className = 'compact-marker merge-marker';
         marker.textContent = `⤵ Merged in “${msg.fromTitle || 'another tab'}” (${agent}). This agent has its whole conversation.`;

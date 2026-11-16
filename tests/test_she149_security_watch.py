@@ -10,6 +10,7 @@ import pytest
 
 from api.services import security_watch as sw
 from api.services import sessions
+from tests._owner_session import reset_sessions_store
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -43,9 +44,10 @@ def test_a_token_change_alerts_but_a_first_start_does_not(_fresh, monkeypatch):
     sessions.mint("login", ip="203.0.113.7")
     _fresh.clear()
     monkeypatch.setattr(sessions, "_epoch", lambda: "a-new-token-epoch")
-    with sessions._lock:
-        sessions._live()
+    sessions.reconcile_rotation()
     assert [t for t, _ in _fresh] == ["ShellTeam: master token changed"]
+    monkeypatch.undo()
+    reset_sessions_store()
 
 
 def _summary(events, monkeypatch, first_run=False):

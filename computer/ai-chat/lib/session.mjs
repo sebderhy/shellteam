@@ -27,8 +27,8 @@ import {
   CLAUDE_CONFIG_FILE,
 } from "./constants.mjs";
 import { agentIdFor } from "./agents/registry.mjs";
-import { agentIdForModel, includedModelsByFamily, opencodeOutputTokenMax, resolveModelId } from "./model-catalog.mjs";
-import { opencodeConfigPath, ownMemoryEnv } from "./agent-layer.mjs";
+import { agentIdForModel, includedModelsByFamily, resolveModelId } from "./model-catalog.mjs";
+import { ownMemoryEnv } from "./agent-layer.mjs";
 // clearAllHistory removed — history is now managed by SessionManager
 
 // --- State ---
@@ -56,8 +56,8 @@ export function loadModel() {
 export function modelPermitted(model) {
   const family = agentIdForModel(model);
   const included = includedModelsByFamily()[family] || [];
-  // No INCLUDED_MODELS for this family = nothing to gate. (OpenCode's proxy
-  // also bills "included", but that is not this allowlist.)
+  // No INCLUDED_MODELS for this family = nothing to gate. (Pi's relay also
+  // bills "included", but that is not this allowlist.)
   if (!included.length || authModeFor(family) !== "included" || included.includes(model)) return { ok: true };
   return {
     ok: false,
@@ -90,7 +90,6 @@ export function saveModel(model) {
 
 // Model-family helpers — delegate to the registry so the truth lives in one place.
 export const isCodexModel    = (m) => agentIdFor(m) === "codex";
-export const isOpenCodeModel = (m) => agentIdFor(m) === "opencode";
 
 // Saving one auth method (API key or OAuth) clears the alternate so the CLI
 // doesn't pick up a stale credential from a previous setup.
@@ -549,8 +548,8 @@ export function authModeFor(family) {
       // Validate the token (not bare file existence): agy can leave a partial/
       // corrupt token file during sign-in, which must NOT read as connected.
       return subscriptionStatusFor("antigravity") === "connected" ? "subscription" : "none";
-    case "opencode":
-      return "included"; // server-side Fireworks proxy — never user-billed
+    case "pi":
+      return "included"; // server-side Fireworks relay, never user-billed
     default:
       return null;
   }
@@ -558,7 +557,7 @@ export function authModeFor(family) {
 
 // How a family's API key bills: the user's own money ("apikey"), or — when the
 // operator listed models of this family in INCLUDED_MODELS — the box's key
-// offered as a courtesy fallback ("included", same mode OpenCode's proxy uses).
+// offered as a courtesy fallback ("included", the same mode Pi's relay uses).
 function keyMode(family) {
   return (includedModelsByFamily()[family] || []).length ? "included" : "apikey";
 }
@@ -577,7 +576,7 @@ function applyKeyVars(env, vars, key) {
   }
 }
 
-export function getCliEnv(cwd = HOME) {
+export function getCliEnv() {
   const env = { ...process.env, HOME };
 
   // Subscription-first (see authModeFor): pass a family's API key through ONLY in
@@ -599,18 +598,6 @@ export function getCliEnv(cwd = HOME) {
   // One memory (K15): with the owner's setting, agents' own memory is off.
   Object.assign(env, ownMemoryEnv());
 
-  // OpenCode loads ShellTeam's additive layer (Fireworks provider + MCP + skills)
-  // via OPENCODE_CONFIG — it MERGES with the user's own OpenCode config, never
-  // replaces it. No-op if the layer hasn't been built yet. cwd-aware so the
-  // dreaming module can add the folder's knowledge to `instructions`.
-  const ocConfig = opencodeConfigPath(cwd);
-  // The output clamp rides with that config: it only lifts OpenCode's 32000-token
-  // default to the limits the catalog's own models declare.
-  if (ocConfig) {
-    env.OPENCODE_CONFIG = ocConfig;
-    const outputMax = opencodeOutputTokenMax();
-    if (outputMax) env.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX = String(outputMax);
-  }
   return env;
 }
 

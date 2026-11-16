@@ -25,7 +25,6 @@ import logging
 import math
 import os
 import re
-import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -206,27 +205,15 @@ def _conversation_hits(home: Path, words: list[str], project: str | None,
         for line in _lines_with(path, needle):
             add("Codex", session, reading.level_for(cwd, home), reading.codex_said(line))
 
-    db = home / ".local" / "share" / "opencode" / "opencode.db"
-    if db.exists():
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
-        try:
-            rows = conn.execute(
-                "SELECT s.id, s.directory, m.data, p.data FROM part p JOIN message m ON p.message_id = m.id "
-                "JOIN session s ON s.id = p.session_id WHERE lower(p.data) LIKE ?",
-                (f"%{needle.decode()}%",))
-            for sid, directory, mdata, pdata in rows:
-                cwd = directory or str(home)
-                if sid in exclude or not _wanted(home, cwd, project):
-                    continue
-                m, p = json.loads(mdata), json.loads(pdata)
-                if p.get("type") != "text" or not p.get("text"):
-                    continue
-                role = "owner" if m.get("role") == "user" else "agent"
-                text = reading.owner_text(p["text"]) if role == "owner" else p["text"]
-                ts = ((m.get("time") or {}).get("created") or 0) / 1000
-                add("OpenCode", sid, reading.level_for(cwd, home), (role, text, ts) if text else None)
-        finally:
-            conn.close()
+    pi = reading.pi_sessions_root(home)
+    for path in sorted(pi.glob("*/*.jsonl")) if pi.is_dir() else []:
+        meta = reading.pi_meta(path)
+        session = meta.get("id") or path.stem
+        cwd = meta.get("cwd") or ""
+        if session in exclude or not _wanted(home, cwd, project):
+            continue
+        for line in _lines_with(path, needle):
+            add("Pi", session, reading.level_for(cwd, home), reading.pi_said(line))
 
     # A few lines per conversation, the best and newest conversations first.
     by_conv: dict[str, list[Hit]] = {}

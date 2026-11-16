@@ -34,6 +34,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
+from tests._owner_session import reset_sessions_store
 from api.services import auth, sessions
 
 MASTER = "fake-jwt-token"
@@ -125,7 +126,10 @@ class TestSessionCookieIsNotTheMaster:
         assert sessions.lookup(minted.token) is not None
         monkeypatch.setattr(auth, "OWNER_TOKEN", "a-brand-new-rotated-owner-token")
         assert sessions.lookup(minted.token) is None
+        assert sessions.reconcile_rotation() == 1  # the API applies it at startup (SHE-213)
         assert sessions.lookup_files_cred(minted.files_cred) is None
+        monkeypatch.undo()
+        reset_sessions_store()
 
     def test_enrollment_mints_a_session_not_the_master(self):
         with TestClient(app, base_url="http://localhost") as c:
@@ -272,8 +276,12 @@ class TestSteelNetworkIsolation:
         assert '--network "$STEEL_NETWORK"' in run
         assert "ensure_browser_network" in run
         assert 'STEEL_NETWORK="shellteam-browser-net"' in INSTALL
-        # Publishing stays loopback-only on the host.
-        assert '-p "127.0.0.1:$STEEL_PORT:3000"' in run
+        # Publishing stays loopback-only on the host: the installer hands the
+        # launch script a loopback address, and the script publishes only that.
+        assert '--publish "127.0.0.1:$STEEL_PORT"' in run
+        launch = (REPO / "deploy" / "browser" / "run-steel.sh").read_text()
+        assert '[ -n "$publish" ] && args+=(-p "$publish:3000")' in launch
+        assert launch.count('args+=(-p ') == 1 and "0.0.0.0" not in launch
 
     def _run_ensure(self, tmp_path, inspect_out: str, inspect_rc: int):
         log = tmp_path / "docker.log"

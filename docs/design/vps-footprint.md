@@ -8,7 +8,7 @@
 ShellTeam should be an **additive layer on top of the VPS, not a mutation of it.**
 
 1. **Never write to the user's coding-agent config.** `~/.claude`, `~/.codex`,
-   `~/.gemini`, `~/.config/opencode`, `~/.gitconfig`, `~/.bashrc` are the user's.
+   `~/.gemini`, `~/.pi`, `~/.gitconfig`, `~/.bashrc` are the user's.
    ShellTeam composes its additions (MCP servers, skills, hooks, persona) **at
    agent-launch time** via CLI flags / env, layered in memory, persisted nowhere.
 2. **Keep ShellTeam's own state in ShellTeam's own namespace** (`$STATE`,
@@ -59,16 +59,16 @@ All four CLIs support composing config at launch, via different primitives:
 | **Claude** | `--plugin-dir <dir>` (skills + commands + hooks + MCP as one bundle) + `--mcp-config <file>` + `--settings <file>` + `--append-system-prompt[-file]` + `--add-dir` | ★ purpose-built |
 | **Codex** | `--profile <name>` → **layers `$CODEX_HOME/<name>.config.toml` on top of the user's base config**; `-c key=value`; `$CODEX_HOME` | ★ clean layering |
 | **Gemini** | settings precedence (system/user/workspace) + system-settings-path env + `--allowed-mcp-server-names` | ◐ clunkier (and being replaced by Antigravity CLI — see §7) |
-| **OpenCode** | `OPENCODE_CONFIG` env → config file; project `opencode.json` (and it's the managed agent ST controls) | ◐ workable |
+| **Pi** | `-e <extension.ts>` (registers a provider + MCP servers) + `--append-system-prompt` + `--skill`; user config in `~/.pi/agent` still loads | ★ additive flags |
 
 **Universal fallback:** ShellTeam spawns every agent as a child process with a
 controlled env, so it can point each CLI's config-home (`CODEX_HOME`, Gemini's
-settings path, `OPENCODE_CONFIG`) at a ShellTeam-owned dir. Prefer the *additive*
+settings path) at a ShellTeam-owned dir. Prefer the *additive*
 flags (so the user's own config still loads); fall back to config-home only where
 a CLI offers no layering.
 
 ShellTeam's bundle lives in e.g. `$STATE/shellteam-agent/` (a Claude plugin dir,
-a Codex profile toml, an OpenCode config, …), built/refreshed by the installer and
+a Codex profile toml, a Pi extension, …), built/refreshed by the installer and
 the control plane — never copied into the user's dotfiles.
 
 ## 3. Tiers of footprint, and "control vs warn"
@@ -152,8 +152,10 @@ current knowledge-layer + dreaming implementation to port.
    `~/.codex/config.toml` / `~/.config/opencode/opencode.json`.
 3. ✅ **Secondary agents.** Codex layers via `-c` overrides plus a
    ShellTeam-owned skills HOME overlay (`build_codex_overrides` →
-   `codexLayerArgs`) — additive on the user's `config.toml`, no write. OpenCode
-   uses `OPENCODE_CONFIG` (merges with the user's config). Antigravity uses a
+   `codexLayerArgs`) — additive on the user's `config.toml`, no write. Pi (which
+   replaced OpenCode on 2026-11-16) loads ShellTeam's static extension with `-e`
+   plus prompt and skill flags (`piLayer`); nothing is written to `~/.pi`.
+   Antigravity uses a
    ShellTeam-owned workspace plugin added per session with `--add-dir`; it writes
    nothing to `~/.gemini`. The OSS path calls neither `_setup_claude_config` nor
    `_setup_secondary_agent_configs`.

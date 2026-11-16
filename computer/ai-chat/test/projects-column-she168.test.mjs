@@ -8,7 +8,8 @@
  *    the owner's name is kept, the folder is never touched on removal;
  *  - moving a chat into a project KEEPS its history (the regression);
  *  - the "move in" request reaches the agent as a cockpit notice;
- *  - the page wiring that makes the column opt-in.
+ *  - the page wiring: the column is the only layout (SHE-188), and the
+ *    cockpit map's rules (docs/plans/active/cockpit-map/prd.md).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -182,18 +183,20 @@ test("the project list lives next to the cockpit's other state, not in the agent
   assert.equal(SESSION_MOVES_FILE, join(HOME, ".config", "shellteam", "moved-sessions.jsonl"));
 });
 
-test("the column is opt-in: without ?layout=projects the page is the tab row", () => {
+test("SHE-188: the column is the only layout; the tab row, its drawer and the switch are gone", () => {
   const html = readFileSync(join(PUBLIC, "index.html"), "utf8");
-  const head = html.slice(0, html.indexOf("</head>"));
-  assert.match(head, /<script src="\/layout\.js"><\/script>/, "the layout class is set before the first paint");
   assert.ok(html.indexOf('src="/projects.js"') > html.indexOf('src="/app.js"'), "projects.js reads app.js globals");
-  assert.match(html, /<aside class="pj-side" id="pjSide"[^>]*\bhidden\b/, "the column starts hidden");
-  const layout = readFileSync(join(PUBLIC, "layout.js"), "utf8");
-  assert.match(layout, /get\('layout'\) === 'projects'/);
+  assert.match(html, /<aside class="pj-side" id="pjSide"[^>]*\bhidden\b/, "the column shows once projects.js has drawn it");
+  assert.ok(!existsSync(join(PUBLIC, "layout.js")), "no layout switch script");
   const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
-  assert.match(js, /if \(!ON \|\|/, "render() does nothing when the column is off");
-  const css = readFileSync(join(PUBLIC, "projects.css"), "utf8");
-  assert.match(css, /^\.pj-side, \.pj-back, \.pj-crumb, \.pj-tools, \.pj-first \{ display: none; \}/m);
+  const app = readFileSync(join(PUBLIC, "app.js"), "utf8");
+  const css = readFileSync(join(PUBLIC, "projects.css"), "utf8") + readFileSync(join(PUBLIC, "styles.css"), "utf8");
+  for (const [name, src] of [["index.html", html], ["projects.js", js], ["app.js", app], ["css", css]]) {
+    for (const relic of ["layout-projects", "layout=projects", "session-tab", "sessionTabs", "conv-switcher", "convSwitcher", "sessionDrawer", "session-drawer"]) {
+      assert.ok(!src.includes(relic), `${name} still has "${relic}"`);
+    }
+  }
+  assert.doesNotMatch(js, /\bON\b/, "no on/off switch left in projects.js");
 });
 
 test("the agent and project menus are not stretched across the window", () => {
@@ -203,13 +206,15 @@ test("the agent and project menus are not stretched across the window", () => {
   assert.match(css, /\.actions-menu\.tab-context-menu \{ position: fixed; top: auto; right: auto;/);
 });
 
-test("SHE-169: the project's three views sit between the project's name and the agent's", () => {
+test("SHE-169: the project's three views sit with the project, left of the chat's own controls", () => {
   // They were on the right, next to the chat's own controls, and read as the chat's.
   const html = readFileSync(join(PUBLIC, "index.html"), "utf8");
-  const [proj, tools, agent, right] = ['id="pjCrumb"', 'id="pjTools"', 'id="pjAgent"', 'class="status-right"'].map(s => html.indexOf(s));
-  assert.ok(proj > 0 && proj < tools && tools < agent && agent < right);
+  const [proj, agent, tools, right] = ['id="pjCrumb"', 'id="pjAgent"', 'id="pjTools"', 'class="status-right"'].map(s => html.indexOf(s));
+  assert.ok(proj > 0 && proj < agent && agent < tools && tools < right);
+  // The chat's name is renamed from the first row of its menu, and by double-click in the column.
   const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
-  assert.match(js, /getElementById\('pjAgent'\)\.addEventListener\('dblclick'/, "the agent's name is still renamed by double-click");
+  assert.match(js, /row\('chat\.rename', 'e', 'pen', 'Rename', \(\) => beginRenameOn\(document\.getElementById\('pjAgent'\), activeSlotId\)\)/);
+  assert.match(js, /const agName = e\.target\.closest\('\.pj-ag-name'\);\s*if \(agName\) beginRenameOn\(/);
 });
 
 test("SHE-169: the chat's own report count says it is this chat's", () => {
@@ -217,8 +222,7 @@ test("SHE-169: the chat's own report count says it is this chat's", () => {
   const html = readFileSync(join(PUBLIC, "index.html"), "utf8");
   assert.match(html, /id="reportsCount">0<\/span><span class="btn-reports-scope">in this chat<\/span>/);
   const css = readFileSync(join(PUBLIC, "projects.css"), "utf8");
-  assert.match(css, /^\.btn-reports-scope \{ display: none; \}/m, "the tab-row layout is unchanged");
-  assert.match(css, /html\.layout-projects \.btn-reports-scope \{ display: inline;/);
+  assert.match(css, /^\.btn-reports-scope \{ color: var\(--text-muted\);/m);
 });
 
 test("SHE-169: home-folder chats are 'General ~', and feedback is a bug, not a chat bubble", () => {
@@ -237,18 +241,69 @@ test("SHE-184: a folder with no agent yet is findable and one step from a chat",
   assert.match(js, /for \(const w of freeFolders\(\)\) items\.push\(\{[^}]*Start an agent in/, "Ctrl+K lists the free folders");
   assert.match(js, /openAddDialog\(startMode = projects\.length && freeFolders\(\)\.length \? 'open' : 'new'\)/,
     "past the first project the dialog opens on Existing folder");
-  assert.match(js, /Open a folder or add a project/, "the button says it opens existing folders");
+  assert.match(js, /Open a folder or start a project/, "the button says it opens existing folders");
 });
 
-test("SHE-187: on a phone the chat's name and a swipe open the list; the model name stays visible", () => {
+test("SHE-187: on a phone a tap on the title and a swipe open the list; a long press opens the chat menu", () => {
   const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
-  assert.match(js, /getElementById\('pjAgent'\)\.addEventListener\('click'[\s\S]{0,120}showList\(true\)/);
+  const wire = js.match(/\n    function wireTitle\(title\) \{[\s\S]*?\n    \}\n/)[0];
+  assert.match(wire, /if \(!isPhone\(\)\) return openMenu\(\);\s*showList\(true\);/, "desktop: the menu; phone: back to the chats");
+  assert.match(wire, /hold = setTimeout\(\(\) => \{ held = true;[^}]*openMenu\(\); \}, HOLD_MS\)/, "a long press opens the menu");
+  // Lifting the finger makes a click on the menu's backdrop, which closed the
+  // menu the moment it opened (caught in a real browser, 2026-11-15).
+  assert.match(wire, /document\.addEventListener\('click', swallow, \{ capture: true, once: true \}\);/, "the click that ends a long press is swallowed");
+  assert.match(wire, /pjHoldHintSeen/, "the long press is said once, the first time");
   assert.match(js, /onSwipe\(document\.querySelector\('\.chat-main'\), 'right'/);
   assert.match(js, /onSwipe\(side, 'left'/);
+});
+
+test("U3: the agent and the model are named in words at every width", () => {
+  const html = readFileSync(join(PUBLIC, "index.html"), "utf8");
+  assert.match(html, /<span class="btn-ai-agent" id="btnAIAgent"><\/span>\s*<span class="btn-ai-model" id="btnAIModel">/);
   const css = readFileSync(join(PUBLIC, "projects.css"), "utf8");
-  const phone = css.slice(css.indexOf("@media (max-width: 480px)"));
-  assert.match(phone, /\.btn-ai-model \{ display: inline;/);
-  assert.doesNotMatch(phone.slice(0, phone.indexOf("\n}\n")), /\.btn-ai-model \{ display: none; \}/);
+  const phone = css.slice(css.indexOf("@media (max-width: 720px)"));
+  assert.match(phone, /\.btn-ai-agent, html:not\(\.pj-side-shut\) \.btn-ai-agent \{ display: inline;/, "the agent's name comes back on a phone");
+  assert.doesNotMatch(css, /\.btn-ai-model \{[^}]*display: none/, "the model's name is never hidden");
+  assert.doesNotMatch(readFileSync(join(PUBLIC, "styles.css"), "utf8"), /\.btn-ai-model/, "one place styles the model button");
+});
+
+test("starting an agent is a visible line under each project, not a plus on hover", () => {
+  const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
+  assert.match(js, /newLine\(p\.path, 'New agent'\)/);
+  assert.match(js, /newLine\('', 'New chat'\)/);
+  assert.match(js, /<button class="pj-new" type="button" data-new=/);
+  const head = js.match(/<div class="pj-head"[\s\S]*?<\/div>/)[0];
+  assert.doesNotMatch(head, /data-new=/, "no hover-only plus in the project's head");
+});
+
+test("every state has a word, and a question is never listed as done (U6, U10)", async () => {
+  const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
+  const src = js.match(/\n    function spanText\(ms\) \{[\s\S]*?\n    \}\n/)[0] + js.match(/\n    function stateOf\(slot\) \{[\s\S]*?\n    \}\n/)[0]
+    + js.match(/\n    function waitingLine\(slot\) \{[\s\S]*?\n    \}\n/)[0];
+  const now = Date.now();
+  const { stateOf, waitingLine } = new Function("slotUnread", `${src}; return { stateOf, waitingLine };`)((s) => !!s.unread);
+  assert.deepEqual(stateOf({ isGenerating: true, asking: true }), { kind: "ask", text: "Needs you" });
+  assert.deepEqual(stateOf({ isGenerating: true, turnStartedAt: now - 5 * 60000 }), { kind: "work", text: "Working 5 min" });
+  // Its turn ended, but work it started is still running: never "Done", even with an unread answer.
+  const waiting = { sessionId: "s", unread: true, waitingOn: 2, waitingSince: now - 4 * 60000, answeredAt: now };
+  assert.deepEqual(stateOf(waiting), { kind: "wait", text: "Waiting 4 min" });
+  assert.equal(waitingLine(waiting), "Waiting on 2 background tasks · 4 min");
+  assert.equal(waitingLine({ ...waiting, waitingOn: 1 }), "Waiting on 1 background task · 4 min");
+  assert.equal(waitingLine({ ...waiting, isGenerating: true }), "", "while it works, Working says it");
+  assert.deepEqual(stateOf({ sessionId: "s", unread: true, answeredAt: now - 3600000 }), { kind: "new", text: "Done 1 h" });
+  assert.deepEqual(stateOf({}), { kind: "", text: "New" });
+});
+
+test("SHE-115: the server says how much work an agent left running, to every agent type's chat", () => {
+  const id = chat(shop, WORK);
+  let row = sm.listSlots().find((s) => s.id === id);
+  assert.equal(row.waitingOn, 0);
+  assert.equal(row.waitingSince, 0);
+  const src = readFileSync(join(dirname(PUBLIC), "lib", "session-manager.mjs"), "utf8");
+  assert.match(src, /\.\.\.waitingOf\(s\),/, "the slot list carries it for every chat");
+  assert.match(src, /slotBroadcast\(slotId, "waiting_on", waitingOf\(slot\)\);/, "and says so the moment it changes");
+  const js = readFileSync(join(PUBLIC, "projects.js"), "utf8");
+  assert.match(js, /if \(msg\.type === 'waiting_on'\) \{ slot\.waitingOn = msg\.waitingOn \|\| 0;/);
 });
 
 test("SHE-197: a dashboard message is judged only once the box settings are known", () => {

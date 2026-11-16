@@ -33,7 +33,7 @@ _CONVERSATION_STORES = (
     r"\.codex/history",
     r"\.claude/history",
     r"\.claude/file-history",
-    r"\.local/share/opencode",
+    r"\.pi/agent/sessions",
     r"\.gemini",
     rf"{_HOME}/conversations\b",
     r"\.shellteam/(?:exam|dream)\b",

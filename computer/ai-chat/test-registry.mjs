@@ -52,14 +52,15 @@ describe("agent registry — model routing", () => {
     assert.equal(pickAgent("gemini-3.8-flash-medium").id, "antigravity");
   });
 
-  it("routes OpenCode (Fireworks) model families", () => {
-    assert.equal(pickAgent("glm-5p3").id, "opencode");       // catalog default
-    assert.equal(pickAgent("kimi-k3").id, "opencode");
-    assert.equal(pickAgent("deepseek-v4-pro").id, "opencode");
-    assert.equal(pickAgent("kimi-k2p7-code").id, "opencode"); // prefix routing (not in catalog list)
-    assert.equal(pickAgent("kimi-future-model").id, "opencode");
-    assert.equal(pickAgent("deepseek-v4-pro").id, "opencode");
-    assert.equal(pickAgent("qwen3p7-plus").id, "opencode");   // prefix routing
+  it("routes Pi (Fireworks) model families", () => {
+    assert.equal(pickAgent("glm-5p3").id, "pi");       // catalog default
+    assert.equal(pickAgent("kimi-k3p1-pro").id, "pi");
+    assert.equal(pickAgent("kimi-k3").id, "pi");                // a retired id still routes to Pi
+    assert.equal(pickAgent("deepseek-v4-pro").id, "pi");
+    assert.equal(pickAgent("kimi-k2p7-code").id, "pi"); // prefix routing (not in catalog list)
+    assert.equal(pickAgent("kimi-future-model").id, "pi");
+    assert.equal(pickAgent("deepseek-v4-pro").id, "pi");
+    assert.equal(pickAgent("qwen3p7-plus").id, "pi");   // prefix routing
   });
 
   it("falls back to Claude for unknown models", () => {
@@ -80,9 +81,9 @@ describe("agent registry — capabilities", () => {
 
     assert.equal(supports("gemini-4-argon-high", "resume"), true);
 
-    assert.equal(supports("kimi-k3", "rewind"), false);
-    assert.equal(supports("kimi-k3", "resume"), true);
-    assert.equal(supports("kimi-k3", "cliOwnsHistory"), false);
+    assert.equal(supports("kimi-k3p1-pro", "rewind"), false);
+    assert.equal(supports("kimi-k3p1-pro", "resume"), true);
+    assert.equal(supports("kimi-k3p1-pro", "cliOwnsHistory"), false);
   });
 
   it("returns false for unknown capabilities", () => {
@@ -116,13 +117,10 @@ describe("agent registry — terminal spawn", () => {
       terminalSpawn("gemini-4-argon-high", { sessionId: "xyz" }),
       { cmd: "agy", args: ["--dangerously-skip-permissions", "--model", "gemini-4-argon-high", "--conversation", "xyz"] },
     );
-    assert.deepEqual(
-      terminalSpawn("kimi-k3"),
-      { cmd: "opencode", args: ["--model", "fireworks/kimi-k3"] },
-    );
-    assert.deepEqual(
-      terminalSpawn("kimi-k3", { sessionId: "s-1" }),
-      { cmd: "opencode", args: ["--session", "s-1", "--model", "fireworks/kimi-k3"] },
-    );
+    const fresh = terminalSpawn("kimi-k3p1-pro");
+    assert.equal(fresh.cmd, "pi");
+    assert.deepEqual(fresh.args.slice(0, 6), ["--provider", "shellteam", "--model", "accounts/fireworks/models/kimi-k3p1-pro", "--thinking", "max"]);
+    assert.match(fresh.args.at(-1), /^pi-[0-9a-f-]{36}$/, "a new terminal session gets a cockpit Pi id");
+    assert.deepEqual(terminalSpawn("kimi-k3p1-pro", { sessionId: "pi-1" }).args.slice(-2), ["--session-id", "pi-1"]);
   });
 });

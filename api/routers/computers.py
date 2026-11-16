@@ -278,9 +278,9 @@ async def proxy_ai_chat(path: str, request: Request, user: dict = Depends(get_cu
 
     The dashboard's AI-Providers panel calls this same-origin (so the OWNER_TOKEN
     cookie/header is enforced here) and we forward to the loopback cockpit. The
-    ``status`` response is enriched with ``openCodeAvailable`` — the cockpit can't
+    ``status`` response is enriched with ``piAvailable`` — the cockpit can't
     know whether the control plane holds a Fireworks key, but we do, and the
-    OpenCode universal fallback only actually works when that key is configured.
+    Pi universal fallback only actually works when that key is configured.
     """
     body = await request.body()
     if body and not _is_json(request):
@@ -305,7 +305,7 @@ async def proxy_ai_chat(path: str, request: Request, user: dict = Depends(get_cu
     if path == "status" and resp.status_code == 200:
         try:
             data = resp.json()
-            data["openCodeAvailable"] = bool(os.environ.get("FIREWORKS_API_KEY"))
+            data["piAvailable"] = bool(os.environ.get("FIREWORKS_API_KEY"))
             content = json.dumps(data).encode()
         except ValueError:
             log.warning("ai status: cockpit returned non-JSON; passing through unmodified")

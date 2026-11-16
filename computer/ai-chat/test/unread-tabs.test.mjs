@@ -107,18 +107,21 @@ test("client: reading on another device clears it here; server and browser clock
   assert.equal(c.isTurnAnswer({}), true);
 });
 
-test("wiring: tab and drawer render it, right-click and Alt+U toggle it, the title counts it", () => {
+test("wiring: the column renders it, the row menu and Alt+U toggle it, the title counts it", () => {
   const html = readFileSync(fileURLToPath(new URL("../../../frontend/dashboard.html", import.meta.url)), "utf8");
-  const css = readFileSync(fileURLToPath(new URL("../public/styles.css", import.meta.url)), "utf8");
-  assert.match(appSrc, /class="session-tab\$\{active\}\$\{generating\}\$\{unread\}"/);
-  assert.match(appSrc, /drawer-item\$\{isActive \? ' active' : ''\}\$\{slotUnread\(slot\) \? ' unread' : ''\}/);
-  assert.match(appSrc, /addEventListener\('contextmenu'[\s\S]*?openTabMenu\(/);
+  const css = readFileSync(fileURLToPath(new URL("../public/projects.css", import.meta.url)), "utf8");
+  const projects = readFileSync(fileURLToPath(new URL("../public/projects.js", import.meta.url)), "utf8");
+  assert.match(projects, /if \(slotUnread\(slot\)\) \{[\s\S]{0,160}?return \{ kind: 'new', text: ago \? `Done \$\{ago\}` : 'Done' \};/);
+  assert.match(projects, /class="pj-ag \$\{st\.kind\}/);
+  assert.match(projects, /\[unread \? 'Mark as read' : 'Mark as unread', \(\) => setTabUnread\(slotId, !unread\)\]/);
+  assert.match(projects, /row\('chat\.unread', 'u', 'unread', unread \? 'Mark as read' : 'Mark as unread'/);
   assert.match(appSrc, /e\.code === 'KeyU'[\s\S]*?setTabUnread\(/);
   assert.match(appSrc, /\['Alt\+U', /, "the ? cheat sheet lists it");
   assert.match(appSrc, /type: 'mark_unread'/);
   assert.match(appSrc, /kind: 'unread-count'/);
   assert.match(html, /d\.kind === 'unread-count'\) document\.title/);
-  assert.match(css, /\.session-tab\.unread \{/);
-  assert.match(appSrc, /getElementById\('convSwitcherBadge'\)/, "phones count the other tabs' waiting answers");
-  assert.match(readFileSync(fileURLToPath(new URL("../public/index.html", import.meta.url)), "utf8"), /id="convSwitcherBadge" hidden/);
+  assert.match(css, /\.pj-ag\.new, \.pj-ag\.ask \{ color: var\(--text\); font-weight: 700; \}/);
+  // Phones, and a hidden column: the other chats' answers are counted in words in the header.
+  assert.match(projects, /getElementById\('pjNeeds'\)/);
+  assert.match(readFileSync(fileURLToPath(new URL("../public/index.html", import.meta.url)), "utf8"), /id="pjNeeds"[^>]*hidden/);
 });

@@ -40,11 +40,11 @@ window.App = {
         hasOAuth: false,
         hasCodexOAuth: false,
         hasAntigravityOAuth: false,
-        // OpenCode (Fireworks) is a server-side fallback, but it only actually
+        // Pi (Fireworks) is a server-side fallback, but it only actually
         // works when the box has a FIREWORKS_API_KEY. The server reports this in
         // status; until we hear otherwise, assume it's unavailable so we never
-        // silently route a no-credentials user into a broken OpenCode chat.
-        hasOpenCode: false,
+        // silently route a no-credentials user into a broken Pi chat.
+        hasPi: false,
         // Voice input (STT) needs an ElevenLabs key on the control plane. null =
         // unknown / older server (keep the mic visible); false = server said no
         // key (hide the mic and point at Settings → Secrets).
@@ -67,7 +67,7 @@ window.App = {
         installedAgents: null,
         apiKeySource: null,
         // Per-family billing mode from /api/status: { claude, codex, antigravity,
-        // opencode } each "subscription" | "apikey" | "included" | "gateway" | "none". Drives
+        // pi } each "subscription" | "apikey" | "included" | "gateway" | "none". Drives
         // the billing badge next to the model picker. Null until first status.
         authMode: null,
         // Per-family OAuth health, independent from billing mode. "expired"
@@ -199,7 +199,7 @@ function renameLocalSlot(fromId, toId) {
         localStorage.setItem('activeSlotId', String(toId));
     }
     if (toId >= nextSlotId) nextSlotId = toId + 1;
-    renderSessionTabs();
+    renderChats();
 }
 
 // A link an agent wrote is followed only to the web, mail, or a path on this
@@ -489,7 +489,7 @@ function escHtml(s) {
 }
 
 // For a value interpolated into a single-quoted JS string inside an inline
-// handler (onclick="pickWorkspace('…')"). escHtml alone is NOT enough there:
+// handler (onclick="pickModel('…')"). escHtml alone is NOT enough there:
 // the browser decodes &#39; back to a raw ' before the JS parser sees the
 // attribute, so a path containing ' would still terminate the string. JS-escape
 // first, then HTML-escape the result.
@@ -530,7 +530,7 @@ function showInfoToast(text) {
 // them via /api/report/publish (control-plane allowlist — same URL either way),
 // and Share (Web Share sheet / copy-link) lights up only once public.
 // The report PANEL lives one level up, in the dashboard shell (so it spans the
-// full height, reaching the tab row). The cockpit only DETECTS report links and
+// full height). The cockpit only DETECTS report links and
 // asks the parent to open them via postMessage. See dashboard.html's report panel.
 const ReportPanel = {
     // A link is a "report" if it points at an HTML file served by THIS box's FILE
@@ -646,8 +646,6 @@ function refreshReportsButton() {
     const n = ReportPanel.listIn(E.messages).length;
     document.getElementById('reportsGroup').hidden = n === 0;
     document.getElementById('reportsCount').textContent = String(n);
-    document.getElementById('aiMenuReportsItem').hidden = n === 0;
-    document.getElementById('aiMenuReportsCount').textContent = String(n);
     if (n === 0 && Menus.isOpen('reportsMenu')) Menus.hide(false);
 }
 
@@ -707,10 +705,17 @@ function agentIdForModel(model) {
     return list[0].id;
 }
 
-function opencodeDefaultModel() {
-    const a = catalogAgents().find(x => x.id === 'opencode');
+function piDefaultModel() {
+    const a = catalogAgents().find(x => x.id === 'pi');
     if (!a) return '';
     return a.default || (a.models && a.models[0] && a.models[0].id) || '';
+}
+
+// Human name for an agent family. `opencode` is a retired family, named only by
+// the marker on chats that were carried over to Pi (session_event retired_agent).
+const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', gemini: 'Gemini', pi: 'Pi', opencode: 'OpenCode' };
+function familyLabel(family, fallback = 'another agent') {
+    return FAMILY_LABEL[family] || family || fallback;
 }
 
 // Human name for a model id, from the catalog (falls back to a shortened id
@@ -723,19 +728,17 @@ function modelDisplayName(id) {
     return shortModel(id) || 'AI';
 }
 
-// The AI button doubles as the model indicator (there is no inline <select>
-// anymore) — keep its label and the AI menu's Model row in sync everywhere the
-// old code assigned modelSelect.value.
+// The header names the agent and the model in words at every width (U3), and
+// the button opens the model list and nothing else.
 function setModelDisplay(model) {
     const name = modelDisplayName(model);
-    const harness = catalogAgents().find(a => (a.models || []).some(m => m.id === model))?.label;
+    const harness = catalogAgents().find(a => (a.models || []).some(m => m.id === model))?.label || '';
     const full = harness ? `${harness} · ${name}` : name;
-    const btn = document.getElementById('btnAIModel');
-    if (btn) { btn.textContent = name; btn.title = full; }
-    // Say which harness and model this is, and that the button changes them (SHE-187).
-    document.getElementById('btnAI')?.setAttribute('aria-label', `${full}. Change the model, folder or session`);
-    const row = document.getElementById('aiMenuModel');
-    if (row) row.textContent = name;
+    document.getElementById('btnAIAgent').textContent = harness;
+    document.getElementById('btnAIModel').textContent = name;
+    const btn = document.getElementById('btnAI');
+    btn.title = `${full}. Click to change the model`;
+    btn.setAttribute('aria-label', `${full}. Change the model`);
 }
 
 async function loadModelCatalog() {
@@ -745,8 +748,8 @@ async function loadModelCatalog() {
     setModelDisplay(S.currentModel);
 }
 
-// --- Model picker (second level behind the AI menu) -----------------------
-// Replaces the old inline <select>: same list, grouped by agent, with the
+// --- Model picker ----------------------------------------------------------
+// Opened by the header's model button: the models, grouped by agent, with the
 // family's billing mode shown per group so "which of these costs me per token"
 // is visible at the moment of choice.
 function openModelPicker() {
@@ -788,120 +791,13 @@ function pickModel(id) {
     if (id !== S.currentModel) changeModel(id);
 }
 
-// --- Workspace picker (second level behind the AI menu) -------------------
-// The inline cwd combobox is desktop-only; this modal is how every width —
-// mobile included, for the first time — changes the working directory.
-// Live directory matches for whatever path is typed in the picker — merged with
-// the curated workspace list so a plain folder that isn't a git repo or under
-// ~/projects (e.g. ~/avsv) still shows up and is one click to switch to (SHE-55).
-let _pickerDirs = [];
-
-function openWorkspacePicker() {
-    Menus.hide();
-    _pickerDirs = [];
-    // Refresh is best-effort: send() throws on a non-OPEN socket, and the
-    // picker must still open (with the cached list) while disconnected.
-    if (S.ws?.readyState === WebSocket.OPEN) {
-        S.ws.send(JSON.stringify({ type: 'list_workspaces' }));
-    }
-    renderWorkspacePicker();
-    document.getElementById('workspacePicker').classList.add('visible');
-    document.getElementById('workspaceBackdrop').classList.add('visible');
-    document.getElementById('workspacePickerInput')?.focus();
-}
-
-// The header (with its input) is rendered once; only the list repaints as the
-// user types or results arrive, so the input keeps focus and caret position.
-function renderWorkspacePicker() {
-    const picker = document.getElementById('workspacePicker');
-    picker.innerHTML = `<div class="session-picker-header">
-        <div class="session-picker-title">Workspace</div>
-        <input type="text" class="session-search" id="workspacePickerInput"
-               placeholder="Search folders or type a path (~/projects/app)…" autocomplete="off"
-               spellcheck="false"
-               oninput="onWorkspacePickerInput(this.value)"
-               onkeydown="if (event.key === 'Enter') pickWorkspacePath(this.value)">
-    </div><div class="session-list" id="workspacePickerList"></div>`;
-    renderWorkspacePickerList();
-}
-
-function renderWorkspacePickerList() {
-    const list = document.getElementById('workspacePickerList');
-    if (!list) return;
-    const cur = currentCwd();
-    const q = (document.getElementById('workspacePickerInput')?.value || '').trim();
-
-    const byPath = new Map();
-    for (const w of _workspaces) byPath.set(w.path, { path: w.path, label: w.label || shortPath(w.path) });
-    for (const d of _pickerDirs) if (!byPath.has(d.path)) byPath.set(d.path, { path: d.path, label: shortPath(d.path) });
-    let items = [...byPath.values()];
-    if (q) {
-        const nl = q.toLowerCase();
-        const el = expandPath(q).toLowerCase();
-        items = items.filter(w => w.label.toLowerCase().includes(nl) || w.path.toLowerCase().includes(el));
-    }
-
-    let html = '';
-    // Always let the user switch to exactly what they typed, even if it matches
-    // nothing in the list yet — the discoverable equivalent of pressing Enter.
-    const typed = q ? expandPath(q) : null;
-    if (typed && typed !== cur && !byPath.has(typed)) {
-        html += `<div class="session-item model-item" onclick="pickWorkspace('${jsArg(typed)}')">
-            <span class="model-item-name info-mono">Switch to ${escHtml(shortPath(typed))}</span>
-        </div>`;
-    }
-    for (const w of items) {
-        const current = w.path === cur;
-        html += `<div class="session-item model-item${current ? ' active' : ''}" onclick="pickWorkspace('${jsArg(w.path)}')">
-            <span class="model-item-name info-mono">${escHtml(w.label)}</span>
-            ${current ? '<span class="model-item-check">&#10003;</span>' : ''}
-        </div>`;
-    }
-    if (!html) html = `<div class="session-empty">${_workspaces.length ? 'No matching folder' : 'Loading workspaces…'}</div>`;
-    list.innerHTML = html;
-}
-
-function onWorkspacePickerInput(val) {
-    // Search real directories under the typed path's parent so folders that aren't
-    // git repos / under ~/projects surface as you type (SHE-55). list_directories
-    // lists a dir's children, so to see siblings of "~/av" we list its parent
-    // (~/) and filter by the typed text in renderWorkspacePickerList.
-    const v = (val || '').trim();
-    if (v && (v.startsWith('/') || v.startsWith('~')) && S.ws?.readyState === WebSocket.OPEN) {
-        const parent = expandPath(v).replace(/\/[^/]*$/, '') || BOX.home;
-        S.ws.send(JSON.stringify({ type: 'list_directories', prefix: parent }));
-    }
-    renderWorkspacePickerList();
-}
-
-function hideWorkspacePicker() {
-    document.getElementById('workspacePicker').classList.remove('visible');
-    document.getElementById('workspaceBackdrop').classList.remove('visible');
-}
-
-function pickWorkspace(path) {
-    hideWorkspacePicker();
-    if (path === currentCwd()) return;
-    setWorkspaceDisplay(path);
-    changeWorkspace(path);
-}
-
-function pickWorkspacePath(raw) {
-    const val = (raw || '').trim();
-    if (!val) return;
-    pickWorkspace(expandPath(val));
-}
-
-// Escape closes whichever modal picker is open (model / workspace / session /
-// rewind). The header menus close via Menus' own Escape handler in dropdown.js.
+// Escape closes whichever modal picker is open (model / session / rewind). The header menus close via Menus' own Escape handler in dropdown.js.
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     hideModelPicker();
-    hideWorkspacePicker();
     hideSessionPicker();
     hideRewindPicker();
 });
-
 
 // --- Context-budget meter (SHE-40) ---------------------------------------
 // Adapters forward per-turn `usage` (input + cache tokens) in turn_done; that
@@ -977,25 +873,15 @@ function clearContextMeter(slotId) {
 }
 
 function renderContextMeter() {
-    const el = document.getElementById('contextMeter');
-    if (!el) return;
-    const slot = sessionSlots.find(s => s.id === activeSlotId);
-    const tokens = slot?.contextTokens;
     renderCompactSend();
-    if (!tokens) { el.hidden = true; updateInfoWarning(); refreshInfoPanelIfOpen(); return; }
-    const windowSize = contextWindowForSlot(slot);
-    const pct = Math.min(100, Math.round((tokens / windowSize) * 100));
-    el.textContent = `${Math.round(tokens / 1000)}k · ${pct}%`;
-    el.title = `Context used: ~${tokens.toLocaleString()} of ${windowSize.toLocaleString()} tokens`;
-    el.classList.toggle('api', pct >= 80);  // reuse the badge's warning styling
-    el.hidden = false;
+    renderQuotaMeter();
     updateInfoWarning();
     refreshInfoPanelIfOpen();
 }
 
 // --- Auth ---
 function isCodexModel(model)       { return agentIdForModel(model) === 'codex'; }
-function isOpenCodeModel(model)    { return agentIdForModel(model) === 'opencode'; }
+function isPiModel(model)          { return agentIdForModel(model) === 'pi'; }
 function isAntigravityModel(model) { return agentIdForModel(model) === 'antigravity'; }
 
 // Whether a family's CLI binary exists on the box (server probes PATH). Unknown
@@ -1016,7 +902,7 @@ function familyHasAuth(family) {
 function hasAuthForModel(model) {
     const family = agentIdForModel(model);
     if (!agentInstalled(family)) return false;  // no CLI, so credentials are moot
-    if (isOpenCodeModel(model)) return S.hasOpenCode;  // only when a server-side Fireworks key exists
+    if (isPiModel(model)) return S.hasPi;  // only when a server-side Fireworks key exists
     return familyHasAuth(family) && modelPermittedHere(model);
 }
 
@@ -1271,54 +1157,51 @@ function quotaSummary() {
 
 const PROVIDER_LABEL = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 
-// Top bar: just the billing badge + (on a subscription) a compact usage bar.
-// No numbers/labels/reset text up here — those live in the tap-to-open panel.
+// How full the open conversation is: { tokens, windowSize, pct } or null before
+// the first turn reports its size.
+function conversationUse() {
+    const slot = sessionSlots.find(s => s.id === activeSlotId);
+    const tokens = slot?.contextTokens;
+    if (!tokens) return null;
+    const windowSize = contextWindowForSlot(slot);
+    return { tokens, windowSize, pct: Math.min(100, Math.round((tokens / windowSize) * 100)) };
+}
+const useTone = (pct) => pct === null ? '' : pct >= 85 ? ' critical' : pct >= 65 ? ' warn' : '';
+
+// Top bar: one ring. Outer arc = the plan (the fullest of its windows), inner
+// arc = this conversation. No numbers up here: they are one click away, in
+// renderQuotaPanel(), next to Compact.
 function renderQuotaMeter() {
-    const monitor = document.getElementById('subscriptionMonitor');
     const meter = document.getElementById('quotaMeter');
-    const track = document.getElementById('quotaMeterTrack');
-    const fill = document.getElementById('quotaMeterFill');
-    const statusBar = document.querySelector('.status-bar');
-    if (!monitor || !meter || !track || !fill) return;
-
-    const billing = billingModeForModel(S.currentModel);
-    const spec = billingBadgeForModel(S.currentModel);
-    monitor.hidden = !spec;
-    const isSubscription = billing === 'subscription';
-    statusBar?.classList.toggle('quota-active', isSubscription);
-    meter.classList.toggle('interactive', isSubscription);
-    meter.setAttribute('aria-haspopup', isSubscription ? 'dialog' : 'false');
-    track.hidden = !isSubscription;
-
-    if (!isSubscription) {
-        // The badge alone is the billing indicator (API-metered / not connected);
-        // there is no quota to expand, so the button stays inert.
-        meter.removeAttribute('aria-busy');
-        meter.setAttribute('aria-expanded', 'false');
-        meter.title = spec ? spec.title : '';
-        meter.setAttribute('aria-label', spec ? spec.label : 'Billing');
-        return;
-    }
-
+    if (!meter) return;
+    const isSubscription = billingModeForModel(S.currentModel) === 'subscription';
     const summary = quotaSummary();
-    meter.setAttribute('aria-busy', String(S.quotaLoading));
-    meter.setAttribute('aria-expanded', String(!!(window.Menus && Menus.isOpen('quotaPanel'))));
-    const providerName = summary.provider?.label || PROVIDER_LABEL[summary.family] || 'Claude';
-    const desc = summary.percent === null
-        ? `${providerName} subscription usage — ${String(summary.value).toLowerCase()}. Tap for details.`
-        : `${providerName} subscription: ${summary.value}${summary.detail ? `, ${summary.detail}` : ''}. Tap for details.`;
+    const plan = isSubscription ? summary.percent : null;
+    const chat = conversationUse();
+
+    const planArc = document.getElementById('useRingPlan');
+    const chatArc = document.getElementById('useRingChat');
+    planArc.style.strokeDasharray = `${plan ?? 0} 100`;
+    chatArc.style.strokeDasharray = `${chat?.pct ?? 0} 100`;
+    planArc.setAttribute('class', `use-ring-arc${useTone(plan)}`);
+    chatArc.setAttribute('class', `use-ring-arc inner${useTone(chat?.pct ?? null)}`);
+    // A check in flight with nothing to show yet: the ring turns, once.
+    document.getElementById('useRing').classList.toggle('checking', isSubscription && S.quotaLoading && plan === null);
+
+    const said = [];
+    if (isSubscription) {
+        const providerName = summary.provider?.label || PROVIDER_LABEL[summary.family] || 'Claude';
+        said.push(plan === null ? `${providerName} plan: ${String(summary.value).toLowerCase()}` : `${providerName} plan: ${summary.value}`);
+    } else {
+        const spec = billingBadgeForModel(S.currentModel);
+        if (spec) said.push(spec.title || spec.label);
+    }
+    said.push(chat ? `this conversation is ${chat.pct}% full` : 'this conversation is new');
+    const desc = `Usage: ${said.join(', ')}. Click for details and Compact.`;
     meter.title = desc;
     meter.setAttribute('aria-label', desc);
-
-    // The scanning bar means ONE thing: a check is in flight. A finished check
-    // with no percentage (credits, a reset count, an error) is a static stub;
-    // animating those read as "loading forever" on boxes whose provider never
-    // reports a percentage.
-    const scanning = S.quotaLoading && summary.percent === null;
-    track.className = `quota-meter-track${scanning ? ' indeterminate' : ''}`;
-    fill.className = `quota-meter-fill${summary.tone === 'warn' ? ' warn' : summary.tone === 'critical' ? ' critical' : summary.tone === 'unavailable' ? ' unavailable' : ''}`;
-    fill.style.width = summary.percent === null ? '' : `${summary.percent}%`;
-
+    meter.setAttribute('aria-busy', String(isSubscription && S.quotaLoading));
+    meter.setAttribute('aria-expanded', String(!!(window.Menus && Menus.isOpen('quotaPanel'))));
     if (window.Menus && Menus.isOpen('quotaPanel')) renderQuotaPanel();
 }
 
@@ -1331,8 +1214,10 @@ function quotaCheckedAgoText() {
     return mins <= 1 ? 'Checked 1 min ago' : `Checked ${mins} min ago`;
 }
 
-// The tap-to-open breakdown: every window's %, reset time, credits/plan, or the
-// explicit unavailable/sign-in state — reusing the Info panel's .info-bar meter.
+// The click-to-open breakdown. First this conversation, with Compact and Rewind
+// beside it (the owner uses both daily: they are one click from the header).
+// Then the plan: every window's %, reset time, credits, or the explicit
+// unavailable/sign-in state.
 function renderQuotaPanel() {
     const el = document.getElementById('quotaPanel');
     if (!el) return;
@@ -1341,9 +1226,31 @@ function renderQuotaPanel() {
     const provider = summary.provider;
     const providerName = provider?.label || PROVIDER_LABEL[family] || 'Claude';
 
+    const chat = conversationUse();
+    const canCompact = !!S.sessionId && !S.isGenerating;
+    const chatHtml = `
+        <div class="quota-panel-head"><span class="quota-panel-title">This conversation</span></div>
+        <div class="quota-panel-body">
+            <div class="quota-row">
+                ${chat ? `<div class="quota-row-head">
+                    <span class="quota-row-name">${Math.round(chat.tokens / 1000)}k of ${Math.round(chat.windowSize / 1000)}k</span>
+                    <span class="quota-row-pct">${chat.pct}<span class="quota-row-pct-sub">% full</span></span>
+                </div>
+                <span class="info-bar"><span class="info-bar-fill${useTone(chat.pct)}" style="width:${chat.pct}%"></span></span>`
+                : '<span class="info-dim">New: nothing to compact yet.</span>'}
+            </div>
+            <div class="quota-actions">
+                <button class="quota-action" type="button" data-use="chat.compact.ring" onclick="compactSession()" ${canCompact ? '' : 'disabled'}
+                        title="Replaces the conversation, for the agent, with a summary. You still see all of it.">Compact</button>
+                <button class="quota-action" type="button" data-use="chat.rewind.ring" onclick="rewindSession()" ${canCompact ? '' : 'disabled'}
+                        title="Go back to before one of your messages: the agent forgets what came after.">Rewind</button>
+            </div>
+        </div>`;
+
     let body;
     if (!summary.visible) {
-        body = '<div class="quota-row"><span class="info-dim">Not a subscription-backed model.</span></div>';
+        const spec = billingBadgeForModel(S.currentModel);
+        body = `<div class="quota-row"><span class="info-dim">${escHtml(spec?.title || 'Not billed through a subscription.')}</span></div>`;
     } else {
         const windows = provider ? quotaWindows(provider) : [];
         if (windows.length) {
@@ -1377,10 +1284,10 @@ function renderQuotaPanel() {
     }
 
     const tail = provider && provider.source ? ` · ${escHtml(provider.source)}` : '';
-    el.innerHTML = `
+    el.innerHTML = `${chatHtml}
         <div class="quota-panel-head">
-            <span class="quota-panel-title">${escHtml(providerName)} usage</span>
-            <button class="quota-refresh" type="button" ${S.quotaLoading ? 'disabled' : ''}
+            <span class="quota-panel-title">${escHtml(summary.visible ? providerName + ' plan' : 'Billing')}</span>
+            <button class="quota-refresh" type="button" ${summary.visible ? '' : 'hidden'} ${S.quotaLoading ? 'disabled' : ''}
                     onclick="quotaRefreshFromPanel(event)" title="Refresh now" aria-label="Refresh subscription usage">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
@@ -1470,18 +1377,15 @@ function ensureQuotaPolling() {
 // Reflect the selected model's billing mode in the badge next to the picker.
 function updateAuthBadge() {
     const el = document.getElementById('authBadge');
-    const monitor = document.getElementById('subscriptionMonitor');
     if (!el) return;
+    // The ring is the quiet state. A badge stays beside it only when it says
+    // something to act on: a key billed per use, no credential, an expired plan.
     const spec = billingBadgeForModel(S.currentModel);
+    el.hidden = !spec || spec.cls === 'sub';
     if (spec) {
-        if (monitor) monitor.hidden = false;
-        el.hidden = false;
         el.textContent = spec.label;
         el.title = spec.title;
         el.className = 'auth-badge ' + spec.cls;
-    } else {
-        if (monitor) monitor.hidden = true;
-        el.hidden = true;
     }
     renderQuotaMeter();
     updateInfoWarning();
@@ -1490,13 +1394,12 @@ function updateAuthBadge() {
 }
 
 document.getElementById('quotaMeter')?.addEventListener('click', () => {
-    if (billingModeForModel(S.currentModel) !== 'subscription') return;
     Menus.toggle('quotaPanel');
     const open = Menus.isOpen('quotaPanel');
     document.getElementById('quotaMeter')?.setAttribute('aria-expanded', String(open));
     // Opening a stale panel kicks off a background refresh; renderQuotaMeter()
     // re-renders it live when the data lands.
-    if (open && quotaIsStale()) refreshSubscriptionQuota({ force: true });
+    if (open && billingModeForModel(S.currentModel) === 'subscription' && quotaIsStale()) refreshSubscriptionQuota({ force: true });
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -1576,11 +1479,11 @@ function refreshInfoPanelIfOpen() {
     if (window.Menus && Menus.isOpen('infoPanel')) renderInfoPanel();
 }
 
-// Amber dot on the Info button whenever something in the panel deserves a
-// look before the next message: a metered API key ($$$), a missing credential,
-// or a context window ≥80% full.
+// Amber dot on the usage ring whenever something behind it deserves a look
+// before the next message: a metered API key ($$$), a missing credential, a
+// plan near its limit, or a context window ≥80% full.
 function updateInfoWarning() {
-    const btn = document.getElementById('btnInfo');
+    const btn = document.getElementById('quotaMeter');
     if (!btn) return;
     const mode = billingModeForModel(S.currentModel);
     const slot = sessionSlots.find(s => s.id === activeSlotId);
@@ -1592,21 +1495,14 @@ function updateInfoWarning() {
     btn.classList.toggle('warn', subscriptionExpired || mode === 'apikey' || mode === 'none' || !!hot || quotaHot);
 }
 
-// Values shown inline in the AI menu's Model / Workspace rows.
-function renderAIMenuValues() {
-    setModelDisplay(S.currentModel);
-    const cwdEl = document.getElementById('aiMenuCwd');
-    if (cwdEl) cwdEl.textContent = shortPath(currentCwd());
-}
-
 function hasAnyProvider() {
     // True when at least one agent can actually run: credentials AND an installed
-    // CLI. OpenCode only counts when the box has a Fireworks key (S.hasOpenCode) —
-    // otherwise it is a broken fallback.
+    // CLI. Pi only counts when the box has a Fireworks key (S.hasPi), otherwise
+    // it is a broken fallback.
     return (agentInstalled('claude') && familyHasAuth('claude'))
         || (agentInstalled('codex') && familyHasAuth('codex'))
         || (agentInstalled('antigravity') && familyHasAuth('antigravity'))
-        || (agentInstalled('opencode') && S.hasOpenCode);
+        || (agentInstalled('pi') && S.hasPi);
 }
 
 // The user explicitly took the "on us" option (renderIncludedFallback). Kept in
@@ -1625,7 +1521,7 @@ function hasIncludedFamily() {
 }
 
 function isAuthed() {
-    // When OpenCode is available (managed Fireworks key), a brand-new box can chat
+    // When Pi is available (managed Fireworks key), a brand-new box can chat
     // immediately. When it is NOT (OSS box with no FIREWORKS_API_KEY), a box with
     // zero credentials has no working agent, so we must show the setup flow instead
     // of silently dropping the user into a chat that fails on first message.
@@ -1639,7 +1535,7 @@ function isAuthed() {
     // without credentials. `isAuthed()` only gates the initial chat-vs-setup choice.
     if (!hasAnyProvider()) return false;
     const own = ['claude', 'codex', 'antigravity'].some(fam => agentInstalled(fam) && familyHasOwnAuth(fam))
-        || (agentInstalled('opencode') && S.hasOpenCode);
+        || (agentInstalled('pi') && S.hasPi);
     return own || !hasIncludedFamily() || includedFallbackChosen();
 }
 
@@ -1674,10 +1570,10 @@ function closeAIConfig() {
     showChat();
 }
 
-function continueWithOpenCode() {
+function continueWithPi() {
     _manualConfigOpen = false;
     $('setupClose').classList.add('hidden');
-    const model = opencodeDefaultModel();
+    const model = piDefaultModel();
     changeModel(model);
 }
 
@@ -1718,14 +1614,14 @@ function updateSetupDots() {
     if (agyDot) agyDot.classList.toggle('connected', familyHasAuth('antigravity'));
     if (agyDot) agyDot.classList.toggle('attention', subscriptionHealthForFamily('antigravity') === 'expired');
     updateSetupTabVisibility();
-    updateOpenCodeSetup();
+    updatePiSetup();
     renderIncludedFallback();
 }
 
 // Setup tab ↔ agent family. A family whose CLI isn't installed on the box gets
 // its tab hidden outright — offering it produced a dead "Connecting…" screen
 // (the employee container only ships claude + codex).
-const SETUP_TAB_FAMILY = { cc: 'claude', cdx: 'codex', agy: 'antigravity', oc: 'opencode' };
+const SETUP_TAB_FAMILY = { cc: 'claude', cdx: 'codex', agy: 'antigravity', pi: 'pi' };
 
 function setupTabBtn(tab) {
     return document.querySelector(`.setup-tab[onclick*="'${tab}'"]`);
@@ -1744,37 +1640,37 @@ function updateSetupTabVisibility() {
         btn.classList.toggle('hidden', !show);
         if (!show && btn.classList.contains('active')) activeHidden = true;
     }
-    // The intro line advertises OpenCode as the no-subscription path — drop it
-    // when OpenCode isn't on the box.
-    const intro = $('setupIntroOc');
-    if (intro) intro.classList.toggle('hidden', !agentInstalled('opencode'));
+    // The intro line advertises Pi as the no-subscription path: drop it
+    // when Pi isn't on the box.
+    const intro = $('setupIntroPi');
+    if (intro) intro.classList.toggle('hidden', !agentInstalled('pi'));
     if (activeHidden) {
         const fallback = firstInstalledSetupTab();
         if (fallback) switchSetupTab(fallback);
     }
 }
 
-function updateOpenCodeSetup() {
-    // OpenCode is "included" only when the box holds a Fireworks key. Reflect the
+function updatePiSetup() {
+    // Pi is "included" only when the box holds a Fireworks key. Reflect the
     // real state in the setup screen so we never advertise a fallback that fails.
-    const ocDot = $('dot-oc');
-    if (ocDot) ocDot.classList.toggle('connected', S.hasOpenCode);
-    const card = document.querySelector('.setup-oc-card');
-    const btn = document.querySelector('button[onclick="continueWithOpenCode()"]');
+    const piDot = $('dot-pi');
+    if (piDot) piDot.classList.toggle('connected', S.hasPi);
+    const card = document.querySelector('.setup-pi-card');
+    const btn = document.querySelector('button[onclick="continueWithPi()"]');
     if (!card) return;
-    const title = card.querySelector('.setup-oc-title');
-    const body = card.querySelector('.setup-oc-body');
-    if (S.hasOpenCode) {
+    const title = card.querySelector('.setup-pi-title');
+    const body = card.querySelector('.setup-pi-body');
+    if (S.hasPi) {
         if (title) title.innerHTML = '✓ Frontier open-source models';
-        if (body) body.textContent = 'OpenCode is the open-source coding agent, running on '
+        if (body) body.textContent = 'Pi is an open-source coding agent, running on '
             + 'state-of-the-art open-source models via this box\u2019s Fireworks API key.';
-        if (btn) { btn.disabled = false; btn.textContent = 'Continue with OpenCode'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Continue with Pi'; }
     } else {
-        if (title) title.textContent = 'OpenCode needs a Fireworks key';
-        if (body) body.textContent = 'OpenCode runs on Fireworks. Add your Fireworks key in '
-            + 'Settings → Secrets — it activates immediately. Or connect '
+        if (title) title.textContent = 'Pi needs a Fireworks key';
+        if (body) body.textContent = 'Pi runs on Fireworks. Add your Fireworks key in '
+            + 'Settings → Secrets and it activates immediately. Or connect '
             + 'Claude, OpenAI or Antigravity above.';
-        if (btn) { btn.disabled = true; btn.textContent = 'Unavailable — needs a Fireworks key'; }
+        if (btn) { btn.disabled = true; btn.textContent = 'Unavailable: needs a Fireworks key'; }
     }
 }
 
@@ -1793,12 +1689,12 @@ function fillSuggestion(btn) {
 function autoSwitchToAuthedModel() {
     // Current model already has credentials — nothing to do
     if (hasAuthForModel(S.currentModel)) return false;
-    // Preference order: Claude Opus → Codex GPT-6.1 Sol → OpenCode.
-    // OpenCode is the fallback when the box has a Fireworks key configured.
+    // Preference order: Claude Opus → Codex GPT-6.1 Sol → Pi.
+    // Pi is the fallback when the box has a Fireworks key configured.
     const fallbacks = [
         { check: () => agentInstalled('claude') && familyHasAuth('claude'), model: 'claude-opus-5-5' },
         { check: () => agentInstalled('codex') && familyHasAuth('codex'), model: preferredModelFor('codex', 'gpt-6.1-sol-max') },
-        { check: () => agentInstalled('opencode') && S.hasOpenCode, model: opencodeDefaultModel() },
+        { check: () => agentInstalled('pi') && S.hasPi, model: piDefaultModel() },
     ];
     for (const { check, model } of fallbacks) {
         if (check()) {
@@ -2143,7 +2039,7 @@ const GLOBAL_TYPES = new Set([
     'codex_device_code', 'codex_oauth_success', 'codex_oauth_error',
     'antigravity_oauth_url', 'antigravity_oauth_success', 'antigravity_oauth_error',
     'subscription_expired',
-    'workspaces_list', 'directories_list', 'sessions_list', 'sessions_search_result', 'files_list',
+    'workspaces_list', 'sessions_list', 'sessions_search_result', 'files_list',
 ]);
 
 function handleMessage(msg) {
@@ -2170,7 +2066,7 @@ function handleMessage(msg) {
             const wasActive = activeSlotId === msg.slot;
             sessionSlots.splice(i, 1);
             if (wasActive) { activeSlotId = -1; switchSessionTab(sessionSlots[0].id); }
-            renderSessionTabs();
+            renderChats();
         }
         let restored = '';
         if (typeof msg.content === 'string') restored = msg.content;
@@ -2202,7 +2098,7 @@ function handleMessage(msg) {
                 if (document.hidden) slot.liveUnread = true;
                 else S.ws?.send(JSON.stringify({ type: 'touch_slot', slot: activeSlotId }));
             }
-            renderSessionTabs();
+            renderChats();
         }
         return;
     }
@@ -2279,7 +2175,7 @@ function handleMessage(msg) {
                     sessionId: null, isGenerating: false, domSnapshot: null,
                     pendingMessages: [], totalCost: 0, quotes: [],
                 });
-                renderSessionTabs();
+                renderChats();
             }
         } else if (msg.handoff && changedSlotId === activeSlotId) {
             // Cross-family switch that carried the conversation over (portable
@@ -2311,7 +2207,7 @@ function handleMessage(msg) {
             if (msg.model) { S.currentModel = msg.model; setModelDisplay(msg.model); }
             if (msg.cwd) setWorkspaceDisplay(msg.cwd);
         }
-        renderSessionTabs();
+        renderChats();
         return;
     }
 
@@ -2334,9 +2230,8 @@ function handleMessage(msg) {
         if (msg.slot === activeSlotId) {
             S.sessionId = msg.sessionId || null;
             setWorkspaceDisplay(msg.cwd);
-            renderAIMenuValues();
         }
-        renderSessionTabs();
+        renderChats();
         return;
     }
     if (msg.type === 'project_added') {
@@ -2349,7 +2244,6 @@ function handleMessage(msg) {
         if (cwdSlot) cwdSlot.config.cwd = msg.cwd;
         if ((msg.slot ?? activeSlotId) === activeSlotId) {
             setWorkspaceDisplay(msg.cwd);
-            renderAIMenuValues();
         }
         return;
     }
@@ -2427,13 +2321,13 @@ function handleMessage(msg) {
                 if (followMerge && sessionSlots.some(s => s.id === msg.mergedInto)) {
                     if (msg.slot === activeSlotId) activeSlotId = -1;
                     switchSessionTab(msg.mergedInto);
-                    renderSessionTabs();
+                    renderChats();
                 } else if (msg.slot === activeSlotId) {
                     const newIdx = Math.min(idx, sessionSlots.length - 1);
                     activeSlotId = -1;
                     switchSessionTab(sessionSlots[newIdx].id);
                 } else {
-                    renderSessionTabs();
+                    renderChats();
                 }
             }
             break;
@@ -2443,20 +2337,12 @@ function handleMessage(msg) {
             const slot = sessionSlots.find(s => s.id === msg.slot);
             if (slot) {
                 slot.label = msg.title || '';
-                if (_renamingSlotId === null) renderSessionTabs();
+                if (_renamingSlotId === null) renderChats();
             }
             break;
         }
         case 'workspaces_list':
             populateWorkspaces(msg.workspaces);
-            break;
-        case 'directories_list':
-            // Only the modal workspace picker consumes this now (SHE-100 made
-            // it the single picker); drop stale results if it closed meanwhile.
-            if (workspacePickerVisible()) {
-                _pickerDirs = msg.dirs || [];
-                renderWorkspacePickerList();
-            }
             break;
         case 'sessions_list':
             renderSessionPicker(msg.sessions || []);
@@ -2476,10 +2362,6 @@ function handleMessage(msg) {
 // shows a lock badge. No-op (all elements untouched) when unlocked.
 function applyWorkspaceLockUI() {
     const locked = !!S.workspaceLock;
-    const combo = document.getElementById('workspaceCombo');
-    if (combo) combo.style.display = locked ? 'none' : '';
-    const menuItem = document.getElementById('aiMenuWorkspaceItem');
-    if (menuItem) menuItem.style.display = locked ? 'none' : '';
     const badge = document.getElementById('workspaceLockBadge');
     if (badge) {
         badge.hidden = !locked;
@@ -2493,6 +2375,7 @@ function applyWorkspaceLockUI() {
 
 function handleStatusMessage(msg) {
     if (msg.projects) window.Projects?.setProjects(msg.projects);
+    if ('browser' in msg) window.Projects?.setBrowser(msg.browser);
     if (msg.workspaceLock !== undefined) {
         S.workspaceLock = msg.workspaceLock || null;
         S.guestName = msg.guestName || null;
@@ -2503,7 +2386,7 @@ function handleStatusMessage(msg) {
     S.hasOAuth = msg.hasOAuth;
     S.hasCodexOAuth = !!msg.hasCodexOAuth;
     S.hasAntigravityOAuth = !!msg.hasAntigravityOAuth;
-    S.hasOpenCode = !!msg.hasOpenCode;
+    S.hasPi = !!msg.hasPi;
     if (msg.sttAvailable !== undefined) {
         S.sttAvailable = !!msg.sttAvailable;
         updateMicAvailability();
@@ -2591,7 +2474,7 @@ function handleStatusMessage(msg) {
 
         // Reflect the server's persisted tab ORDER (drag-reorder, SHE-75) — but
         // never yank the strip out from under an in-progress local drag.
-        if (_tabDragId === null) applyServerSlotOrder(msg.slots);
+        if (!window.Projects?.dragging()) applyServerSlotOrder(msg.slots);
 
         // The bootstrap slot 0 (created at page load so there's a tab to type in
         // before the socket opens) is a placeholder, not a real conversation. If
@@ -2661,7 +2544,7 @@ function handleStatusMessage(msg) {
         if (activeSlot?.config.cwd) {
             setWorkspaceDisplay(activeSlot.config.cwd);
         }
-        renderSessionTabs();
+        renderChats();
     } else if (msg.model) {
         S.currentModel = msg.model;
         setModelDisplay(msg.model);
@@ -2707,12 +2590,12 @@ function accumulateForSlot(slotId, msg) {
         slot.isGenerating = false;
         slot.pendingSend = false;
         if (isTurnAnswer(msg)) slot.liveUnread = true;
-        renderSessionTabs();
+        renderChats();
     } else if (msg.type === 'text_delta' || msg.type === 'init') {
         if (!slot.isGenerating || slot.pendingSend) {
             slot.isGenerating = true;
             slot.pendingSend = false;
-            renderSessionTabs();
+            renderChats();
         }
     }
 
@@ -2766,6 +2649,7 @@ function replayPendingMessages(messages) {
 // --- Input ---
 
 function handleStop() {
+    Use.count('agent.stop');
     if (S.isGenerating) {
         S.ws?.send(JSON.stringify({ type: 'interrupt', slot: activeSlotId }));
     }
@@ -2833,7 +2717,8 @@ function handleSend({ compactFirst = false } = {}) {
     // Stop button + running dot against a status snapshot racing this send
     // (SHE-90/88/89); cleared on the first event or turn_done for this slot.
     const activeSlot = sessionSlots.find(s => s.id === activeSlotId);
-    if (activeSlot) { activeSlot.pendingSend = true; activeSlot.pendingSendOn = _connectCount; renderSessionTabs(); }
+    Use.count('message.sent');
+    if (activeSlot) { activeSlot.pendingSend = true; activeSlot.pendingSendOn = _connectCount; renderChats(); }
     // Use "send" type (new protocol) instead of "user"
     S.ws?.send(JSON.stringify({ type: 'send', content, slot: activeSlotId, ...(compactFirst ? { compactFirst: true } : {}) }));
 
@@ -2878,7 +2763,7 @@ function resetActiveSlotSession() {
         slot.totalCost = 0;
         slot.quotes = [];
     }
-    renderSessionTabs();
+    renderChats();
     return slot;
 }
 
@@ -2890,8 +2775,7 @@ function changeModel(model) {
     // format. Confirm first so the switch is never a surprise. (Family rules
     // mirror the server registry via agentIdForModel.)
     if (activeSlot?.sessionId && agentIdForModel(prevModel) !== agentIdForModel(model)) {
-        const FAMILY_LABEL = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', opencode: 'OpenCode' };
-        const to = FAMILY_LABEL[agentIdForModel(model)] || model;
+        const to = familyLabel(agentIdForModel(model), model);
         const ok = confirm(`Continue this conversation with ${to}? ${to} gets the whole conversation so far and picks up where it left off.`);
         if (!ok) {
             setModelDisplay(prevModel);
@@ -2914,32 +2798,11 @@ function changeModel(model) {
     }
 }
 
-function changeWorkspace(cwd) {
-    // Optimistically record the new cwd on the active slot so every surface —
-    // the header combo, the AI menu's Workspace row, the Info panel — reads one
-    // value immediately (cwd_changed confirms it). Without this the AI menu kept
-    // showing the old cwd while the combo showed the new one (SHE-54).
-    const slot = sessionSlots.find(s => s.id === activeSlotId);
-    if (slot) slot.config.cwd = cwd;
-    S.ws?.send(JSON.stringify({ type: 'set_cwd', cwd, slot: activeSlotId }));
-    resetActiveSlotSession();
-    renderAIMenuValues();
-}
-
 // --- Workspaces ---
 let _workspaces = [];
 
 function populateWorkspaces(workspaces) {
     _workspaces = workspaces;
-    // The workspace picker requests a refresh when it opens — repaint its list
-    // (not the header, so the input keeps focus).
-    if (document.getElementById('workspacePicker')?.classList.contains('visible')) {
-        renderWorkspacePickerList();
-    }
-}
-
-function workspacePickerVisible() {
-    return !!document.getElementById('workspacePicker')?.classList.contains('visible');
 }
 
 function shortPath(p) {
@@ -2955,18 +2818,10 @@ function expandPath(p) {
     return p;
 }
 
-// The header workspace element is a display + a button into the one true
-// picker (openWorkspacePicker) — the old free-text combo kept its own
-// dropdown/blur/expansion machinery that could disagree with the modal
-// (SHE-100/SHE-54). _displayedCwd (declared with the slot state above) feeds
-// defaultSlotConfig before the first slot has a cwd of its own.
+// The folder the open chat works in. _displayedCwd (declared with the slot
+// state above) feeds defaultSlotConfig before the first slot has a cwd of its own.
 function setWorkspaceDisplay(path) {
     _displayedCwd = path || null;
-    const el = document.getElementById('workspaceSelect');
-    if (el) {
-        el.textContent = shortPath(path);
-        el.title = 'Workspace: ' + shortPath(path) + ' — click to change';
-    }
 }
 
 // Tool-call blocks expand/collapse on header click. Delegated on the stable
@@ -3027,6 +2882,8 @@ window.addEventListener('message', (e) => {
     boxReady.then(() => {
         if (e.origin !== fileBaseUrl()) return;
         if (d.kind === 'report-comment') window.QuoteReview?.addFromReport(d);
+        // The dashboard's own controls (its Settings, its side panel) count here too (SHE-204).
+        else if (d.kind === 'use') { if (/^dash\.[a-z0-9.-]+$/.test(d.name || '')) Use.count(d.name); }
         else window.Projects?.onDashboardMessage(d);
     });
 });
@@ -3658,37 +3515,11 @@ function slotDisplayLabel(slot) {
 }
 
 // Set while a tab title is being edited in place, so a status broadcast's
-// renderSessionTabs() doesn't blow away the live contenteditable field.
+// renderChats() doesn't blow away the live contenteditable field.
 let _renamingSlotId = null;
 
-function renderSessionTabs() {
+function renderChats() {
     if (_renamingSlotId !== null) return;
-    const container = document.getElementById('sessionTabList');
-    const showClose = sessionSlots.length > 1;
-    let html = '';
-    for (const slot of sessionSlots) {
-        const active = slot.id === activeSlotId ? ' active' : '';
-        // Show the running dot on EVERY generating tab, including the one you're
-        // viewing — otherwise the active tab gives no clue its agent is still
-        // working, so you can't tell which of two tabs is live (SHE-81). Include
-        // pendingSend so the tab you just sent to lights up immediately, not only
-        // once its first token lands (SHE-89).
-        const generating = (slot.isGenerating || slot.pendingSend) ? ' generating' : '';
-        const unread = slotUnread(slot) ? ' unread' : '';
-        const label = escHtml(slotDisplayLabel(slot));
-        const close = showClose
-            ? `<button class="session-tab-close" type="button" tabindex="-1" aria-hidden="true" onclick="closeSessionTab(${slot.id})" title="Close ${label}">&times;</button>`
-            : '';
-        const tip = escHtml(slotMetaSummary(slot)) + ' — double-click to rename, drag onto another tab to merge';
-        const selected = slot.id === activeSlotId;
-        const tabLabel = `${label}${unread ? ', unread' : ''}${showClose ? ', press Delete to close' : ''}`;
-        html += `<div class="session-tab${active}${generating}${unread}" data-slot="${slot.id}" draggable="true" title="${tip}" role="presentation">
-            <button class="session-tab-open" type="button" role="tab" aria-selected="${selected}" aria-controls="messages" aria-label="${tabLabel}" tabindex="${selected ? 0 : -1}" onclick="switchSessionTab(${slot.id})" onkeydown="handleSessionTabKey(event, ${slot.id})"><span class="session-tab-label" ondblclick="event.stopPropagation(); beginRenameTab(${slot.id})">${label}</span></button>${close}
-        </div>`;
-    }
-    container.innerHTML = html;
-    setupTabDragReorder();
-    renderSessionDrawer();
     updateUnreadCount();
     window.Projects?.render();
 }
@@ -3716,6 +3547,9 @@ function syncReadState(local, serverSlot) {
     local.lastUsedAt = serverSlot.lastUsedAt || 0;
     local.turnStartedAt = serverSlot.turnStartedAt || 0;
     local.asking = !!serverSlot.asking;
+    local.needsOwner = serverSlot.needsOwner || '';
+    local.waitingOn = serverSlot.waitingOn || 0;
+    local.waitingSince = serverSlot.waitingSince || 0;
     local.answeredAt = serverSlot.answeredAt || 0;
     local.viewedAt = serverSlot.viewedAt || 0;
     local.markedUnread = !!serverSlot.markedUnread;
@@ -3735,7 +3569,7 @@ function setTabUnread(slotId, unread) {
     if (unread) slot.markedUnread = true;
     else markSlotRead(slot);
     S.ws?.send(JSON.stringify({ type: 'mark_unread', slot: slotId, unread }));
-    renderSessionTabs();
+    renderChats();
 }
 
 // Back on the page: the answer that landed on the active tab while it was
@@ -3747,7 +3581,7 @@ document.addEventListener('visibilitychange', () => {
         markSlotRead(slot);
         S.ws?.send(JSON.stringify({ type: 'touch_slot', slot: activeSlotId }));
     }
-    renderSessionTabs();
+    renderChats();
 });
 
 // "(2) ShellTeam" in the browser tab. Inside the dashboard the title is the
@@ -3764,52 +3598,12 @@ function updateUnreadCount() {
     }
 }
 
-// Right-click a tab (or long-press it on a phone): read state, rename, close.
+// The popup menu of an agent or a project in the column (projects.js draws it).
 let _tabMenu = null;
 function closeTabMenu() {
     _tabMenu?.remove();
     _tabMenu = null;
 }
-function openTabMenu(slotId, x, y) {
-    closeTabMenu();
-    const slot = sessionSlots.find(s => s.id === slotId);
-    if (!slot) return;
-    const unread = slot.markedUnread || slotUnread(slot);
-    const items = [
-        [unread ? 'Mark as read' : 'Mark as unread', () => setTabUnread(slotId, !unread)],
-        ['Rename', () => beginRenameTab(slotId)],
-    ];
-    for (const other of sessionSlots) {
-        if (other.id !== slotId) items.push([`Merge into “${slotDisplayLabel(other)}”`, () => mergeTabs(slotId, other.id)]);
-    }
-    if (sessionSlots.length > 1) items.push(['Close', () => closeSessionTab(slotId)]);
-    const menu = document.createElement('div');
-    menu.className = 'actions-menu visible tab-context-menu';
-    menu.setAttribute('role', 'menu');
-    for (const [label, run] of items) {
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'actions-item';
-        item.setAttribute('role', 'menuitem');
-        item.textContent = label;
-        item.onclick = () => { closeTabMenu(); run(); };
-        menu.appendChild(item);
-    }
-    document.body.appendChild(menu);
-    const box = menu.getBoundingClientRect();
-    menu.style.left = `${Math.max(8, Math.min(x, innerWidth - box.width - 8))}px`;
-    menu.style.top = `${Math.max(8, Math.min(y, innerHeight - box.height - 8))}px`;
-    _tabMenu = menu;
-    menu.querySelector('button').focus();
-}
-document.addEventListener('contextmenu', (e) => {
-    const tab = e.target.closest?.('.session-tab, .drawer-item');
-    if (!tab) return;
-    e.preventDefault();
-    // The Menu key / Shift+F10 fires this with no pointer position.
-    const at = e.clientX || e.clientY ? { left: e.clientX, bottom: e.clientY } : tab.getBoundingClientRect();
-    openTabMenu(Number(tab.dataset.slot), at.left, at.bottom);
-});
 document.addEventListener('pointerdown', (e) => {
     if (_tabMenu && !_tabMenu.contains(e.target)) closeTabMenu();
 }, true);
@@ -3825,100 +3619,10 @@ document.addEventListener('keydown', (e) => {
     }
 }, true);
 
-function focusSessionTab(slotId) {
-    requestAnimationFrame(() => document.querySelector(
-        `.session-tab[data-slot="${slotId}"] .session-tab-open`,
-    )?.focus());
-}
-
-function handleSessionTabKey(event, slotId) {
-    if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        switchSessionTab(slotId);
-        return;
-    }
-    if (event.key === 'Delete' && sessionSlots.length > 1) {
-        event.preventDefault();
-        closeSessionTab(slotId);
-        focusSessionTab(activeSlotId);
-        return;
-    }
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    const current = sessionSlots.findIndex(slot => slot.id === slotId);
-    if (current < 0) return;
-    event.preventDefault();
-    let next = current;
-    if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = sessionSlots.length - 1;
-    else next = (current + (event.key === 'ArrowRight' ? 1 : -1) + sessionSlots.length) % sessionSlots.length;
-    const nextId = sessionSlots[next].id;
-    switchSessionTab(nextId);
-    focusSessionTab(nextId);
-}
-
-// --- Drag-and-drop tab reorder (SHE-75) ------------------------------------------
-// Delegated on #sessionTabs, attached once. Reordering is applied on DROP (never
-// mid-drag — re-rendering the strip would abort the native drag). The new order is
-// pushed to the server (reorder_tabs), which persists it (survives reload/restart)
-// and broadcasts so other devices re-lay their strip to match.
-let _tabDragId = null;
-let _tabDragWired = false;
-function setupTabDragReorder() {
-    const container = document.getElementById('sessionTabs');
-    if (!container || _tabDragWired) return;
-    _tabDragWired = true;
-
-    container.addEventListener('dragstart', (e) => {
-        const tab = e.target.closest('.session-tab');
-        if (!tab) return;
-        _tabDragId = parseInt(tab.dataset.slot);
-        // 'link' for a merge drop: a dropEffect the drag doesn't allow cancels
-        // the drop silently.
-        e.dataTransfer.effectAllowed = 'linkMove';
-        // Firefox requires data to be set for a drag to start.
-        try { e.dataTransfer.setData('text/plain', String(_tabDragId)); } catch (_) {}
-        tab.classList.add('dragging');
-    });
-    container.addEventListener('dragend', () => {
-        _tabDragId = null;
-        container.querySelectorAll('.session-tab').forEach(t => t.classList.remove('dragging', 'drag-over', 'merge-target'));
-    });
-    container.addEventListener('dragover', (e) => {
-        if (_tabDragId === null) return;
-        e.preventDefault();           // allow drop
-        const over = e.target.closest('.session-tab');
-        const target = over && parseInt(over.dataset.slot) !== _tabDragId ? over : null;
-        const merge = !!target && inMergeZone(target, e.clientX);
-        e.dataTransfer.dropEffect = merge ? 'link' : 'move';
-        container.querySelectorAll('.session-tab').forEach(t => {
-            t.classList.toggle('drag-over', t === target && !merge);
-            t.classList.toggle('merge-target', t === target && merge);
-        });
-    });
-    container.addEventListener('drop', (e) => {
-        if (_tabDragId === null) return;
-        e.preventDefault();
-        const over = e.target.closest('.session-tab');
-        const dragId = _tabDragId;
-        // Dropped on empty strip space / the + button → move to the end.
-        let targetId = over ? parseInt(over.dataset.slot) : null;
-        let before = true;
-        if (over && targetId !== dragId) {
-            if (inMergeZone(over, e.clientX)) { mergeTabs(dragId, targetId); return; }
-            const r = over.getBoundingClientRect();
-            before = e.clientX < r.left + r.width / 2;   // left half → insert before
-        }
-        commitTabReorder(dragId, targetId, before);
-    });
-}
-
-// The middle half of a tab merges the dragged tab into it (SHE-128); the outer
-// quarters still reorder.
-function inMergeZone(tab, x) {
-    const r = tab.getBoundingClientRect();
-    return x > r.left + r.width / 4 && x < r.right - r.width / 4;
-}
-
+// --- Reordering chats (SHE-75) ---
+// The column drops a chat before or after another (projects.js). The new order
+// is pushed to the server (reorder_tabs), which persists it and broadcasts so
+// other devices follow.
 function commitTabReorder(dragId, targetId, before) {
     const from = sessionSlots.findIndex(s => s.id === dragId);
     if (from === -1) return;
@@ -3934,10 +3638,10 @@ function commitTabReorder(dragId, targetId, before) {
     sessionSlots.splice(insertAt, 0, moved);
     const order = sessionSlots.map(s => s.id);
     S.ws?.send(JSON.stringify({ type: 'reorder_tabs', order }));
-    renderSessionTabs();
+    renderChats();
 }
 
-// Re-lay the local tab strip to match a server snapshot's slot ORDER, so a reorder
+// Re-order the local chats to match a server snapshot's slot ORDER, so a reorder
 // on another device (or a reload) is reflected here. Slots the server doesn't know
 // about yet (freshly created locally, not acked) keep their relative order at the end.
 function applyServerSlotOrder(serverSlots) {
@@ -3951,124 +3655,6 @@ function slotMetaSummary(slot) {
     const cwd = shortPath(slot.config?.cwd || '') || '~';
     return `${model} · ${cwd}`;
 }
-
-// Mobile conversation drawer (bottom sheet) — same data as the desktop tab
-// strip, but each item carries the resume-picker's meta badges (model +
-// workspace) so picking a tab shows what it runs, not just its title.
-function renderSessionDrawer() {
-    const active = sessionSlots.find(s => s.id === activeSlotId);
-    const sw = document.getElementById('convSwitcherLabel');
-    if (sw) {
-        sw.textContent = active ? slotDisplayLabel(active) : 'Chat';
-        // Phones show one tab at a time: flag that ANOTHER one has an answer waiting.
-        const waiting = sessionSlots.filter(s => s.id !== activeSlotId && slotUnread(s)).length;
-        const badge = document.getElementById('convSwitcherBadge');
-        if (badge) {
-            badge.hidden = waiting === 0;
-            badge.textContent = waiting;
-            badge.title = `${waiting} other conversation${waiting === 1 ? '' : 's'} with an unread answer`;
-        }
-    }
-    const cwdEl = document.getElementById('sessionDrawerCwd');
-    if (cwdEl) cwdEl.textContent = (active && active.config && active.config.cwd) || currentCwd();
-
-    const list = document.getElementById('sessionDrawerList');
-    if (!list) return;
-    const showClose = sessionSlots.length > 1;
-    list.innerHTML = sessionSlots.map(slot => {
-        const isActive = slot.id === activeSlotId;
-        const gen = (slot.isGenerating || slot.pendingSend) ? ' generating' : '';
-        const label = escHtml(slotDisplayLabel(slot));
-        const model = shortModel(slot.config?.model || '');
-        const proj = shortPath(slot.config?.cwd || '');
-        const close = showClose
-            ? `<button class="drawer-item-close" type="button" onclick="closeSessionTab(${slot.id}); renderSessionDrawer();" aria-label="Close ${label}">&times;</button>`
-            : '';
-        return `<div class="drawer-item${isActive ? ' active' : ''}${slotUnread(slot) ? ' unread' : ''}" data-slot="${slot.id}" role="listitem">
-            <button class="drawer-item-open" type="button" onclick="switchSessionTab(${slot.id}); closeSessionDrawer();"${isActive ? ' aria-current="true"' : ''} aria-label="Open ${label}">
-                <span class="drawer-item-dot${gen}" aria-hidden="true"></span>
-                <span class="drawer-item-main">
-                    <span class="drawer-item-label">${label}</span>
-                    <span class="drawer-item-meta">
-                        ${model ? `<span class="session-badge model">${escHtml(model)}</span>` : ''}
-                        ${proj ? `<span class="session-badge project">${escHtml(proj)}</span>` : ''}
-                    </span>
-                </span>
-            </button>
-            <button class="drawer-item-rename" type="button" onclick="beginRenameDrawer(${slot.id})" aria-label="Rename ${label}" title="Rename">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-            </button>
-            ${close}
-        </div>`;
-    }).join('');
-}
-
-const sessionDrawerBackgroundState = new Map();
-
-function sessionDrawerFocusable() {
-    const drawer = document.getElementById('sessionDrawer');
-    return [...drawer.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-        .filter(el => !el.hidden && el.getClientRects().length > 0);
-}
-
-function openSessionDrawer() {
-    renderSessionDrawer();
-    const bd = document.getElementById('sessionDrawerBackdrop');
-    const dr = document.getElementById('sessionDrawer');
-    for (const child of document.body.children) {
-        if (child === dr || child === bd || child.tagName === 'SCRIPT') continue;
-        sessionDrawerBackgroundState.set(child, child.inert);
-        child.inert = true;
-    }
-    if (bd) bd.classList.add('visible');
-    if (dr) {
-        dr.inert = false;
-        dr.setAttribute('aria-hidden', 'false');
-        dr.classList.add('visible');
-    }
-    document.getElementById('convSwitcher')?.setAttribute('aria-expanded', 'true');
-    requestAnimationFrame(() => {
-        const target = dr?.querySelector('.drawer-item-open[aria-current="true"]')
-            || dr?.querySelector('.session-drawer-close');
-        target?.focus();
-    });
-}
-
-function closeSessionDrawer() {
-    const bd = document.getElementById('sessionDrawerBackdrop');
-    const dr = document.getElementById('sessionDrawer');
-    if (bd) bd.classList.remove('visible');
-    if (dr) {
-        dr.classList.remove('visible');
-        dr.setAttribute('aria-hidden', 'true');
-        dr.inert = true;
-    }
-    for (const [child, wasInert] of sessionDrawerBackgroundState) child.inert = wasInert;
-    sessionDrawerBackgroundState.clear();
-    const switcher = document.getElementById('convSwitcher');
-    switcher?.setAttribute('aria-expanded', 'false');
-    switcher?.focus();
-}
-
-document.getElementById('sessionDrawer')?.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
-        event.preventDefault();
-        closeSessionDrawer();
-        return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = sessionDrawerFocusable();
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-    }
-});
 
 // `where.cwd` starts the new chat in that folder (the projects column's "+");
 // without it the chat starts where the current one works.
@@ -4119,7 +3705,7 @@ function forkTab(sourceId) {
     // native session, copies history, and replies slot_forked + history.
     S.ws?.send(JSON.stringify({ type: 'fork_slot', slot: src.id, newSlot: id, nonce: newCreateNonce(id), model: src.config.model }));
     switchSessionTab(id);
-    renderSessionTabs();
+    renderChats();
 }
 
 // Merge tab `sourceId` into tab `targetId` (SHE-128): the target's agent gets
@@ -4206,7 +3792,7 @@ function switchSessionTab(id) {
     }
 
     scrollToBottom(true);
-    renderSessionTabs();
+    renderChats();
     renderContextMeter();
 }
 
@@ -4230,7 +3816,7 @@ function closeSessionTab(id) {
         activeSlotId = -1;
         switchSessionTab(sessionSlots[newIdx].id);
     } else {
-        renderSessionTabs();
+        renderChats();
     }
 }
 
@@ -4255,48 +3841,18 @@ function updateSlotLabel(slotId, rawText) {
     // name (set via rename) is a truthy label, so it's never overwritten here.
     if (!slot || slot.label) return;
     if (!text) return;
+    // Not something the owner typed (a cockpit notice, a task notification):
+    // never a chat's name. Mirrors isInternalUserContent in lib/history.mjs.
+    if (/^\s*<(task-notification|local-command-stdout|command-|system-reminder|cockpit-notice)/.test(text)) return;
     slot.label = text.length > 30 ? text.slice(0, 30) + '...' : text;
-    renderSessionTabs();
+    renderChats();
 }
 
-// --- Rename a tab in place ---
-// Double-click a desktop tab (or the drawer label / pencil on mobile) to edit
-// its title inline. Enter/blur commits, Escape cancels. The custom name is
-// persisted server-side (rename_slot) so it survives reload and is broadcast to
-// other devices. An empty name reverts the tab to its auto-derived label.
-function beginRenameTab(slotId) {
-    const span = document.querySelector(`.session-tab[data-slot="${slotId}"] .session-tab-label`);
-    if (span) beginRenameOn(span, slotId);
-}
-
-function beginRenameDrawer(slotId) {
-    const slot = sessionSlots.find(s => s.id === slotId);
-    const item = document.querySelector(`.drawer-item[data-slot="${slotId}"]`);
-    const openButton = item?.querySelector('.drawer-item-open');
-    if (!slot || !item || !openButton) return;
-    const input = document.createElement('input');
-    input.className = 'drawer-rename-input';
-    input.value = slot.label || slotDisplayLabel(slot);
-    input.setAttribute('aria-label', 'Conversation name');
-    openButton.hidden = true;
-    item.insertBefore(input, item.querySelector('.drawer-item-rename'));
-    input.focus();
-    input.select();
-    let done = false;
-    const finish = (commit) => {
-        if (done) return;
-        done = true;
-        if (commit) commitRenameTab(slotId, input.value);
-        else renderSessionDrawer();
-    };
-    input.addEventListener('keydown', event => {
-        event.stopPropagation();
-        if (event.key === 'Enter') { event.preventDefault(); finish(true); }
-        if (event.key === 'Escape') { event.preventDefault(); finish(false); }
-    });
-    input.addEventListener('blur', () => finish(true));
-}
-
+// --- Rename a chat in place ---
+// Double-click a chat's name (in the column or the header), or pick Rename in
+// its menu, to edit its title inline. Enter/blur commits, Escape cancels. The
+// name is kept server-side (rename_slot) so it survives a reload and reaches
+// other devices. An empty name reverts to the auto-derived one.
 function beginRenameOn(span, slotId) {
     const slot = sessionSlots.find(s => s.id === slotId);
     if (!slot) return;
@@ -4322,7 +3878,7 @@ function beginRenameOn(span, slotId) {
         span.removeEventListener('blur', onBlur);
         _renamingSlotId = null;
         if (commit) commitRenameTab(slotId, value);
-        else renderSessionTabs();
+        else renderChats();
     };
     const onKey = (e) => {
         e.stopPropagation();
@@ -4340,7 +3896,7 @@ function commitRenameTab(slotId, value) {
     const title = (value || '').trim().slice(0, 40);
     slot.label = title;   // '' → falls back to the auto-derived display label
     S.ws?.send(JSON.stringify({ type: 'rename_slot', slot: slotId, title: title || null }));
-    renderSessionTabs();
+    renderChats();
 }
 
 // --- @File Autocomplete ---
@@ -4553,29 +4109,29 @@ document.addEventListener('keydown', (e) => {
     const composerEmpty = el === E.input && E.input.value === '';
     if (!editable || composerEmpty) {
         e.preventDefault();
-        window.Menus?.toggle('aiMenu');
+        window.Menus?.toggle('chatMenu');
     }
 });
 
 // --- Keyboard shortcuts cheat sheet ---
-// Single source of truth for every cockpit shortcut. The "?" overlay and the
-// System menu → Keyboard Shortcuts row both render from this table — add new
-// shortcuts here so the help stays honest.
+// Single source of truth for every cockpit shortcut. The "?" overlay (also
+// opened from the jump box and from Settings) renders from this table: add
+// new shortcuts here so the help stays honest.
 const SHORTCUTS = [
-    { group: 'AI menu', rows: [
-        ['/', 'Open the AI menu (model, workspace, session actions)'],
+    { group: 'This chat', rows: [
+        ['/', 'Open the chat menu (also: click the chat title)'],
         ['↑ ↓ then Enter', 'Navigate the open menu and run the highlighted item'],
-        ['M W N S F R C', 'Jump straight to Model · Workspace · New chat · Resume session · Fork · Rewind · Compact'],
+        ['E M N S F R C I', 'In the menu: Rename · Model · New chat · Resume session · Fork · Rewind · Compact · Info'],
         ['Esc', 'Close the menu'],
+        ['Alt+R', 'Reports this chat linked: pick one to open it in the side panel'],
+        ['Alt+U', 'Mark this chat unread (again to mark it read)'],
       ] },
-    { group: 'Conversations', rows: [
-        ['Alt+1 … Alt+9', 'Jump to that conversation tab'],
-        ['Alt+↑ / Alt+↓', 'Previous / next tab'],
-        ['Ctrl+K', 'Projects column: jump to any agent, project or report by typing its name'],
-        ['Alt+W', 'Projects column: go to the next agent waiting for you'],
-        ['Alt+R', 'Reports this conversation linked: pick one to open it in the side panel'],
-        ['Alt+U', 'Mark this tab unread (again to mark it read). Right-click any tab for the same'],
-        ['Double-click', 'On a tab: rename it (Enter saves, Esc cancels)'],
+    { group: 'Getting around', rows: [
+        ['Ctrl+K', 'Jump to any agent, project, folder, tool or report by typing its name'],
+        ['Alt+W', 'Go to the next agent that needs you'],
+        ['Alt+↑ / Alt+↓', 'Previous / next chat, in the order of the column'],
+        ['Alt+1 … Alt+9', 'Jump to that chat'],
+        ['Double-click', 'On a chat or project name: rename it (Enter saves, Esc cancels)'],
       ] },
     { group: 'Composing', rows: [
         ['Enter / Shift+Enter', 'Send / insert a newline'],

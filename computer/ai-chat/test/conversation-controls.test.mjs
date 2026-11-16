@@ -10,26 +10,9 @@
 // Run: node --test computer/ai-chat/test/conversation-controls.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-// The OpenCode fork leg is the one control that isn't fully mockable: seeding a
-// new resumable session runs the real `opencode` binary to mint a session id
-// (same reason the →OpenCode switch is golden-only). Detect the CLI so we can
-// skip just that leg with a VISIBLE TAP skip when it's absent (clean CI, dev
-// laptops without opencode) rather than fail — the golden scripts prove it for
-// real. Everything else in this file stays hermetic.
-function cliAvailable(bin) {
-  try {
-    const r = spawnSync(bin, ["--version"], { stdio: "ignore", timeout: 5000 });
-    return !r.error;
-  } catch {
-    return false;
-  }
-}
-const OPENCODE_AVAILABLE = cliAvailable("opencode");
 
 // Redirect HOME before importing anything — constants.mjs resolves paths at import.
 process.env.HOME = mkdtempSync(join(tmpdir(), "st-controls-"));
@@ -41,25 +24,25 @@ const { readSessionForReplay, findSessionFile } = await import("../lib/history.m
 
 // The cheap model per family — the tier these tests (and the golden scripts)
 // use so running the suite is never expensive. gpt-5.6-luna is Codex's cheapest
-// tier (the cost-efficient model); glm-5p3-flash the cheapest OpenCode model.
+// tier (the cost-efficient model); glm-5p3-flash the cheapest Pi model.
 const CHEAP = {
   claude: "claude-haiku-5-5",
   codex: "gpt-5.6-luna",
   antigravity: "gemini-3.8-flash-medium",
-  opencode: "glm-5p3-flash",
+  pi: "glm-5p3-flash",
 };
 // A second same-family model, for "switching model within a family keeps the session".
 const SAME_FAMILY_ALT = {
   claude: "claude-sonnet-5-5",
   codex: "gpt-5.6-terra",
   antigravity: "gemini-4-argon-high",
-  opencode: "kimi-k3",
+  pi: "kimi-k3p1-pro",
 };
 // Gemini was retired in favour of Google's Antigravity CLI (`agy`) on 2026-07-03;
-// the `antigravity` family carries the Gemini models now. Like Codex/OpenCode its
+// the `antigravity` family carries the Gemini models now. Like Codex/Pi its
 // CLI doesn't own history and it can't be resumed-into cross-family (agy owns the
 // conversation server-side) — so it only exercises the non-claude legs here.
-const FAMILIES = ["claude", "codex", "antigravity", "opencode"];
+const FAMILIES = ["claude", "codex", "antigravity", "pi"];
 
 // Expected capability table — the single source of truth this suite guards
 // against registry drift. Keep in lockstep with lib/agents/registry.mjs.
@@ -67,7 +50,7 @@ const CAPS = {
   claude: { rewind: true, resume: true, cliOwnsHistory: true },
   codex: { rewind: false, resume: true, cliOwnsHistory: false },
   antigravity: { rewind: false, resume: true, cliOwnsHistory: false },
-  opencode: { rewind: false, resume: true, cliOwnsHistory: false },
+  pi: { rewind: false, resume: true, cliOwnsHistory: false },
 };
 
 let nextSlot = 100;
@@ -96,7 +79,9 @@ function seedSource(family, model, cwd, codeword = "SEEDWORD") {
     writeFileSync(join(dir, `${sid}.jsonl`), lines.join("\n") + "\n");
     return sid;
   }
-  const sid = family === "opencode" ? `ses_ctrl${nextSlot}` : `${family}-thread-${nextSlot}`;
+  const sid = family === "pi"
+    ? `pi-00000000-0000-4000-8000-${String(nextSlot).padStart(12, "0")}`
+    : `${family}-thread-${nextSlot}`;
   mkdirSync(CODEX_HISTORY_DIR, { recursive: true });
   const lines = [
     JSON.stringify({ type: "session_meta", model, cwd, timestamp: Date.now() }),
@@ -145,7 +130,7 @@ for (const family of FAMILIES) {
 
 // --- 3. Cross-family switch TRANSLATES the conversation (every family → Claude) ---
 // Target is Claude (a pure file-writing exporter) so the matrix stays hermetic;
-// the →OpenCode leg (which shells out to `opencode import`) is golden-only.
+// the →Pi exporter is covered by the portable-session tests.
 
 for (const family of FAMILIES.filter((f) => f !== "claude")) {
   test(`switch (cross-family): ${family} → claude carries the conversation, source untouched`, async () => {
@@ -197,10 +182,7 @@ for (const family of FAMILIES.filter((f) => f !== "claude")) {
 // exposes no way to inject history — so there is no antigravity exporter. It
 // must refuse loudly and leave the source intact (asserted separately below).
 for (const family of FAMILIES.filter((f) => f !== "antigravity")) {
-  const skip = family === "opencode" && !OPENCODE_AVAILABLE
-    ? "opencode CLI not installed — same-family fork mints a real session (golden-only)"
-    : false;
-  test(`fork (same-family): ${family} branches into a new slot, source untouched`, { skip }, async () => {
+  test(`fork (same-family): ${family} branches into a new slot, source untouched`, async () => {
     const { id, sid } = slotWithSession(family, CHEAP[family], "FORKME");
     const srcHistoryLen = sm.getHistory(id).length;
     const forkId = nextSlot++;
@@ -296,3 +278,40 @@ for (const family of FAMILIES) {
     assert.equal(sm.getHistory(id).length, 0);
   });
 }
+
+// --- Retired agent: OpenCode chats move to Pi (SHE-114) ---
+// OpenCode was replaced by Pi on 2026-11-16. A chat still holding an OpenCode
+// session (`ses_…`, family "opencode") reopens on Pi with its conversation
+// carried over, through the same portable handoff as a model switch.
+
+test("retired agent: an open OpenCode chat reopens on Pi and keeps its conversation", async () => {
+  const id = nextSlot++;
+  const sid = `ses_retired${id}`;
+  mkdirSync(CODEX_HISTORY_DIR, { recursive: true });
+  writeFileSync(join(CODEX_HISTORY_DIR, `${sid}.jsonl`), [
+    { type: "session_meta", model: CHEAP.pi, cwd: HOME, timestamp: Date.now() },
+    { type: "user_message", content: "Remember: OLDWORD.", timestamp: Date.now() },
+    { type: "text_done", text: "OK" },
+    { type: "turn_done", cost: 0 },
+  ].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  sm.createSlot(id, { model: CHEAP.pi, cwd: HOME });
+  sm.setSessionId(id, sid);  // a tab saved before the field: family read from the id
+  sm.addUserMessage(id, "Remember: OLDWORD.");
+
+  const spawns = [];
+  sm._testSetAgentFactory(mockAgentFactory(spawns));
+  try {
+    await sm.startAgent(id);
+  } finally {
+    sm._testSetAgentFactory(null);
+  }
+  const newSid = sm.getSessionId(id);
+  assert.match(newSid, /^pi-/, "the chat now holds a Pi session");
+  assert.equal(spawns[0].sessionId, newSid, "Pi starts on the carried-over session");
+  const piFile = (await import("../lib/portable/export.mjs")).piSessionDir(HOME);
+  const written = readdirSync(piFile).find((f) => f.endsWith(`_${newSid}.jsonl`));
+  assert.ok(written, "a Pi session file was written");
+  assert.ok(readFileSync(join(piFile, written), "utf8").includes("OLDWORD"), "with the old conversation in it");
+  const marker = sm.getHistory(id).find((m) => m.type === "session_event" && m.event === "retired_agent");
+  assert.deepEqual([marker.fromFamily, marker.toFamily, marker.carried], ["opencode", "pi", true]);
+});

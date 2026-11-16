@@ -26,7 +26,10 @@ const CODEX_SESSION_HOME = join(LAYER_DIR, "codex-home");
 const ANTIGRAVITY_WORKSPACE = join(LAYER_DIR, "antigravity-workspace");
 const ANTIGRAVITY_PLUGIN = join(ANTIGRAVITY_WORKSPACE, ".agents", "plugins", "shellteam");
 const ANTIGRAVITY_MCP_CONFIG = join(ANTIGRAVITY_PLUGIN, "mcp_config.json");
-const OPENCODE_CONFIG = join(LAYER_DIR, "opencode.json");
+const PI_DIR = join(LAYER_DIR, "pi");
+const PI_EXTENSION = join(PI_DIR, "shellteam.ts");
+const PI_LAYER = join(PI_DIR, "layer.json");
+const HARNESS_SKILLS = join(LAYER_DIR, "harness", "skills");
 const RUNTIME_DIR = join(LAYER_DIR, "runtime");
 
 function uniq(xs) {
@@ -425,24 +428,6 @@ function harnessPromptFor(manifest, cwd) {
   return runtimeHarnessPromptPath(manifest, enabled, cwd);
 }
 
-function openCodeMcpServer(server) {
-  if (server.url) {
-    return {
-      type: "remote",
-      url: server.url,
-      ...(server.headers ? { headers: server.headers } : {}),
-    };
-  }
-  if (server.command) {
-    return {
-      type: "local",
-      command: [server.command, ...(server.args || [])],
-      ...(server.env ? { environment: server.env } : {}),
-    };
-  }
-  return null;
-}
-
 function antigravityMcpServer(server) {
   if (server.url) {
     return {
@@ -608,46 +593,66 @@ export function antigravityLayerArgs(cwd = HOME) {
 }
 
 /**
- * Path to ShellTeam's OpenCode config. Set as OPENCODE_CONFIG so it MERGES with
- * the user's own OpenCode config. Built in EVERY mode (core included): it
- * carries the proxied Fireworks provider without which the OpenCode agent can't
- * run — in core mode it is provider-only (no MCP/skills/instructions; see
- * docs/decisions/20260704-purity-gate-modules.md). Returns null only when the
- * layer was never built.
+ * Pi's ShellTeam layer, as flags and env for one spawn (cockpit chat and the
+ * managed terminal alike). Built in EVERY mode, core included: the extension
+ * registers the relay provider, the credential plumbing without which Pi can't
+ * reach the included models. In core mode `pi/layer.json` carries the provider
+ * only (no MCP), and no prompt or skills flag is added (see
+ * docs/decisions/20260704-purity-gate-modules.md).
  *
- * With the dreaming module and knowledge for `cwd`, returns a per-node runtime
- * copy whose canonical prompt is replaced by the shared composed prompt — no
- * agent gets a different knowledge payload. Dynamic Linear credentials are
- * also rendered consistently here, as they already are for Claude and Codex.
+ * - `-e <extension>`: registers the `shellteam` provider and the MCP servers it
+ *   reads from SHELLTEAM_PI_LAYER (a per-project runtime copy when the project
+ *   has its own Linear server).
+ * - `--append-system-prompt <file>`: the same shared prompt every agent gets,
+ *   composed with the folder's knowledge when the dreaming module has some.
+ * - `--skill <dir>`: the canonical harness skills.
+ *
+ * Additive: the user's own ~/.pi settings, AGENTS.md and MCP servers still
+ * apply; nothing is written there. Returns { args: [], env: {} } when the layer
+ * was never built (Pi then has no way to reach the relay: loud).
  */
-export function opencodeConfigPath(cwd = HOME) {
-  if (!existsSync(OPENCODE_CONFIG)) return null;
+export function piLayer(cwd = HOME) {
   const manifest = readManifest();
+  if (!artifactEnabled(manifest, "pi_layer", PI_EXTENSION, "ShellTeam Pi layer")) {
+    console.error(`[agent-layer] No Pi layer at ${PI_DIR}: Pi can't reach the included ` +
+      `models. Trigger start_computer or re-run install.sh to rebuild the layer.`);
+    return { args: [], env: {} };
+  }
+  const args = ["-e", PI_EXTENSION];
+  const env = {
+    SHELLTEAM_PI_LAYER: piLayerJsonFor(manifest, cwd),
+    // No update check or install telemetry from cockpit spawns: ShellTeam
+    // updates Pi itself (scripts/self-update.sh).
+    PI_SKIP_VERSION_CHECK: "1",
+    PI_TELEMETRY: "0",
+  };
   const promptPath = harnessPromptFor(manifest, cwd);
+  if (promptPath) args.push("--append-system-prompt", promptPath);
+  if (artifactEnabled(manifest, "harness_skills", HARNESS_SKILLS, "ShellTeam skills")) {
+    args.push("--skill", HARNESS_SKILLS);
+  }
+  return { args, env };
+}
+
+// The layer JSON this spawn's extension reads: the built one, or a 0600
+// per-project copy that adds the project's own Linear server.
+function piLayerJsonFor(manifest, cwd) {
   const linear = linearModuleEnabled(manifest) ? linearServerForCwd(cwd, manifest) : null;
-  const dynamicPrompt = promptPath && promptPath !== CLAUDE_SYSTEM_PROMPT;
-  if (!dynamicPrompt && !linear) return OPENCODE_CONFIG;
-  let cfg;
+  if (!linear) return PI_LAYER;
+  let layer;
   try {
-    cfg = JSON.parse(readFileSync(OPENCODE_CONFIG, "utf8"));
+    layer = JSON.parse(readFileSync(PI_LAYER, "utf8"));
   } catch (err) {
-    // getCliEnv() calls this for EVERY agent family's spawn — a torn/corrupt
-    // layer file must not brick Claude/Codex startup over an OpenCode-only
-    // nicety. Fall back to the static path, loudly.
-    console.error(`[agent-layer] Unreadable ${OPENCODE_CONFIG} (${err.message}) — ` +
-      `spawning without knowledge instructions; re-run start_computer to rebuild.`);
-    return OPENCODE_CONFIG;
+    // A torn layer file must not crash the spawn: Pi's own extension then
+    // reports it to the chat. Loud here too.
+    console.error(`[agent-layer] Unreadable ${PI_LAYER} (${err.message}): Pi starts ` +
+      `without this project's Linear server; re-run start_computer to rebuild.`);
+    return PI_LAYER;
   }
-  if (dynamicPrompt) {
-    cfg.instructions = uniq([
-      ...(cfg.instructions || []).filter((path) => path !== CLAUDE_SYSTEM_PROMPT),
-      promptPath,
-    ]);
-  }
-  if (linear) {
-    cfg.mcp = cfg.mcp || {};
-    cfg.mcp.linear = openCodeMcpServer(linear);
-  }
+  layer.mcpServers = { ...(layer.mcpServers || {}), linear };
   const slug = (projectInfoForCwd(cwd || HOME).slug || "default").toLowerCase();
-  return writeRuntimeFile(`opencode-${slug}.json`, JSON.stringify(cfg, null, 2));
+  const path = join(RUNTIME_DIR, `pi-${slug}.json`);
+  mkdirSync(RUNTIME_DIR, { recursive: true });
+  writeFileSync(path, JSON.stringify(layer, null, 2), { mode: 0o600 });
+  return path;
 }

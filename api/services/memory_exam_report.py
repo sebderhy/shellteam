@@ -37,7 +37,7 @@ VERDICTS = (
     ("unknown", "Did not know"), ("wrong", "Wrong"), ("leak", "In the launch text"),
 )
 AGENT_NAMES = {"claude": "Claude Code", "codex": "Codex"}
-NOT_RUN = ("Antigravity and OpenCode were not run: neither is set up to answer unattended "
+NOT_RUN = ("Antigravity and Pi were not run: neither is set up to answer unattended "
            "on this box yet.")
 
 CSS = """

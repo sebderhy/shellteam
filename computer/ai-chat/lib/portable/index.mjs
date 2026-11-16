@@ -35,7 +35,7 @@ async function probeVersion(cmd) {
   }
 }
 
-const CMD_FOR = { claude: "claude", codex: "codex", antigravity: "agy", opencode: "opencode" };
+const CMD_FOR = { claude: "claude", codex: "codex", antigravity: "agy", pi: "pi" };
 
 /**
  * @param {object} opts

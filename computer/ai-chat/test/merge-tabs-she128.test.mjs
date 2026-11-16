@@ -103,15 +103,14 @@ test("an empty target tab takes the merged tab's title", async () => {
   assert.equal(sm.listSlots().find((s) => s.id === a).label, "Fix the login redirect.");
 });
 
-test("a merge drop is allowed by the drag (a dropEffect the drag doesn't allow cancels the drop)", () => {
-  // First build: dragover set dropEffect 'link' while dragstart allowed only
-  // 'move', so dropping on a tab's middle silently did nothing (seen in a real
-  // browser, 2026-10-25).
-  const src = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
-  const allowed = src.match(/effectAllowed = '(\w+)'/)?.[1];
-  const effects = [...src.matchAll(/dropEffect = merge \? '(\w+)' : '(\w+)'/g)].flatMap((m) => [m[1], m[2]]);
-  assert.ok(effects.length, "the tab strip picks a dropEffect per zone");
-  for (const effect of effects) {
-    assert.ok(allowed.toLowerCase().includes(effect), `effectAllowed '${allowed}' must allow dropEffect '${effect}'`);
-  }
+test("merging is a row of the chat's menu in the column, and a drag there only moves", () => {
+  // The tab strip merged by dropping a tab on another's middle. The first
+  // build set dropEffect 'link' while the drag allowed only 'move', so the
+  // drop silently did nothing (seen in a real browser, 2026-10-25). The column
+  // (the only layout since SHE-188) has no such zone: a drag reorders or moves
+  // to a project, and merging is said in words in the row's menu.
+  const src = readFileSync(new URL("../public/projects.js", import.meta.url), "utf8");
+  assert.equal(src.match(/effectAllowed = '(\w+)'/)?.[1], "move");
+  assert.ok(!/dropEffect = /.test(src), "no dropEffect the drag does not allow");
+  assert.match(src, /items\.push\(\[`Merge into "\$\{slotDisplayLabel\(other\)\}"`, \(\) => mergeTabs\(slotId, other\.id\)\]\)/);
 });

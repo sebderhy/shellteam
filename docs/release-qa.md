@@ -77,7 +77,11 @@ a tool call runs, Stop then send, two messages back-to-back, a follow-up the
 instant a turn ends, and a same-family model switch mid-turn. Every case must
 answer without "already has an active writer" in the chat (SHE-107/SHE-109).
 It needs a Codex login or API key on the box and spends a few short turns,
-which is why it is manual. `--scenario hold` then a cockpit restart then
+which is why it is manual. Run it for Pi too (`--model glm-5p3`): on
+16 Nov 2026 two messages sent back to back reached Pi before its run had
+started, the second became a run of its own that ended at once, and it was
+never answered. Only the real Pi showed it; the adapter's fake-Pi tests were
+green. `--scenario hold` then a cockpit restart then
 `--scenario resume --slot N` covers the restart case.
 
 ### Signed release tag
@@ -95,6 +99,39 @@ git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=deploy/release-signers verif
 
 Rotating the key: add the new public key to `deploy/release-signers`, ship one
 release signed with the OLD key, then sign with the new one and drop the old.
+
+### Agent browser: does it look ordinary, can the owner still see it
+
+On a box running the browser module, and against any new Steel image before
+moving the pin in `deploy/browser/run-steel.sh`:
+
+```bash
+uv run --with playwright scripts/browser-check.py          # exit 1 = it gives itself away
+uv run --with playwright scripts/browser-check.py --sites  # also visits 12 real pages
+node scripts/qa/browser-live-view.mjs                      # the Browser tab's picture
+```
+
+`browser-check.py` looks at the real browser the way a site does (SHE-207: it
+ran headless with a spoofed fingerprint, a detector called it "headless
+Chrome", 6 of 12 common pages refused it, and no test said so). The first form
+must say "looks like an ordinary browser". The `--sites` count is compared
+between releases, not gated: on 15 Nov 2026 it was 5 of 12 refused on first
+load from a datacenter address, and the two bot-check pages opened after one
+click by a person; before the fix it was 6, with no way through.
+
+`browser-live-view.mjs` exists because the newest Steel build of that day
+passed health, launched Chromium, answered CDP, and showed the owner nothing.
+
+```bash
+node scripts/qa/browser-gate-e2e.mjs    # run when no agent is browsing
+```
+
+Starts the real Playwright MCP server the way an agent's CLI does, through a
+gate in front of the box's browser, and checks that every kind of tool call is
+refused at once and in words while the owner has control (SHE-170: a refused
+snapshot used to retry for 30 s and report only "Timeout"), and that the chat
+is recognised from the process tree. Run it after any change to the gate and
+after a Playwright MCP release that changes how errors are reported.
 
 ### Agent browser isolation
 

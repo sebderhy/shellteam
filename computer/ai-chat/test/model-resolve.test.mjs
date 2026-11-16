@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isKnownModel, resolveModelId, opencodeDefaultModel } from "../lib/model-catalog.mjs";
+import { isKnownModel, resolveModelId, piDefaultModel } from "../lib/model-catalog.mjs";
 import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_CODEX_MODEL,
@@ -52,12 +52,12 @@ test("orphans resolve within their own family, not always Claude", () => {
   // A removed Antigravity model routes by the gemini- prefix -> Antigravity default.
   assert.equal(isKnownModel("gemini-2.5-pro"), false);
   assert.equal(resolveModelId("gemini-2.5-pro"), DEFAULT_ANTIGRAVITY_MODEL);
-  // OpenCode has no DEFAULT_ constant — its default comes from the catalog, so
+  // Pi has no DEFAULT_ constant — its default comes from the catalog, so
   // this is the family most likely to regress when a model is retired. Kimi K2.6,
   // GLM 5.1 and GLM 5.2 left when their successors (K3, 5.2, 5.3) shipped.
   for (const gone of ["kimi-k2p6", "glm-5p1", "glm-5p2"]) {
     assert.equal(isKnownModel(gone), false);
-    assert.equal(resolveModelId(gone), opencodeDefaultModel());
+    assert.equal(resolveModelId(gone), piDefaultModel());
   }
 });
 
@@ -65,4 +65,9 @@ test("empty / falsy input is returned as-is", () => {
   assert.equal(resolveModelId(""), "");
   assert.equal(resolveModelId(null), null);
   assert.equal(resolveModelId(undefined), undefined);
+});
+
+test("a chat on Kimi K3 moves to Kimi K3.1 Pro, its successor (2026-11-16)", () => {
+  assert.equal(resolveModelId("kimi-k3"), "kimi-k3p1-pro");
+  assert.equal(isKnownModel("kimi-k3"), false, "K3 is off the menu");
 });

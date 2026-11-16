@@ -24,7 +24,6 @@ import json
 import logging
 import os
 import re
-import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -206,6 +205,53 @@ def is_codex_subagent(meta: dict) -> bool:
     return isinstance(meta.get("source"), dict) and "subagent" in meta["source"]
 
 
+def pi_sessions_root(home: Path) -> Path:
+    """Where Pi writes its sessions: ``--<cwd, / as ->--/<time>_<id>.jsonl``."""
+    return home / ".pi" / "agent" / "sessions"
+
+
+def pi_meta(path: Path) -> dict:
+    """The first line of a Pi session: ``{"type": "session", "id", "cwd", ...}``."""
+    with path.open() as f:
+        line = json.loads(f.readline() or "{}")
+    return line if line.get("type") == "session" else {}
+
+
+def _pi_message(line: dict) -> dict:
+    return (line.get("message") or {}) if line.get("type") == "message" else {}
+
+
+def pi_said(line: dict) -> tuple[str, str, float] | None:
+    """(who, text, time) of a Pi session line the owner or the agent wrote.
+    Tool results, system prompts, thinking, compaction and branch summaries
+    and extension messages are not read."""
+    message = _pi_message(line)
+    content = message.get("content")
+    ts = _epoch(line.get("timestamp"))
+    if message.get("role") == "user":
+        if isinstance(content, list):
+            content = "\n".join(b.get("text", "") for b in content
+                                if isinstance(b, dict) and b.get("type") == "text")
+        text = owner_text(content) if isinstance(content, str) else ""
+        return ("owner", text, ts) if text else None
+    if message.get("role") == "assistant" and isinstance(content, list):
+        text = " ".join(b.get("text", "") for b in content
+                        if isinstance(b, dict) and b.get("type") == "text").strip()
+        return ("agent", text, ts) if text else None
+    return None
+
+
+def pi_tool_paths(line: dict) -> list[str]:
+    """The file paths of the tool calls in a Pi assistant line."""
+    message = _pi_message(line)
+    content = message.get("content")
+    if message.get("role") != "assistant" or not isinstance(content, list):
+        return []
+    return [str(b["arguments"][k]) for b in content
+            if isinstance(b, dict) and b.get("type") == "toolCall" and isinstance(b.get("arguments"), dict)
+            for k in _PATH_KEYS if b["arguments"].get(k)]
+
+
 def _claude(home: Path, bookmarks: dict, start: float) -> list[Conversation]:
     out = []
     root = home / ".claude" / "projects"
@@ -267,38 +313,31 @@ def _codex(home: Path, bookmarks: dict, start: float) -> list[Conversation]:
     return out
 
 
-def _opencode(home: Path, bookmarks: dict, start: float) -> list[Conversation]:
-    """OpenCode keeps everything in one database, opened read-only. The
-    bookmark is the id of the last part read (ids only grow)."""
-    db = home / ".local" / "share" / "opencode" / "opencode.db"
-    out: list[Conversation] = []
-    if not db.exists():
-        return out
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
-    try:
-        for sid, directory in conn.execute(
-                "SELECT id, directory FROM session WHERE time_updated > ?", (int(start * 1000),)):
-            key = f"opencode:{sid}"
-            mark = bookmarks.get(key)
-            conv = Conversation(key, "opencode", sid, directory or str(home), TOP,
-                                prompts=(mark or {}).get("prompts", 0))
-            rows = conn.execute(
-                "SELECT p.id, m.data, p.data FROM part p JOIN message m ON p.message_id = m.id "
-                "WHERE p.session_id = ? AND p.id > ? ORDER BY p.id", (sid, (mark or {}).get("offset", "")))
-            for part_id, mdata, pdata in rows:
-                conv.end = part_id
-                m, p = json.loads(mdata), json.loads(pdata)
-                ts = ((m.get("time") or {}).get("created") or 0) / 1000
-                if p.get("type") != "text" or not p.get("text") or (not mark and ts and ts <= start):
-                    continue
-                role = "owner" if m.get("role") == "user" else "agent"
-                text = owner_text(p["text"]) if role == "owner" else p["text"]
-                if text:
-                    conv.prompts += role == "owner"
-                    conv.messages.append(Message(role, clip(text), ts, part_id))
-            out.append(conv)
-    finally:
-        conn.close()
+def _pi(home: Path, bookmarks: dict, start: float) -> list[Conversation]:
+    """Pi keeps one JSONL file per session under ``~/.pi/agent/sessions``; its
+    first line names the session and the folder it ran in."""
+    out = []
+    root = pi_sessions_root(home)
+    for path in sorted(root.glob("*/*.jsonl")) if root.is_dir() else []:
+        key = f"pi:{path}"
+        mark = bookmarks.get(key)
+        if mark and path.stat().st_size == mark.get("size"):
+            continue
+        if not mark and path.stat().st_mtime <= start:
+            continue
+        meta = pi_meta(path)
+        conv = Conversation(key, "pi", meta.get("id") or path.stem, meta.get("cwd") or "", TOP,
+                            prompts=(mark or {}).get("prompts", 0), headless=True)
+        for line, end in _new_lines(path, mark, start):
+            conv.end = end
+            said = pi_said(line)
+            if said:
+                conv.prompts += said[0] == "owner"
+                conv.messages.append(Message(said[0], clip(said[1]), said[2], end))
+            paths = pi_tool_paths(line)
+            if paths and conv.messages:
+                conv.messages[-1].paths += paths
+        out.append(conv)
     return out
 
 
@@ -396,7 +435,7 @@ def gather(home: Path, bookmarks: dict, start: float) -> Reading:
     tabs = _open_tabs(home)
     openings: dict[str, str] = dict(bookmarks.get(OPENINGS) or {})
     single: list[Conversation] = []       # one-message headless runs, not a tab
-    for name, fn in (("claude", _claude), ("codex", _codex), ("opencode", _opencode),
+    for name, fn in (("claude", _claude), ("codex", _codex), ("pi", _pi),
                      ("agents' own notes", _agent_notes)):
         try:
             found = fn(home, bookmarks, start)
@@ -454,8 +493,6 @@ def bookmark_after(conv: Conversation, message: Message, path_size: int | None =
 
 
 def file_size(conv: Conversation) -> int | None:
-    if conv.source == "opencode":
-        return None
     return Path(conv.key.split(":", 1)[1]).stat().st_size
 
 

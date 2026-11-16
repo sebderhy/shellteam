@@ -62,7 +62,7 @@ test("every auto-refresh path is gated on quotaAutoRefreshDue, not bare stalenes
 
 test("opening the quota panel still forces a fresh check", () => {
   assert.ok(
-    /open && quotaIsStale\(\)\) refreshSubscriptionQuota\(\{ force: true \}\)/.test(APP_JS),
+    /open && billingModeForModel\(S\.currentModel\) === 'subscription' && quotaIsStale\(\)\) refreshSubscriptionQuota\(\{ force: true \}\)/.test(APP_JS),
     "the click-to-open path keeps its force refresh — that is the manual retry",
   );
 });

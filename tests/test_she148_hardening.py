@@ -52,7 +52,7 @@ def test_install_firewalls_the_agent_browser_from_the_host():
     # Root never runs a script from the user-writable checkout.
     assert "$REPO" not in body
     start = src.split("if ! ensure_browser_network; then", 1)[1]
-    assert start.index("ensure_browser_firewall") < start.index("dk run -d")
+    assert start.index("ensure_browser_firewall") < start.index('"$STEEL_RUN" --name')
     assert "shellteam-browser-firewall.service" in (root / "uninstall.sh").read_text()
 
 

@@ -1,7 +1,7 @@
 # Security model
 
 ShellTeam is a cockpit for coding agents you already run: Claude Code, Codex,
-Antigravity, OpenCode. It runs them **natively on the host**, as the Linux user
+Antigravity, Pi. It runs them **natively on the host**, as the Linux user
 you install it as, with no container in between. That is the same footing those
 CLIs have when you type them into a terminal on the box. Read this to know
 exactly what changes when you run them through ShellTeam instead.
@@ -18,7 +18,9 @@ things do change:
    full-auto mode so it can work while you are on your phone or asleep. The
    human check that would catch a bad command is gone by design. If you would
    not run `claude --dangerously-skip-permissions` on a machine, do not run
-   ShellTeam on it.
+   ShellTeam on it. Pi runs without permission prompts in the cockpit too, like
+   the other agents: Pi has no approval step for tool calls at all, even when
+   you run it by hand.
 2. **The box gets a door on the web.** A URL with one token gives a shell on
    the box, and ShellTeam's own API and file server run as your user. That is a
    larger and younger attack surface than SSH keys. The default install keeps it
@@ -285,6 +287,18 @@ so the *code* fails safe rather than trusting the operator:
 Deliberately **not** yet closed (documented residuals, tracked): a hard guest
 isolation boundary (guest mode stays a soft boundary — see below), and full
 symlink-canonicalization on the owner-authed cockpit write API.
+
+## What the cockpit counts about you (and what it does not)
+
+The cockpit keeps a count of which of its controls you use: one number per
+control, per day, per screen (phone or desktop), in
+`~/.config/shellteam/ui-use.json` (owner-only). A control is recorded by a
+fixed name from ShellTeam's own code, such as `chat.compact` or `tool.terminal`.
+The server refuses anything that is not such a name, so no message, chat
+title, file name or project name can land in the file. Nothing is sent
+anywhere: the store has no network code, and a test keeps it that way. It
+exists so that a change to the interface starts from what you really use;
+`bin/shellteam-usage` prints it, and `uninstall.sh --purge` deletes it.
 
 ## Footprint — what runs and what gets written
 

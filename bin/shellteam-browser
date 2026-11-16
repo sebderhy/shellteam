@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""shellteam-browser: an agent asks the owner for their turn in the browser.
+
+  shellteam-browser ask "Sign in to Fnac, then tell me it is done."
+
+Use it when a page needs something that is the owner's: a sign-in, a one-time
+code, a bot check, card details, a personal choice. The owner sees "Needs you"
+on this chat with your sentence and a button to take the browser. Then END
+YOUR TURN: you get a message when they hand the browser back.
+
+It works from an agent started in the cockpit (the chat is found from the
+process tree, so there is nothing to pass). It talks to the cockpit's browser
+gate on this machine only (computer/ai-chat/lib/browser-gate.mjs).
+"""
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+GATE = f"http://127.0.0.1:{os.environ.get('BROWSER_GATE_PORT', '3878')}"
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2 or argv[0] != "ask" or not argv[1].strip():
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    req = urllib.request.Request(
+        f"{GATE}/ask", data=json.dumps({"what": argv[1].strip()}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(json.load(resp)["next"])
+            return 0
+    except urllib.error.HTTPError as e:
+        print(f"shellteam-browser: {json.load(e).get('error', e.reason)}", file=sys.stderr)
+    except urllib.error.URLError as e:
+        print(f"shellteam-browser: the cockpit's browser gate is not answering on {GATE} ({e.reason}). "
+              "Tell the owner in the chat what you need instead.", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

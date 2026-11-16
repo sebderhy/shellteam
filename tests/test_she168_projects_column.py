@@ -1,8 +1,7 @@
 """SHE-168 — the projects column, control-plane side.
 
 The cockpit draws the column (computer/ai-chat/test/projects-column-she168.test.mjs
-covers that side). Here: the Settings switch that turns it on for every device,
-the dashboard wiring around it, the per-project views of the Reports and
+covers that side). Here: that it is the only layout (SHE-188), the dashboard wiring around it, the per-project views of the Reports and
 Knowledge pages, and a moved chat's reports following it to its new project.
 """
 
@@ -11,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from api.routers import settings as settings_router
 from api.services import report_catalog
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,44 +24,30 @@ def env_file(tmp_path, monkeypatch):
     env = tmp_path / ".env"
     env.write_text("")
     monkeypatch.setenv("SHELLTEAM_ENV_FILE", str(env))
-    monkeypatch.delenv("COCKPIT_LAYOUT", raising=False)
     return env
 
 
-# ── Settings switch ──────────────────────────────────────────────────────────
+# ── The only layout (SHE-188) ────────────────────────────────────────────────
 
 
-def test_layout_requires_the_owner(client, env_file):
-    assert client.get("/api/settings/layout").status_code == 401
-    assert client.post("/api/settings/layout", json={"layout": "projects"}).status_code == 401
-
-
-def test_layout_defaults_to_tabs_and_is_stored_for_every_device(client, auth_header, env_file):
-    assert client.get("/api/settings/layout", headers=auth_header).json() == {"layout": "tabs"}
-    resp = client.post("/api/settings/layout", json={"layout": "Projects"}, headers=auth_header)
-    assert resp.status_code == 200 and resp.json() == {"layout": "projects"}
-    assert "COCKPIT_LAYOUT=projects" in env_file.read_text()
-    assert client.get("/api/settings/layout", headers=auth_header).json() == {"layout": "projects"}
-
-
-def test_layout_rejects_an_unknown_value(client, auth_header, env_file):
-    resp = client.post("/api/settings/layout", json={"layout": "sideways"}, headers=auth_header)
-    assert resp.status_code == 400
-    assert env_file.read_text() == ""
-
-
-def test_a_hand_edited_unknown_layout_falls_back_to_tabs(monkeypatch):
-    monkeypatch.setenv("COCKPIT_LAYOUT", "banana")
-    assert settings_router.cockpit_layout() == "tabs"
-
-
-def test_the_dashboard_is_served_with_the_chosen_layout(client, auth_header, monkeypatch):
-    monkeypatch.setenv("COCKPIT_LAYOUT", "projects")
+def test_the_projects_column_is_the_layout_for_everyone(client, auth_header, env_file, monkeypatch):
+    """The tabs layout and its Settings switch are gone: no box, old or new,
+    can be served the tab row, whatever its .env still says."""
+    monkeypatch.setenv("COCKPIT_LAYOUT", "tabs")
     html = client.get("/", headers=auth_header).text
-    assert 'const COCKPIT_LAYOUT = "projects";' in html
-    assert "__COCKPIT_LAYOUT__" not in html
-    monkeypatch.delenv("COCKPIT_LAYOUT")
-    assert 'const COCKPIT_LAYOUT = "tabs";' in client.get("/", headers=auth_header).text
+    assert "COCKPIT_LAYOUT" not in html and "layout=projects" not in html and "layout-card" not in html
+    from api.main import app
+    assert not [r for r in app.routes if getattr(r, "path", "").endswith("/settings/layout")]
+    assert "COCKPIT_LAYOUT" not in (ROOT / ".env.example").read_text()
+    assert not (ROOT / "computer/ai-chat/public/layout.js").exists()
+
+
+def test_what_left_the_chat_header_is_in_settings():
+    """Agent sign-in, console mode and shortcuts are rare: Settings holds them
+    and asks the cockpit to run them."""
+    for action in ("sign-in", "console", "shortcuts"):
+        assert f'data-cockpit-action="{action}"' in DASHBOARD
+    assert "kind: 'cockpit-action'" in DASHBOARD
 
 
 # ── Dashboard wiring ─────────────────────────────────────────────────────────
@@ -71,9 +55,9 @@ def test_the_dashboard_is_served_with_the_chosen_layout(client, auth_header, mon
 
 def test_the_cockpit_frame_stays_on_screen_in_the_projects_layout():
     """The column is inside the cockpit frame: every other screen opens beside it."""
-    assert "body.layout-projects #panel-agents { display: flex;" in DASHBOARD
+    assert "#panel-agents { display: flex;" in DASHBOARD and "body.layout-projects" not in DASHBOARD
     assert "left: var(--pj-side, 276px)" in DASHBOARD
-    assert "+ (PROJECTS_LAYOUT ? '&layout=projects' : '')" in DASHBOARD
+    assert ".topbar,\n        .workspace-tabs { display: none; }" in DASHBOARD, "no top bar, no tab row"
 
 
 def test_project_views_open_trusted_but_only_for_this_dashboards_own_pages():

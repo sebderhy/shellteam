@@ -198,7 +198,7 @@ class TestAIProxy:
     """/api/computers/ai/{path} — proxy to the cockpit + status enrichment."""
 
     @respx.mock
-    def test_status_enriches_opencode_available_true(self, client, auth_header, monkeypatch):
+    def test_status_enriches_pi_available_true(self, client, auth_header, monkeypatch):
         monkeypatch.setenv("FIREWORKS_API_KEY", "fw-secret")
         respx.get("http://127.0.0.1:3456/api/status").mock(
             return_value=httpx.Response(200, json={"hasApiKey": False, "hasOAuth": False})
@@ -208,11 +208,11 @@ class TestAIProxy:
             resp = client.get("/api/computers/ai/status", headers=auth_header)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["openCodeAvailable"] is True
+        assert body["piAvailable"] is True
         assert body["hasApiKey"] is False  # passthrough preserved
 
     @respx.mock
-    def test_status_opencode_available_false_without_key(self, client, auth_header, monkeypatch):
+    def test_status_pi_available_false_without_key(self, client, auth_header, monkeypatch):
         monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
         respx.get("http://127.0.0.1:3456/api/status").mock(
             return_value=httpx.Response(200, json={"hasApiKey": True})
@@ -221,7 +221,7 @@ class TestAIProxy:
                    new_callable=AsyncMock, return_value="127.0.0.1"):
             resp = client.get("/api/computers/ai/status", headers=auth_header)
         assert resp.status_code == 200
-        assert resp.json()["openCodeAvailable"] is False
+        assert resp.json()["piAvailable"] is False
 
     def test_proxy_503_when_stack_down(self, client, auth_header):
         with patch("api.routers.computers.containers.get_container_ip",
@@ -239,7 +239,7 @@ class TestAIProxy:
             resp = client.post("/api/computers/ai/key", headers=auth_header,
                                json={"provider": "claude", "key": "sk-ant-xxx"})
         assert resp.status_code == 200
-        assert resp.json() == {"success": True, "provider": "claude"}  # no openCodeAvailable added
+        assert resp.json() == {"success": True, "provider": "claude"}  # no piAvailable added
 
     @respx.mock
     def test_usage_refresh_query_is_forwarded_to_cockpit(self, client, auth_header):

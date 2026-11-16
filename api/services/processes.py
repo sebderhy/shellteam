@@ -89,10 +89,10 @@ def _materialize_config(username: str, email: str = "") -> None:
     - **Claude** — `--plugin-dir` + `--append-system-prompt-file`
     - **Codex** — `-c` overrides plus a ShellTeam-owned skills HOME overlay
     - **Antigravity** — a ShellTeam workspace plugin added with `--add-dir`
-    - **OpenCode** — `OPENCODE_CONFIG` env (merges with the user's config)
+    - **Pi** — a ShellTeam extension loaded with `pi -e` (provider + MCP)
 
     None of these write the user's `~/.claude`, `~/.codex`, `~/.gemini`, or
-    `~/.config/opencode`.
+    `~/.pi`.
     """
     home = _ensure_data_dir()
     uname = username or OWNER_USERNAME

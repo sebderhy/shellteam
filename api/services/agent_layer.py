@@ -24,11 +24,13 @@ from pathlib import Path
 
 import yaml
 
-from api.config import APP_DOMAIN, MODULES, STEEL_PORT
+from api.config import APP_DOMAIN, BROWSER_GATE_PORT, MODULES
 from api.services.agent_config import (
+    AI_PROXY_BASE,
     CONFIG_TEMPLATE_DIR,
     SHARED_TEMPLATE_DIR,
 )
+from api.services.model_catalog import pi_provider_models
 
 log = logging.getLogger(__name__)
 
@@ -36,12 +38,13 @@ log = logging.getLogger(__name__)
 STATE_DIRNAME = ".shellteam"
 LAYER_SUBPATH = (STATE_DIRNAME, "agent-layer")
 
-# Loopback CDP endpoint of the Steel browser container (see install.sh). The
-# host-side port is STEEL_PORT (default 3877 — deliberately off :3000, which
-# belongs to the user's own dev servers); the template placeholder stays the
-# literal `ws://127.0.0.1:3000` and is rewritten here.
+# Where the owner's agents reach the browser: the cockpit's gate on loopback
+# (BROWSER_GATE_PORT), which forwards to the Steel container. Never Steel's own
+# port: the gate is what refuses an agent while the owner holds the browser
+# (SHE-170). The template placeholder stays the literal `ws://127.0.0.1:3000`
+# and is rewritten here.
 BROWSER_CDP_ENDPOINT = os.environ.get(
-    "BROWSER_CDP_ENDPOINT", f"ws://127.0.0.1:{STEEL_PORT}"
+    "BROWSER_CDP_ENDPOINT", f"ws://127.0.0.1:{BROWSER_GATE_PORT}"
 )
 
 # Where in-box tools (skills, persona snippets) reach the control plane. Native
@@ -55,6 +58,7 @@ PLUGIN_NAME = "shellteam"
 # The vault CLI agents call by absolute path (SHE-135): no PATH change, so the
 # purity gate holds and nothing is installed outside the repo.
 SECRETS_CLI = Path(__file__).resolve().parents[2] / "bin" / "shellteam-secrets"
+BROWSER_CLI = Path(__file__).resolve().parents[2] / "bin" / "shellteam-browser"
 
 
 def _hydrate(text: str, username: str) -> str:
@@ -62,6 +66,7 @@ def _hydrate(text: str, username: str) -> str:
     text = text.replace("{username}", username)
     text = text.replace("{api_base}", API_BASE)
     text = text.replace("{shellteam_secrets}", str(SECRETS_CLI))
+    text = text.replace("{shellteam_browser}", str(BROWSER_CLI))
     # Legacy Cloud literal — rewrite so stale templates still work natively.
     return text.replace("http://host.docker.internal:8000", API_BASE)
 
@@ -112,8 +117,76 @@ def codex_overrides_file(home_dir: Path) -> Path:
     return layer_dir(home_dir) / "codex" / "overrides.json"
 
 
-def opencode_config_file(home_dir: Path) -> Path:
+# The static Pi extension shipped in the repo; copied verbatim into the layer.
+PI_EXTENSION_SOURCE = Path(__file__).parent.parent.parent / "computer" / "pi-layer" / "shellteam.ts"
+
+
+def pi_layer_dir(home_dir: Path) -> Path:
+    """``~/.shellteam/agent-layer/pi/`` — the extension the cockpit loads with
+    ``pi -e`` and the ``layer.json`` it reads (see ``computer/pi-layer/shellteam.ts``)."""
+    return layer_dir(home_dir) / "pi"
+
+
+def pi_extension_file(home_dir: Path) -> Path:
+    return pi_layer_dir(home_dir) / "shellteam.ts"
+
+
+def pi_layer_file(home_dir: Path) -> Path:
+    return pi_layer_dir(home_dir) / "layer.json"
+
+
+def _legacy_opencode_config_file(home_dir: Path) -> Path:
+    """Where the retired OpenCode layer lived; removed on every build."""
     return layer_dir(home_dir) / "opencode.json"
+
+
+def _pi_mcp_server(config: dict) -> dict | None:
+    """Translate a canonical MCP server into the shape Pi's registerMcpServer takes."""
+    if "url" in config:
+        return {k: config[k] for k in ("url", "headers") if config.get(k)}
+    if "command" in config:
+        return {k: config[k] for k in ("command", "args", "env") if config.get(k)}
+    return None
+
+
+def build_pi_layer(mcp_servers: dict) -> dict:
+    """The JSON the Pi extension reads: the relayed Fireworks provider (always)
+    and the MCP servers the enabled modules add (``{}`` in pure core).
+
+    Credentials are never written here: the provider names the env vars that
+    hold them (``apiKeyEnv`` / ``headersEnv``) and Pi resolves them at launch.
+    """
+    return {
+        "provider": {
+            "baseUrl": f"{AI_PROXY_BASE}/internal/ai/fireworks/v1",
+            "api": "openai-completions",
+            "apiKeyEnv": "SHELLTEAM_AI_TOKEN",
+            "headersEnv": {"X-Shellteam-User-Id": "SHELLTEAM_USER_ID"},
+            # Sourced from config/models.json: add a Fireworks model there, no code change.
+            "models": pi_provider_models(),
+        },
+        "mcpServers": {
+            name: translated
+            for name, cfg in mcp_servers.items()
+            if (translated := _pi_mcp_server(cfg)) is not None
+        },
+    }
+
+
+def _build_pi_layer(home_dir: Path, mcp_servers: dict) -> Path:
+    """Write ``pi/layer.json`` (0600: MCP headers can hold bearer tokens) and copy
+    the static extension next to it. Drops the retired OpenCode config."""
+    directory = pi_layer_dir(home_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    layer_file = pi_layer_file(home_dir)
+    layer_file.touch(mode=0o600, exist_ok=True)
+    layer_file.chmod(0o600)
+    layer_file.write_text(json.dumps(build_pi_layer(mcp_servers), indent=2))
+    extension = pi_extension_file(home_dir)
+    shutil.copyfile(PI_EXTENSION_SOURCE, extension)
+    extension.chmod(0o644)
+    _remove_artifact(_legacy_opencode_config_file(home_dir))
+    return directory
 
 
 def layer_manifest_file(home_dir: Path) -> Path:
@@ -364,11 +437,16 @@ def drop_section(text: str, name: str) -> str:
 
 
 def _owner_persona(username: str, home_dir: Path, modules: frozenset | set) -> str:
-    """The persona as the owner's agents receive it. With memory on
+    """The persona as the owner's agents receive it. Without the ``browser``
+    module its browser section goes. With memory on
     (``dreaming``), its section asking each agent to keep a memory of its own
     goes: there is one memory, and the launch text says how to search it and
     leave it a note (K15)."""
     text = _render_persona(username, home_dir)
+    # No browser module, no browser: an agent told it has one goes looking for
+    # tools that are not there (and the rules for it would be noise).
+    if "browser" not in modules:
+        text = drop_section(text, "browser")
     return drop_section(text, "memory") if "dreaming" in modules else text
 
 
@@ -559,7 +637,8 @@ def _remove_runtime_mcp_files(home_dir: Path) -> None:
     runtime = layer_dir(home_dir) / "runtime"
     if not runtime.is_dir():
         return
-    for pattern in ("claude-mcp-*.json", "opencode-*.json", "antigravity-*"):
+    # opencode-*.json: the retired OpenCode agent's copies, left on upgraded boxes.
+    for pattern in ("claude-mcp-*.json", "pi-*.json", "antigravity-*", "opencode-*.json"):
         for path in runtime.glob(pattern):
             _remove_artifact(path)
 
@@ -633,14 +712,15 @@ def build_agent_layer(
     exactly its own pieces:
 
       persona  → one shared prompt, skill set, and docs MCP exposed through
-                 Claude, Codex, Antigravity, and OpenCode adapters
+                 Claude, Codex, Antigravity, and Pi adapters
       browser/composio/linear → their MCP server (all agents)
 
-    OpenCode's config is ALWAYS built: it carries the proxied Fireworks
-    provider — credential plumbing without which the OpenCode agent cannot run
-    at all. In core mode it contains ONLY the provider block (no MCP, no
-    skills, no instructions); this is the one documented core-mode artifact
-    (see docs/decisions/20260704-purity-gate-modules.md).
+    Pi's layer (``pi/layer.json`` + the static ``pi/shellteam.ts`` extension)
+    is ALWAYS built: it carries the proxied Fireworks provider — credential
+    plumbing without which the Pi agent cannot run at all. In core mode it
+    contains ONLY the provider (``mcpServers`` is ``{}``; prompt and skills are
+    cockpit flags gated on the manifest); this is the one documented core-mode
+    artifact (see docs/decisions/20260704-purity-gate-modules.md).
 
     Idempotent and additive to the USER's config: writes only under
     ``~/.shellteam/agent-layer/`` and finishes by writing the ``layer.json``
@@ -667,8 +747,8 @@ def build_agent_layer(
 
     # One rendered prompt is likewise the source of truth. Claude appends the
     # file; Codex receives its contents as an additive developer message;
-    # Antigravity loads it as a plugin rule; OpenCode lists the same path as an
-    # instruction. 'persona' (owner cockpit) and 'employee' remain exclusive.
+    # Antigravity loads it as a plugin rule; Pi gets the same file through
+    # --append-system-prompt. 'persona' (owner cockpit) and 'employee' remain exclusive.
     plugin = claude_plugin_dir(home_dir)
     prompt_file = claude_system_prompt_file(home_dir)
     if persona_on:
@@ -716,16 +796,10 @@ def build_agent_layer(
     if not codex_overrides:
         _remove_artifact(codex_file.parent)
 
-    # OpenCode layer — config the cockpit points OPENCODE_CONFIG at (merges with
-    # the user's own; no ~/.config/opencode write). Provider always; its prompt
-    # and skills point at the same canonical harness as the other adapters.
-    from api.services.agent_config import _build_opencode_json
-    oc_file = opencode_config_file(home_dir)
-    oc_file.write_text(_build_opencode_json(
-        home_dir, mcp_servers,
-        skills_paths=[str(skills_dir)] if plugin_on else [],
-        instructions=[str(prompt_file)] if plugin_on else [],
-    ))
+    # Pi layer — an extension the cockpit loads with `pi -e` (no ~/.pi write).
+    # Provider always; MCP per module. Its prompt and skills are the same
+    # canonical files, passed by the cockpit as --append-system-prompt / --skill.
+    pi_dir = _build_pi_layer(home_dir, mcp_servers)
 
     # Antigravity accepts native plugins, but only from a global user config or
     # a workspace. We build the latter inside ShellTeam's namespace; the launch
@@ -761,7 +835,7 @@ def build_agent_layer(
             "codex_session_home": plugin_on,
             "harness_skills": plugin_on,
             "antigravity_plugin": antigravity_on,
-            "opencode_config": True,
+            "pi_layer": True,
         },
     }
     # The cockpit adds a project's own Linear server per chat: it needs the
@@ -783,8 +857,8 @@ def build_agent_layer(
     else:
         log.info(
             "Agent-layer built in PURE CORE mode at %s — no plugin, no MCP, no "
-            "persona; cockpit agents spawn identical to hand-run CLIs (OpenCode "
-            "keeps its provider-only config). Enable modules via MODULES= in .env.",
+            "persona; cockpit agents spawn identical to hand-run CLIs (Pi "
+            "keeps its provider-only layer). Enable modules via MODULES= in .env.",
             layer_dir(home_dir),
         )
     return {
@@ -793,6 +867,6 @@ def build_agent_layer(
         "codex_overrides_file": str(codex_file) if codex_overrides else None,
         "codex_session_home": str(codex_session_home) if plugin_on else None,
         "antigravity_workspace": str(antigravity_workspace) if antigravity_on else None,
-        "opencode_config_file": str(oc_file),
+        "pi_layer_dir": str(pi_dir),
         "manifest_file": str(layer_manifest_file(home_dir)),
     }

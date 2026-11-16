@@ -19,7 +19,9 @@ import {
   codexHarnessEnv,
   codexSecretEnv,
   codexLayerArgs,
+  piLayer,
 } from "../agent-layer.mjs";
+import { newPiSessionId, piModelArgs } from "../pi-agent.mjs";
 import { agentIdForModel, cliModelForId, configArgsForId } from "../model-catalog.mjs";
 
 // Per-agent *runtime* metadata: adapter class, terminal spawn, capabilities. The
@@ -76,15 +78,18 @@ export const AGENTS = [
     supports: { rewind: false, resume: true, cliOwnsHistory: false },
   },
   {
-    id: "opencode",
-    label: "OpenCode",
-    // Fireworks-hosted models served via the managed OpenCode proxy.
-    adapter: { import: () => import("../opencode-agent.mjs"), klass: "OpenCodeAgent" },
+    id: "pi",
+    label: "Pi",
+    // The included models (Fireworks, through ShellTeam's relay), driven over
+    // Pi's RPC mode. The relay provider and MCP servers come from ShellTeam's
+    // Pi extension (agent-layer.mjs piLayer).
+    adapter: { import: () => import("../pi-agent.mjs"), klass: "PiAgent" },
     terminal: {
-      cmd: "opencode",
-      args: (model, { sessionId } = {}) => [
-        ...(sessionId ? ["--session", sessionId] : []),
-        "--model", `fireworks/${model}`,
+      cmd: "pi",
+      args: (model, { sessionId, cwd } = {}) => [
+        ...piModelArgs(model),
+        ...piLayer(cwd).args,
+        "--session-id", sessionId || newPiSessionId(),
       ],
     },
     supports: { rewind: false, resume: true, cliOwnsHistory: false },
@@ -97,6 +102,11 @@ const BY_ID = new Map(AGENTS.map((a) => [a.id, a]));
 export function pickAgent(model) {
   if (!model) return DEFAULT;
   return BY_ID.get(agentIdForModel(model)) ?? DEFAULT;
+}
+
+/** True for a family ShellTeam ships an adapter for (false for a retired one, like "opencode"). */
+export function isAgentFamily(id) {
+  return BY_ID.has(id);
 }
 
 export function agentIdFor(model) {
@@ -120,7 +130,10 @@ export function terminalSpawn(model, opts = {}) {
 
 /** Apply any per-family launch environment without changing the user's shell. */
 export function agentLaunchEnv(model, env, cwd) {
-  return pickAgent(model).id === "codex" ? { ...codexHarnessEnv(env), ...codexSecretEnv(cwd) } : env;
+  const id = pickAgent(model).id;
+  if (id === "codex") return { ...codexHarnessEnv(env), ...codexSecretEnv(cwd) };
+  if (id === "pi") return { ...env, ...piLayer(cwd).env };
+  return env;
 }
 
 function commandOnPath(cmd) {

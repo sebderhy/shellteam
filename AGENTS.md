@@ -7,7 +7,7 @@ truth for every agent (`CLAUDE.md` is a one-line import of this file).
 
 ShellTeam (OSS edition) — a **single-user, self-hostable command center for coding
 agents**. It turns one Linux box into a cloud computer you drive through a cockpit
-of coding agents (Claude Code, Codex, Antigravity, OpenCode). The control plane runs **natively**
+of coding agents (Claude Code, Codex, Antigravity, Pi). The control plane runs **natively**
 on the host as `systemd --user` services — no database, no per-user tenancy. The
 **only** Docker dependency is the opt-in Steel browser container (part of `--full`);
 the default install is fully Docker-free.
@@ -143,7 +143,8 @@ write to the owner's coding-agent config** (`~/.claude`, `~/.claude.json`,
   `composio`, `linear`, `dreaming` (`KNOWN_MODULES` in `api/config.py`).
   The builder writes a `layer.json` manifest that the Node
   spawners (`agent-layer.mjs`) gate every flag on. One core-mode exception:
-  OpenCode keeps a provider-only `opencode.json` (credential plumbing).
+  Pi keeps a provider-only `pi/layer.json` (credential plumbing: the relay to
+  the included models).
   Never add an unconditional spawn flag — gate it through the manifest.
 - **Claude Code** loads it purely via flags: the cockpit (`claude-cli-agent.mjs`)
   and the managed terminal (`agents/registry.mjs`) call `claudeLayerArgs()`
@@ -155,9 +156,11 @@ write to the owner's coding-agent config** (`~/.claude`, `~/.claude.json`,
 - **Codex** gets the layer via `-c` overrides spliced at spawn
   (`agent_layer.py:build_codex_overrides` → `codex/overrides.json`, consumed by
   `codexLayerArgs()` in `agent-layer.mjs`) — additive on the user's `config.toml`,
-  no write. **OpenCode** gets it via `OPENCODE_CONFIG` (set in `session.mjs`
-  `getCliEnv()`, pointing at `agent_layer.py`'s `opencode.json`) — merges with the
-  user's config. **Antigravity** gets it via `--add-dir` (`antigravityLayerArgs()`
+  no write. **Pi** gets it via `-e ~/.shellteam/agent-layer/pi/shellteam.ts` (a
+  static extension, source `computer/pi-layer/shellteam.ts`, that registers the
+  relay provider and MCP servers from the JSON named by `SHELLTEAM_PI_LAYER`)
+  plus `--append-system-prompt` / `--skill` when the manifest enables them
+  (`piLayer()` in `agent-layer.mjs`); nothing is written to `~/.pi`. **Antigravity** gets it via `--add-dir` (`antigravityLayerArgs()`
   in `agent-layer.mjs`) pointing at a ShellTeam-owned workspace plugin
   (`~/.shellteam/agent-layer/antigravity-workspace`) that carries the same prompt,
   skills, and MCP servers — nothing is written to `~/.gemini`.
@@ -172,7 +175,7 @@ write to the owner's coding-agent config** (`~/.claude`, `~/.claude.json`,
 | `api/dependencies.py` | Request auth dependency (the one owner) |
 | `api/routers/proxy.py` | Subdomain proxy (HTTP + WebSocket), auth gate, port forwarding |
 | `api/routers/terminal.py` | WebSocket terminal (xterm.js ↔ host shell) |
-| `api/routers/ai_tools.py` | `/internal/ai` proxy (STT voice input, OpenCode's Fireworks relay) |
+| `api/routers/ai_tools.py` | `/internal/ai` proxy (STT voice input, Pi's Fireworks relay) |
 | `api/routers/internal.py` | Internal endpoints (TLS `check-domain`, etc.) |
 | `api/services/agent_layer.py` | Builds the additive Claude launch-layer (`~/.shellteam/agent-layer/`) — never user dotfiles |
 | `api/services/agent_config.py` | Shared agent-config templates + secondary-CLI config helpers used by the launch-layer builder |
@@ -183,7 +186,10 @@ write to the owner's coding-agent config** (`~/.claude`, `~/.claude.json`,
 | `frontend/reports.html` / `api/services/report_catalog.py` | Reports tab: `~/reports` catalog grouped by originating workspace (transcript-scan attribution) |
 | `frontend/review-picker.js` / `api/services/report_review.py` | Review by pointing: picker injected into the owner's view of sandboxed HTML (comment on an element → cockpit quote tray; in-place text edit → exact-match save) |
 | `computer/ai-chat/` | The ai-chat cockpit (Node service on `:3456`) |
-| `computer/ai-chat/public/projects.js` / `lib/projects.mjs` | Projects column (opt-in, `COCKPIT_LAYOUT=projects`): agents grouped by project, move a chat into a project with its history |
+| `computer/ai-chat/public/projects.js` / `lib/projects.mjs` | The cockpit's one layout: the projects column (agents grouped by project, each with its state in a word) and the chat header, whose title is the chat's menu |
+| `deploy/browser/run-steel.sh` | The ONE place that starts the Steel browser (pinned image, windowed, no fingerprint spoofing, profile on a volume). Release checks: `scripts/browser-check.py`, `scripts/qa/browser-live-view.mjs` |
+| `computer/ai-chat/lib/browser-gate.mjs` / `lib/peer-chat.mjs` / `bin/shellteam-browser` | The gate between agents and the browser: agents' browser tools connect to it (`BROWSER_GATE_PORT`), never to Steel. It refuses agents while the owner holds the browser, keeps one chat browsing at a time, and takes an agent's request for the owner's turn. Release check: `scripts/qa/browser-gate-e2e.mjs` |
+| `computer/ai-chat/public/use.js` / `lib/ui-use.mjs` / `bin/shellteam-usage` | A private count of which controls the owner uses (names only, kept on the box). **Run `bin/shellteam-usage` before any UX change**: where a control lives follows how often it is used |
 | `deploy/systemd/*.service` | `systemd --user` unit templates (rendered by `install.sh`) |
 | `deploy/nginx/shellteam.conf` | File-server nginx config template |
 | `install.sh` | Native installer (idempotent) |
@@ -217,7 +223,7 @@ gitignored — never commit values). The important ones:
 | `SHELLTEAM_AI_TOKEN` | HMAC secret for `/internal/ai` (auto-generated) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | LLM keys (set what you use; Antigravity signs in via its own Google OAuth) |
 | `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` / `OPENAI_BASE_URL` | Company LLM gateway; wins over subscriptions (`session.mjs` gatewayFor, `llm_gateway.py`) |
-| `FIREWORKS_API_KEY` | Enables the OpenCode agent (relayed via `/internal/ai/fireworks`) |
+| `FIREWORKS_API_KEY` | Enables the Pi agent (relayed via `/internal/ai/fireworks`) |
 | `ELEVENLABS_API_KEY` | Voice input (speech-to-text) in the cockpit + feedback |
 | `COMPOSIO_API_KEY` | Optional — enables Composio app integrations over MCP (off by default) |
 | `LINEAR_API_KEY` | Needed by the `linear` module (Linear MCP) |

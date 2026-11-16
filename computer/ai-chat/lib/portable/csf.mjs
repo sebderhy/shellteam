@@ -49,17 +49,6 @@ export function uuid7(ts = Date.now()) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/**
- * OpenCode-style monotonic ids: `<prefix>_<26 base62 chars>`, ascending in
- * message order so the import preserves ordering. `seq` guarantees the sort.
- */
-const B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-export function opencodeId(prefix, seq) {
-  const s = String(seq).padStart(6, "0");
-  const rand = [...randomBytes(10)].map((x) => B62[x % 62]).join("");
-  return `${prefix}_${s}${rand}`.slice(0, prefix.length + 1 + 26);
-}
-
 // --- cwd encoding (Claude project dir + Gemini project hash) ---
 
 /** Claude encodes cwd into the project dir name: /tmp/she14-test → -tmp-she14-test */
@@ -77,7 +66,7 @@ export function projectHash(cwd) {
 /**
  * Ensure every tool_call has a matching tool_result. Any assistant tool_call
  * with no answering tool_result event gets a synthesized error result inserted
- * right after its message (OpenCode's own trick — an unanswered call 400s every
+ * right after its message (an unanswered call 400s every
  * API on resume). Returns a NEW events array; the input is never mutated
  * (invariant 8). Also reports counts for logging.
  */

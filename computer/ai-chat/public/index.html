@@ -6,14 +6,12 @@
     <title>ShellTeam</title>
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/projects.css">
-    <!-- Sets the layout class before the first paint (no flash of the tab row). -->
-    <script src="/layout.js"></script>
     <!-- xterm.js for terminal mode -->
     <link rel="stylesheet" href="/vendor/xterm-5.5.0.min.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="stNautilus" viewBox="0 0 100 100"><defs><mask id="pjNaut"><rect width="100" height="100" fill="#fff"/><g fill="none" stroke="#000" stroke-width="5.81"><path d="M60.0 64.4 L60.2 63.1 L60.2 61.9 L60.3 60.7 L60.2 59.5 L60.1 58.3 L59.9 57.1 L59.6 55.9 L59.3 54.8 L58.9 53.7 L58.5 52.7 L58.0 51.6 L57.4 50.7 L56.8 49.7 L56.2 48.8 L55.5 48.0 L54.7 47.2 L53.9 46.4 L53.1 45.7 L52.3 45.1 L51.4 44.5 L50.5 44.0 L49.6 43.5 L48.6 43.1 L47.7 42.8 L46.7 42.5 L45.8 42.3 L44.8 42.1 L43.8 42.0 L42.8 41.9 L41.9 41.9 L40.9 42.0 L40.0 42.1 L39.1 42.3 L38.2 42.5 L37.3 42.8 L36.4 43.1 L35.6 43.4 L34.8 43.8 L34.1 44.3 L33.3 44.8 L32.6 45.3 L32.0 45.9 L31.4 46.5 L30.8 47.1 L30.3 47.8 L29.8 48.4 L29.3 49.1 L28.9 49.8 L28.6 50.6 L28.3 51.3 L28.0 52.1 L27.8 52.8 L27.6 53.6 L27.5 54.4 L27.5 55.1 L27.4 55.9 L27.4 56.6 L27.5 57.4 L27.6 58.1 L27.8 58.8 L27.9 59.5 L28.2 60.2 L28.4 60.9 L28.7 61.5 L29.1 62.2 L29.4 62.8 L29.8 63.3 L30.2 63.9 L30.7 64.4 L31.2 64.8 L31.7 65.3 L32.2 65.7 L32.7 66.0 L33.3 66.4 L33.9 66.7 L34.4 67.0 L35.0 67.2 L35.6 67.4 L36.2 67.5 L36.8 67.6 L37.4 67.7 L38.0 67.8 L38.6 67.8 L39.2 67.8 L39.8 67.7 L40.4 67.6 L40.9 67.5 L41.5 67.3 L42.0 67.1 L42.5 66.9 L43.0 66.7 L43.5 66.4 L44.0 66.1 L44.4 65.8 L44.8 65.4 L45.2 65.1" stroke-linecap="round"/><path d="M52.2 45.0 Q66.1 39.6 76.5 19.4"/><path d="M34.6 44.0 Q35.5 31.4 23.5 15.2"/><path d="M27.5 56.9 Q18.2 51.7 0.4 54.9"/><path d="M34.7 67.1 Q27.4 72.2 22.8 87.8"/></g></mask></defs><path d="M60.0 64.4 L59.7 65.7 L59.3 67.1 L58.9 68.5 L58.3 69.8 L57.7 71.1 L57.0 72.4 L56.1 73.6 L55.2 74.8 L54.2 75.9 L53.1 77.0 L52.0 78.0 L50.7 79.0 L49.4 79.9 L48.1 80.7 L46.6 81.4 L45.1 82.0 L43.6 82.5 L42.0 82.9 L40.3 83.3 L38.7 83.5 L37.0 83.6 L35.2 83.6 L33.5 83.5 L31.7 83.3 L30.0 82.9 L28.3 82.5 L26.6 81.9 L24.9 81.2 L23.2 80.4 L21.6 79.4 L20.0 78.4 L18.5 77.2 L17.1 76.0 L15.7 74.6 L14.4 73.1 L13.2 71.5 L12.1 69.9 L11.1 68.1 L10.2 66.3 L9.4 64.4 L8.7 62.4 L8.2 60.4 L7.7 58.3 L7.5 56.2 L7.3 54.0 L7.3 51.8 L7.5 49.6 L7.8 47.4 L8.2 45.2 L8.8 43.0 L9.5 40.8 L10.4 38.7 L11.5 36.6 L12.6 34.5 L14.0 32.5 L15.4 30.6 L17.0 28.8 L18.8 27.0 L20.7 25.4 L22.7 23.8 L24.8 22.4 L27.0 21.2 L29.3 20.0 L31.7 19.0 L34.2 18.2 L36.8 17.5 L39.5 16.9 L42.2 16.6 L44.9 16.4 L47.7 16.4 L50.5 16.6 L53.3 16.9 L56.1 17.5 L58.9 18.3 L61.7 19.2 L64.4 20.3 L67.1 21.6 L69.7 23.1 L72.2 24.8 L74.6 26.7 L77.0 28.7 L79.2 30.9 L81.3 33.3 L83.2 35.9 L85.0 38.5 L86.6 41.4 L88.1 44.3 L89.4 47.4 L90.4 50.6 L91.3 53.8 L92.0 57.2 L92.4 60.6 L92.7 64.1 L92.7 67.6 L92.4 71.2 L92.0 74.8 Z" fill="#f59e0b" stroke="#f59e0b" stroke-width="4.65" stroke-linejoin="round" mask="url(#pjNaut)"/></symbol></svg>
-    <!-- Projects column (SHE-168): shown with ?layout=projects, drawn by projects.js. -->
+    <!-- Projects column (SHE-168): projects and their agents, drawn by projects.js. -->
     <aside class="pj-side" id="pjSide" aria-label="Projects and agents" hidden>
         <div class="pj-brand">
             <span class="pj-logo"><svg viewBox="0 0 100 100" role="img" aria-label="ShellTeam nautilus mark"><use href="#stNautilus"/></svg></span>
@@ -34,122 +32,39 @@
         <div class="pj-foot" id="pjFoot"></div>
     </aside>
     <div class="app">
-        <nav class="session-tabs" id="sessionTabs" aria-label="Conversations">
-            <div class="session-tab-list" id="sessionTabList" role="tablist" aria-label="Open conversations">
-                <div class="session-tab active" data-slot="0" role="presentation">
-                    <button class="session-tab-open" type="button" role="tab" aria-selected="true" aria-controls="messages" tabindex="0"><span class="session-tab-label">Chat 1</span></button>
-                </div>
-            </div>
-            <button class="session-tab-add" type="button" onclick="addSessionTab()" title="New session" aria-label="New conversation">+</button>
-        </nav>
+        <!-- One map of the cockpit (docs/plans/active/cockpit-map/prd.md): where a
+             control lives follows how often it is used. The header holds four
+             things, each opening one kind of thing: the chat (its title is its
+             menu), this chat's reports, the agent and model, and usage. -->
         <header class="status-bar">
             <div class="status-left">
-                <!-- Projects column: opens the list on a phone, re-opens a hidden column on desktop. -->
+                <!-- Opens the list on a phone, re-opens a hidden column on desktop. -->
                 <button class="pj-back" id="pjBack" type="button" aria-label="Show projects and agents" title="Projects and agents">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
                     <span class="pj-back-badge" id="pjBackBadge" hidden></span>
                 </button>
                 <div class="status-dot" id="statusDot"></div>
                 <span class="status-label" id="statusLabel">Connecting...</span>
-                <div class="pj-crumb" id="pjCrumb"></div>
-                <!-- Mobile: tap to open the conversation drawer (replaces the tab strip) -->
-                    <button class="conv-switcher mobile-only" id="convSwitcher" type="button" onclick="openSessionDrawer()" aria-label="Switch conversation" aria-controls="sessionDrawer" aria-expanded="false">
-                    <span class="conv-switcher-label" id="convSwitcherLabel">Chat 1</span>
-                    <svg class="conv-switcher-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                    <span class="conv-switcher-badge" id="convSwitcherBadge" hidden></span>
-                </button>
-            </div>
-            <!-- Projects column: this project's Knowledge / Files / Reports, opened beside
-                 the chat. They sit right after the project's name, before the agent's, because
-                 they belong to the project. A direct child of the bar so it can drop to its
-                 own row on a phone. -->
-            <div class="pj-tools" id="pjTools" role="group" aria-label="This project" hidden></div>
-            <div class="pj-crumb pj-crumb-chat" id="pjAgent"></div>
-            <div class="status-right">
-                <!-- Guest cockpit: replaces the workspace combo when the server
-                     reports a workspace lock (status.workspaceLock) -->
-                <span class="auth-badge inc" id="workspaceLockBadge" hidden></span>
-                <!-- Shows the active workspace; clicking opens the SAME picker
-                     as the model menu's Workspace item — one code path, one
-                     behavior (SHE-100). -->
-                <div class="workspace-combo" id="workspaceCombo">
-                    <button class="workspace-input" id="workspaceSelect" type="button"
-                            title="Workspace — click to change"
-                            onclick="openWorkspacePicker()">~</button>
-                </div>
-                <!-- Billing stays visible at every width. On a subscription the
-                     badge gets a compact usage bar underneath; every detail
-                     (per-window %, resets, credits) lives in the tap-to-open
-                     panel below — an anchored popover on desktop, a bottom sheet
-                     on mobile — so the top bar stays quiet while working. -->
-                <div class="subscription-monitor" id="subscriptionMonitor" hidden>
-                    <button class="quota-meter" id="quotaMeter" type="button"
-                            aria-haspopup="dialog" aria-controls="quotaPanel" aria-expanded="false"
-                            title="Subscription usage, tap for details"
-                            aria-label="Subscription usage, tap for details">
-                        <span class="auth-badge" id="authBadge" hidden></span>
-                        <span class="quota-meter-track" id="quotaMeterTrack" aria-hidden="true" hidden><span class="quota-meter-fill" id="quotaMeterFill"></span></span>
-                    </button>
-                    <!-- Rendered by renderQuotaPanel() on open + live refresh -->
-                    <div class="actions-menu quota-panel" id="quotaPanel" role="dialog" aria-label="Subscription usage"></div>
-                </div>
-                <span class="auth-badge" id="contextMeter" hidden></span>
-
-                <!-- Hierarchical header controls, identical at every width:
-                     AI (model/workspace + session actions) · Info · System.
-                     Anchored dropdowns on desktop, bottom sheets ≤480px. -->
-                <div class="hdr-group">
-                    <button class="btn-bar btn-ai" id="btnAI" type="button" onclick="Menus.toggle('aiMenu')" title="AI controls" aria-haspopup="menu" aria-controls="aiMenu" aria-expanded="false">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.7a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-2a2 2 0 0 0 1.3-1.2L12 3z"/></svg>
-                        <!-- Doubles as the model indicator: setModelDisplay() keeps it current -->
-                        <span class="btn-ai-model" id="btnAIModel">AI</span>
-                        <svg class="btn-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                    <div class="actions-menu" id="aiMenu" role="menu" aria-hidden="true">
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="m" onclick="openModelPicker()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
-                            <span class="actions-label"><span class="actions-mn">M</span>odel</span>
-                            <span class="actions-value" id="aiMenuModel"></span>
-                            <svg class="actions-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" id="aiMenuWorkspaceItem" data-key="w" onclick="openWorkspacePicker()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                            <span class="actions-label"><span class="actions-mn">W</span>orkspace</span>
-                            <span class="actions-value" id="aiMenuCwd"></span>
-                            <svg class="actions-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                        <!-- Phones only: the header has no room for the Reports
-                             button, so its list opens from here. -->
-                        <button class="actions-item ai-menu-reports" type="button" role="menuitem" tabindex="-1" id="aiMenuReportsItem" data-key="p" onclick="Menus.toggle('reportsMenu')" hidden>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
-                            <span class="actions-label">Re<span class="actions-mn">p</span>orts</span>
-                            <span class="actions-value" id="aiMenuReportsCount"></span>
-                            <svg class="actions-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                        <div class="actions-sep" role="separator"></div>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="n" onclick="newSession()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                            <span class="actions-label"><span class="actions-mn">N</span>ew Chat</span>
-                        </button>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="s" onclick="showSessionPicker()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            <span class="actions-label">Resume <span class="actions-mn">S</span>ession</span>
-                        </button>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="f" onclick="forkSession()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v2a4 4 0 0 0 4 4h.5"/><path d="M18 8v2a4 4 0 0 1-4 4h-.5"/><path d="M12 14v2"/></svg>
-                            <span class="actions-label"><span class="actions-mn">F</span>ork</span>
-                        </button>
-                        <div class="actions-sep" role="separator"></div>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="r" onclick="rewindSession()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                            <span class="actions-label"><span class="actions-mn">R</span>ewind</span>
-                        </button>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="c" onclick="compactSession()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="4"/><polyline points="9 8 12 11 15 8"/><polyline points="9 16 12 13 15 16"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
-                            <span class="actions-label"><span class="actions-mn">C</span>ompact</span>
-                        </button>
+                <!-- The chat's title is the chat's menu: rename, move, fork, rewind,
+                     compact, info. On a phone a tap goes back to the chats and a
+                     long press opens the menu. A div, not a button: its name is
+                     edited in place when renaming. -->
+                <div class="hdr-group pj-title-group">
+                    <div class="pj-title" id="pjTitle" role="button" tabindex="0" data-use="chat.menu"
+                         aria-haspopup="menu" aria-controls="chatMenu" aria-expanded="false">
+                        <span class="pj-crumb-proj" id="pjCrumb"></span><span class="pj-crumb-sep">/</span><span class="pj-crumb-agent" id="pjAgent"></span>
+                        <svg class="btn-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
                     </div>
+                    <!-- Rows drawn by Projects.renderChatMenu() on open. -->
+                    <div class="actions-menu chat-menu" id="chatMenu" role="menu" aria-label="This chat" aria-hidden="true"></div>
                 </div>
+            </div>
+            <!-- This project's Knowledge / Files / Reports, opened beside the chat.
+                 On a phone they are rows of the chat menu. -->
+            <div class="pj-tools" id="pjTools" role="group" aria-label="This project" hidden></div>
+            <div class="status-right">
+                <!-- Guest cockpit: shown when the server reports a workspace lock. -->
+                <span class="auth-badge inc" id="workspaceLockBadge" hidden></span>
 
                 <!-- Every report and app this conversation linked, newest first.
                      Hidden until the first one; rows rendered by
@@ -162,47 +77,51 @@
                     <div class="actions-menu reports-menu" id="reportsMenu" role="menu" aria-label="Reports in this conversation" aria-hidden="true"></div>
                 </div>
 
-                <div class="hdr-group">
-                    <button class="btn-icon btn-info" id="btnInfo" type="button" onclick="Menus.toggle('infoPanel')" title="Conversation info" aria-haspopup="dialog" aria-controls="infoPanel" aria-expanded="false">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <!-- Agents waiting for the owner in other chats: stays in sight
+                     inside any chat on a phone, and when the column is hidden. -->
+                <button class="pj-needs" id="pjNeeds" type="button" data-use="needs-you.header" hidden></button>
+
+                <!-- Which agent and model this chat runs on, in words at every
+                     width. Opens the model list and nothing else. -->
+                <div class="hdr-group pj-model-group">
+                    <button class="btn-bar btn-ai" id="btnAI" type="button" data-use="model.open" onclick="openModelPicker()" aria-haspopup="dialog">
+                        <span class="btn-ai-agent" id="btnAIAgent"></span>
+                        <span class="btn-ai-model" id="btnAIModel">AI</span>
+                        <svg class="btn-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
-                    <!-- Rows rendered by renderInfoPanel() on open + live refresh -->
+                </div>
+
+                <!-- Usage, as one ring: the outer arc is the plan (the fullest of
+                     its windows), the inner arc is how full this conversation is.
+                     A click shows both in words, with Compact next to the
+                     conversation. A key billed per use keeps its badge in sight. -->
+                <div class="subscription-monitor" id="subscriptionMonitor">
+                    <button class="quota-meter" id="quotaMeter" type="button" data-use="usage.open"
+                            aria-haspopup="dialog" aria-controls="quotaPanel" aria-expanded="false">
+                        <span class="auth-badge" id="authBadge" hidden></span>
+                        <svg class="use-ring" id="useRing" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle class="use-ring-track" cx="12" cy="12" r="9.6"/>
+                            <circle class="use-ring-arc" id="useRingPlan" cx="12" cy="12" r="9.6" pathLength="100"/>
+                            <circle class="use-ring-track" cx="12" cy="12" r="5.2"/>
+                            <circle class="use-ring-arc inner" id="useRingChat" cx="12" cy="12" r="5.2" pathLength="100"/>
+                        </svg>
+                    </button>
+                    <!-- Rendered by renderQuotaPanel() on open + live refresh -->
+                    <div class="actions-menu quota-panel" id="quotaPanel" role="dialog" aria-label="Usage"></div>
+                </div>
+
+                <!-- Opened from the chat menu's last row. Rows rendered by
+                     renderInfoPanel() on open + live refresh. -->
+                <div class="hdr-group">
                     <div class="actions-menu info-panel" id="infoPanel" role="dialog" aria-label="Conversation info" aria-hidden="true"></div>
                 </div>
 
-                <div class="hdr-group">
-                    <button class="btn-icon" id="btnSys" type="button" onclick="Menus.toggle('sysMenu')" title="Settings" aria-haspopup="menu" aria-controls="sysMenu" aria-expanded="false">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                    </button>
-                    <div class="actions-menu" id="sysMenu" role="menu" aria-hidden="true">
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" onclick="openAIConfig()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                            AI Config
-                        </button>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" onclick="TerminalMode.toggle()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                            Console Mode
-                        </button>
-                        <button class="actions-item" type="button" role="menuitem" tabindex="-1" data-key="k" onclick="showShortcutsHelp()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
-                            <span class="actions-label"><span class="actions-mn">K</span>eyboard Shortcuts</span>
-                            <span class="actions-value">?</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="hdr-group">
-                    <button class="btn-icon btn-help" id="btnHelp" onclick="showShortcutsHelp()" title="Keyboard shortcuts (press ?)" aria-label="Keyboard shortcuts">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    </button>
-                </div>
-
-                <!-- Back to Chat button (visible in terminal mode) -->
+                <!-- Back to Chat button (visible in console mode) -->
                 <button class="btn-bar btn-back-to-chat" id="btnBackToChat" onclick="TerminalMode.toggle()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
                     Chat
                 </button>
-                <!-- Shared click-away backdrop for all three header menus -->
+                <!-- Shared click-away backdrop for every header menu -->
                 <div class="actions-backdrop" id="actionsBackdrop" onclick="Menus.hide()"></div>
             </div>
         </header>
@@ -223,7 +142,7 @@
                 <button class="setup-close hidden" id="setupClose" onclick="closeAIConfig()">&times;</button>
                 <div class="setup-icon">&#10097;</div>
                 <h2>AI Coding Agents</h2>
-                <p>Connect your AI provider to start coding.<span id="setupIntroOc"> OpenCode works with a Fireworks API key if you don't have a subscription.</span></p>
+                <p>Connect your AI provider to start coding.<span id="setupIntroPi"> Pi works with a Fireworks API key if you don't have a subscription.</span></p>
                 <div class="setup-error" id="setupError"></div>
 
                 <!-- Provider logos (Simple Icons, CC0) drawn with currentColor so
@@ -245,10 +164,10 @@
                         <svg class="tab-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>
                         <span class="tab-label">Antigravity</span>
                     </button>
-                    <button class="setup-tab" onclick="switchSetupTab('oc')" aria-label="OpenCode" title="OpenCode">
-                        <span class="tab-dot" id="dot-oc"></span>
-                        <svg class="tab-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 24H2V0h20zM17 4.8H7v14.4h10z"/></svg>
-                        <span class="tab-label">OpenCode</span>
+                    <button class="setup-tab" onclick="switchSetupTab('pi')" aria-label="Pi" title="Pi">
+                        <span class="tab-dot" id="dot-pi"></span>
+                        <svg class="tab-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 4h20v3h-4v10.5c0 .8.3 1.2 1 1.2h1V22h-1.6c-2.3 0-3.4-1.2-3.4-3.8V7H10c-.1 6.2-1 11.4-3.3 15H3.4C5.9 18.6 6.9 13.5 7 7H2z"/></svg>
+                        <span class="tab-label">Pi</span>
                     </button>
                 </div>
 
@@ -365,16 +284,16 @@
                     </div>
                 </div>
 
-                <!-- OpenCode panel -->
-                <div class="setup-panel" id="panel-oc">
-                    <div class="setup-oc-card">
-                        <div class="setup-oc-title">&#10003; Frontier open-source models</div>
-                        <div class="setup-oc-body">
-                            OpenCode is the open-source coding agent, running on state-of-the-art open-source models via <strong>your</strong> Fireworks key. Add it in Settings → Secrets &mdash; it activates immediately.
+                <!-- Pi panel -->
+                <div class="setup-panel" id="panel-pi">
+                    <div class="setup-pi-card">
+                        <div class="setup-pi-title">&#10003; Frontier open-source models</div>
+                        <div class="setup-pi-body">
+                            Pi is an open-source coding agent, running on state-of-the-art open-source models via <strong>your</strong> Fireworks key. Add it in Settings → Secrets and it activates immediately.
                         </div>
                     </div>
-                    <button class="setup-btn" style="width: 100%; margin-top: 16px;" onclick="continueWithOpenCode()">
-                        Continue with OpenCode
+                    <button class="setup-btn" style="width: 100%; margin-top: 16px;" onclick="continueWithPi()">
+                        Continue with Pi
                     </button>
                 </div>
 
@@ -420,7 +339,7 @@
                 <button class="empty-chip" onclick="fillSuggestion(this)">"Analyze this codebase and suggest improvements"</button>
                 <button class="empty-chip" onclick="fillSuggestion(this)">"Write a Python script to process CSV data"</button>
             </div>
-            <div class="empty-tip"><kbd>/</kbd> AI menu &nbsp;·&nbsp; <kbd>?</kbd> keyboard shortcuts</div>
+            <div class="empty-tip"><kbd>/</kbd> chat menu &nbsp;·&nbsp; <kbd>?</kbd> keyboard shortcuts</div>
         </div>
 
         <div class="streaming-indicator" id="streamingIndicator">
@@ -433,6 +352,13 @@
         <div class="terminal-container" id="terminalContainer">
             <div class="terminal-wrapper" id="terminalWrapper"></div>
         </div>
+
+        <!-- The agent's turn ended but work it started is still running (SHE-115):
+             said here and in the column, so it never looks finished. -->
+        <div class="pj-waiting" id="pjWaiting" role="status" hidden><i class="pj-dot wait"></i><span></span></div>
+        <!-- The agent asked for the owner's turn in the browser and stopped
+             (SHE-170): what it needs, and the button that gives them the browser. -->
+        <div class="pj-waiting pj-needs-owner" id="pjNeedsOwner" role="status" hidden><i class="pj-dot ask"></i><span></span><button type="button" data-use="browser.ask-button"></button></div>
 
         <!-- Quote-to-comment review tray: stacked quote+comment pairs pulled from
              the agent reply above, assembled into one message on send. -->
@@ -469,11 +395,11 @@
                       autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
             <!-- Long chat (SHE-175): one tap compacts, then sends. Beside Send
                  on a wide screen, a chip above it on a phone (renderCompactSend). -->
-            <button class="btn-compact-send hidden" id="btnCompactSend" type="button" aria-label="Compact the conversation, then send" onclick="handleSend({ compactFirst: true })">
+            <button class="btn-compact-send hidden" id="btnCompactSend" data-use="message.compact-send" type="button" aria-label="Compact the conversation, then send" onclick="handleSend({ compactFirst: true })">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="4" x2="20" y2="4"/><polyline points="9 8 12 11 15 8"/><polyline points="9 16 12 13 15 16"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
                 <span>Compact &amp; send</span>
             </button>
-            <button class="btn-send" id="btnSend" type="button" aria-label="Send message" onclick="handleSend()">
+            <button class="btn-send" id="btnSend" data-use="message.send-button" type="button" aria-label="Send message" onclick="handleSend()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="19" x2="12" y2="5"></line>
                     <polyline points="5 12 12 5 19 12"></polyline>
@@ -497,35 +423,13 @@
     <div class="session-picker" id="sessionPicker"></div>
     <div class="session-picker-backdrop" id="rewindBackdrop" onclick="hideRewindPicker()"></div>
     <div class="session-picker" id="rewindPicker"></div>
-    <!-- Second-level pickers behind the AI menu (model / workspace) — same
-         modal pattern as the session picker, rendered on open by app.js -->
+    <!-- The model list, opened by the header's model button: same modal
+         pattern as the session picker, rendered on open by app.js -->
     <div class="session-picker-backdrop" id="modelBackdrop" onclick="hideModelPicker()"></div>
     <div class="session-picker" id="modelPicker"></div>
-    <div class="session-picker-backdrop" id="workspaceBackdrop" onclick="hideWorkspacePicker()"></div>
-    <div class="session-picker" id="workspacePicker"></div>
-    <!-- Keyboard-shortcuts cheat sheet — opened with "?" or System menu → Keyboard
-         Shortcuts. Rendered from the SHORTCUTS table in app.js (single source). -->
+    <!-- Keyboard-shortcuts cheat sheet — opened with "?" or from the jump box (Ctrl+K). Rendered from the SHORTCUTS table in app.js (single source). -->
     <div class="session-picker-backdrop" id="shortcutsBackdrop" onclick="hideShortcutsHelp()"></div>
     <div class="session-picker shortcuts-help" id="shortcutsHelp"></div>
-
-    <!-- Mobile conversation drawer (bottom sheet) — switch/close/create chats.
-         Driven by renderSessionTabs() from the same sessionSlots data. -->
-    <div class="session-drawer-backdrop" id="sessionDrawerBackdrop" onclick="closeSessionDrawer()" aria-hidden="true"></div>
-    <div class="session-drawer" id="sessionDrawer" role="dialog" aria-modal="true" aria-labelledby="sessionDrawerTitle" aria-hidden="true" inert>
-        <div class="session-drawer-grip"></div>
-        <div class="session-drawer-head">
-            <h2 id="sessionDrawerTitle">Conversations</h2>
-            <button class="session-drawer-close" type="button" onclick="closeSessionDrawer()" aria-label="Close conversations">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
-        </div>
-        <div class="session-drawer-cwd" id="sessionDrawerCwd"></div>
-        <div class="session-drawer-list" id="sessionDrawerList" role="list"></div>
-        <button class="session-drawer-new" type="button" onclick="addSessionTab(); closeSessionDrawer();">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New conversation
-        </button>
-    </div>
 
     <!-- Libraries (self-hosted from computer/ai-chat/public/vendor/ for CSP hardening) -->
     <script src="/vendor/marked-15.0.6.min.js"></script>
@@ -534,6 +438,7 @@
     <script src="/vendor/xterm-addon-web-links-0.11.0.min.js"></script>
 
     <!-- App modules (order matters) -->
+    <script src="/use.js"></script>
     <script src="/dropdown.js"></script>
     <script src="/quote-review.js"></script>
     <script src="/chat.js"></script>

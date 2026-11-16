@@ -13,6 +13,7 @@
 #   - the three systemd --user units (api, ai-chat, nginx)
 #   - the runtime state dir (~/.local/state/shellteam) and the agent layer
 #   - the Steel browser container, its ~1.5 GB image and its Docker network
+#     (its profile, with your sign-ins, only with --purge)
 #   - the nginx cap_net_bind_service capability (when install.sh granted it)
 #   - unmasks the system nginx.service that install.sh masked
 #
@@ -100,8 +101,10 @@ if command -v docker >/dev/null 2>&1; then
     docker rm -f "$STEEL_CONTAINER" >/dev/null 2>&1 || true
     # Steel's own isolated network (SHE-136); fails harmlessly when absent.
     docker network rm shellteam-browser-net >/dev/null 2>&1 || true
-    # The pulled image is ~1.5 GB — removing the container alone leaves it behind.
-    docker rmi ghcr.io/steel-dev/steel-browser:latest >/dev/null 2>&1 || true
+    # The pulled images are ~1.5 GB each: removing the container alone leaves
+    # them behind. By repository, not by tag: an image pulled by digest carries
+    # no tag, so `rmi …:latest` removed nothing.
+    docker images -q ghcr.io/steel-dev/steel-browser 2>/dev/null | sort -u | xargs -r docker rmi -f >/dev/null 2>&1 || true
 fi
 
 log "Removing runtime state ($STATE)…"
@@ -176,6 +179,10 @@ if [ "$PURGE" -eq 1 ]; then
     rm -rf "$HOME/.shellteam"
     log "Disabling linger (user services no longer start at boot)…"
     sudo loginctl disable-linger "$USER" >/dev/null 2>&1 || true
+    # The browser's profile: every site you signed in to from the agent browser.
+    docker volume rm shellteam-browser-profile >/dev/null 2>&1 || true
+    # The private count of which cockpit controls you use (SHE-204).
+    rm -f "$HOME/.config/shellteam/ui-use.json"
 fi
 
 # Final verification — "removed" must mean verified-down, not hoped-down.

@@ -27,20 +27,19 @@ let terminalSpawn, claudeLayerArgs, codexLayerArgs;
 
 before(async () => {
   // A pure-core layer exactly as api/services/agent_layer.py builds it:
-  // manifest with no modules + the provider-only opencode.json. No other
-  // artifacts exist.
+  // manifest with no modules + Pi's provider-only layer. No other artifacts
+  // exist.
   mkdirSync(LAYER, { recursive: true });
   writeFileSync(join(LAYER, "layer.json"), JSON.stringify({
     modules: [],
     artifacts: {
       claude_plugin: false, claude_mcp: false, claude_system_prompt: false,
-      codex_overrides: false, opencode_config: true,
+      codex_overrides: false, pi_layer: true,
     },
   }));
-  writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({
-    $schema: "https://opencode.ai/config.json",
-    provider: { fireworks: {} },
-  }));
+  mkdirSync(join(LAYER, "pi"), { recursive: true });
+  writeFileSync(join(LAYER, "pi", "shellteam.ts"), "// extension");
+  writeFileSync(join(LAYER, "pi", "layer.json"), JSON.stringify({ provider: {}, mcpServers: {} }));
   ({ terminalSpawn } = await import("../lib/agents/registry.mjs"));
   ({ claudeLayerArgs, codexLayerArgs } = await import("../lib/agent-layer.mjs"));
 });
@@ -73,7 +72,7 @@ test("core: managed-terminal codex argv is EXACTLY the bare CLI's", () => {
 });
 
 test("core: no spawn argv references ~/.shellteam", () => {
-  for (const model of ["claude-opus-5", "gpt-5.6-sol", "gemini-4-argon-high", "kimi-k3"]) {
+  for (const model of ["claude-opus-5", "gpt-5.6-sol", "gemini-4-argon-high"]) {
     const { args } = terminalSpawn(model);
     for (const a of args) {
       assert.ok(!String(a).includes(".shellteam"),
@@ -82,15 +81,15 @@ test("core: no spawn argv references ~/.shellteam", () => {
   }
 });
 
-test("core: opencode config is provider-only (the one documented artifact)", async () => {
-  const { opencodeConfigPath } = await import("../lib/agent-layer.mjs");
-  const p = opencodeConfigPath();
-  assert.ok(p, "opencode provider config must exist even in core");
-  const cfg = JSON.parse((await import("node:fs")).readFileSync(p, "utf8"));
-  assert.ok(cfg.provider, "provider block present");
-  assert.equal(cfg.mcp, undefined, "no MCP in core");
-  assert.equal(cfg.skills, undefined, "no skills in core");
-  assert.equal(cfg.instructions, undefined, "no instructions in core");
+test("core: Pi gets its provider extension and nothing else (the one documented artifact)", async () => {
+  const { piLayer } = await import("../lib/agent-layer.mjs");
+  const { args, env } = piLayer();
+  assert.deepEqual(args, ["-e", join(LAYER, "pi", "shellteam.ts")], "no prompt, no skills in core");
+  const layer = JSON.parse((await import("node:fs")).readFileSync(env.SHELLTEAM_PI_LAYER, "utf8"));
+  assert.ok(layer.provider, "provider present");
+  assert.deepEqual(layer.mcpServers, {}, "no MCP in core");
+  const terminal = terminalSpawn("kimi-k3p1-pro").args.filter((a) => String(a).includes(".shellteam"));
+  assert.deepEqual(terminal, [join(LAYER, "pi", "shellteam.ts")], "the terminal adds the extension only");
 });
 
 test("core: cockpit boot never writes user dotfiles (~/.claude.json)", async () => {

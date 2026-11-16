@@ -23,7 +23,7 @@ test("installedAgents reports exactly the families whose CLI is on PATH", () => 
       claude: true,
       codex: true,
       antigravity: false,
-      opencode: false,
+      pi: false,
     });
   } finally {
     process.env.PATH = savedPath;

@@ -144,8 +144,9 @@ def clean_secondary_agent_configs(changes: list[str]) -> None:
 
     The old path overwrote these every restart, so they're ShellTeam's, not the
     user's. Move them to the backup (reversible) only when they carry a ShellTeam
-    signature — leaving any config the user actually authored alone. Codex/OpenCode
-    now get ShellTeam's layer via `-c` overrides / OPENCODE_CONFIG instead.
+    signature — leaving any config the user actually authored alone. Codex now
+    gets ShellTeam's layer via `-c` overrides; OpenCode is no longer a ShellTeam
+    agent (Pi replaced it), so a ShellTeam-written opencode.json is pure debris.
     """
     codex_toml = HOME / ".codex" / "config.toml"
     if codex_toml.exists():
@@ -156,7 +157,7 @@ def clean_secondary_agent_configs(changes: list[str]) -> None:
 
     opencode_json = HOME / ".config" / "opencode" / "opencode.json"
     if opencode_json.exists() and "/internal/ai/fireworks" in opencode_json.read_text():
-        changes.append(".config/opencode/opencode.json: reverted ShellTeam-written config (now OPENCODE_CONFIG)")
+        changes.append(".config/opencode/opencode.json: reverted ShellTeam-written config (OpenCode retired)")
         _move_to_backup(opencode_json)
 
 

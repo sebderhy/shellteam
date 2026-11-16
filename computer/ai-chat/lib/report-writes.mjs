@@ -2,7 +2,7 @@
  * report-writes.mjs — which chat produced which report, recorded when it happens (SHE-177).
  *
  * The Reports tab groups reports by project. Its first evidence is a Write
- * tool call in a Claude transcript, which Codex, OpenCode and Antigravity
+ * tool call in a Claude transcript, which Codex, Pi and Antigravity
  * never leave: they write through a shell command, a build script, a patch.
  * The cockpit sees every agent's turn, so it records the write itself.
  *

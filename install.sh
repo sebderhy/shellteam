@@ -125,6 +125,12 @@ done
 # fetches instead of a copy that can drift.
 NODESOURCE_SETUP_URL="https://deb.nodesource.com/setup_22.x"
 NODESOURCE_SETUP_SHA256=575583bbac2fccc0b5edd0dbc03e222d9f9dc8d724da996d22754d6411104fd1
+# Node floor: 22.19, what Pi (the included-models agent) requires. Node 20 is
+# past its end of life (April 2026), so an older Node is replaced by 22.x.
+node_too_old() {
+    command -v node >/dev/null 2>&1 || return 0
+    node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 19) ? 1 : 0)'
+}
 UV_VERSION=0.12.1
 UV_INSTALL_URL="https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-installer.sh"
 UV_INSTALL_SHA256=d3f5412d38c99f9d024901843bf98206f0d2c6dbe64df40d0b740e2751ca62c1
@@ -154,7 +160,7 @@ print_plan() {
     fi
     echo "SYSTEM PACKAGES (apt, as root):"
     echo "  + curl ca-certificates git nginx libcap2-bin python3 python3-venv build-essential sqlite3"
-    if ! command -v node >/dev/null 2>&1 || [ "$(node -v 2>/dev/null | cut -dv -f2 | cut -d. -f1)" -lt 20 ]; then
+    if node_too_old; then
         echo "  + nodejs 22.x (NodeSource apt repo; setup script sha256-pinned, see below)"
     else
         echo "  = node $(node -v 2>/dev/null) already present — kept as is"
@@ -174,12 +180,12 @@ print_plan() {
     echo
     echo "NETWORK-FETCHED INSTALLERS (downloaded to a file, sha256-verified against a"
     echo "pinned hash BEFORE running — a changed upstream aborts the install):"
-    echo "  + $NODESOURCE_SETUP_URL (root) — only if Node <20"
+    echo "  + $NODESOURCE_SETUP_URL (root) — only if Node is older than 22.19"
     echo "  + $UV_INSTALL_URL (user) -> ~/.local/bin/uv"
     echo "  + $ANTIGRAVITY_INSTALL_URL (user) -> ~/.local/bin/agy"
     echo
     echo "GLOBAL npm CLIs (only those not already installed; existing ones are never touched):"
-    echo "  + claude (@anthropic-ai/claude-code), codex (@openai/codex), opencode (opencode-ai),"
+    echo "  + claude (@anthropic-ai/claude-code), codex (@openai/codex), pi (@earendil-works/pi-coding-agent),"
     echo "    context7-mcp (@upstash/context7-mcp)"
     echo
     echo "THIS USER'S SYSTEMD (--user units; removed by uninstall.sh):"
@@ -215,7 +221,7 @@ print_plan() {
     echo
     echo "NEVER TOUCHED — the additive guarantee (pinned by tests/test_purity_gate.py):"
     echo "  your dotfiles and coding-agent config: ~/.bashrc, ~/.gitconfig, ~/.claude*,"
-    echo "  ~/.codex, ~/.gemini, ~/.config/opencode. Third-party installers that try to"
+    echo "  ~/.codex, ~/.gemini, ~/.pi. Third-party installers that try to"
     echo "  edit shell profiles are snapshotted and reverted, loudly."
     echo
     echo "Run the same flags without --plan to install. Removal: ./uninstall.sh (--purge for state)."
@@ -575,8 +581,8 @@ fetch_pinned_installer() {  # <url> <pinned-sha256> — prints the downloaded pa
     printf '%s' "$f"
 }
 
-# ── 2. Node.js (20+) ──────────────────────────────────────────────────────────
-if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -dv -f2 | cut -d. -f1)" -lt 20 ]; then
+# ── 2. Node.js (22.19+) ───────────────────────────────────────────────────────
+if node_too_old; then
     log "Installing Node.js 22.x…"
     NODESOURCE_SCRIPT="$(fetch_pinned_installer "$NODESOURCE_SETUP_URL" "$NODESOURCE_SETUP_SHA256")"
     sudo -E bash "$NODESOURCE_SCRIPT"
@@ -657,9 +663,9 @@ FAILED_TOOLS=()
 # almost always start with "which version of the agent CLI is this box running?".
 #
 # The probe runs against a DISPOSABLE home: even `--version` is side-effectful
-# on some of these CLIs (codex populates CODEX_HOME, opencode initializes every
-# XDG directory), and letting that hit the owner's real dotfiles would break the
-# footprint guarantee that ShellTeam never writes ~/.codex, ~/.config/opencode,
+# on some of these CLIs (codex populates CODEX_HOME, others initialize their
+# home or XDG directories), and letting that hit the owner's real dotfiles would
+# break the footprint guarantee that ShellTeam never writes ~/.codex, ~/.pi,
 # etc. Redirecting HOME plus each specific override the CLIs honor keeps the
 # probe read-only from the owner's point of view.
 cli_version() {
@@ -754,11 +760,11 @@ install_gh() {
 install_cli claude   "@anthropic-ai/claude-code"
 install_cli codex    "@openai/codex"
 install_agy
-install_cli opencode "opencode-ai"
+install_cli pi "@earendil-works/pi-coding-agent"
 install_gh
 # The shared Context7 MCP is part of the harness every cockpit agent receives.
 # Keeping the executable installed on native boxes makes the same MCP entry
-# functional for Claude, Codex, Antigravity, and OpenCode.
+# functional for Claude, Codex, Antigravity, and Pi.
 install_cli context7-mcp "@upstash/context7-mcp"
 
 # ── 7. .env (generate + auto-fill secret) ─────────────────────────────────────
@@ -1159,7 +1165,13 @@ fi
 # run the session-launch QA below against it, then update this pin. (The
 # 2026-07 upstream index sha256:1c988dc8… passes /v1/health but cannot launch
 # Chromium — exactly why bumps must be QA'd, not taken from `:latest`.)
-STEEL_IMAGE="ghcr.io/steel-dev/steel-browser:latest@sha256:995a31d75d3270bc27db3bee788107af78d3378a61f9e162c2813860c21884c9"
+# The pinned image and every launch setting live in ONE place:
+# deploy/browser/run-steel.sh (it says why each is there).
+STEEL_RUN="$REPO/deploy/browser/run-steel.sh"
+STEEL_IMAGE="$("$STEEL_RUN" --image)"
+# Sign-ins live in the browser's profile: on a volume they survive restarts
+# and updates (SHE-207). Removed only by `uninstall.sh --purge`.
+STEEL_PROFILE_VOLUME="shellteam-browser-profile"
 STEEL_CONTAINER="shellteam-steel"
 # Steel's OWN Docker network, inter-container communication off (SHE-136). On the
 # default bridge every other container on the host could reach Steel's
@@ -1174,6 +1186,25 @@ STEEL_NETWORK="shellteam-browser-net"
 # gap (the group lands on the next login).
 dk() {
     if id -nG | grep -qw docker; then docker "$@"; else sudo docker "$@"; fi
+}
+# Before SHE-207 the browser's profile lived inside the container, so every
+# update signed the owner out of every site. Once, when the volume is first
+# created, the running container's profile is copied into it: the update that
+# brings the volume does not cost the sign-ins either.
+keep_browser_profile() {
+    dk volume inspect "$STEEL_PROFILE_VOLUME" >/dev/null 2>&1 && return 0
+    dk volume create "$STEEL_PROFILE_VOLUME" >/dev/null || { warn "Could not create the browser profile volume."; return 0; }
+    dk inspect "$STEEL_CONTAINER" >/dev/null 2>&1 || return 0
+    local tmp
+    tmp="$(mktemp -d)"
+    if dk cp "$STEEL_CONTAINER:/tmp/steel-chrome/." "$tmp" >/dev/null 2>&1 \
+        && dk run --rm -v "$STEEL_PROFILE_VOLUME:/profile" -v "$tmp:/from:ro" --entrypoint sh "$STEEL_IMAGE" \
+            -c 'cp -a /from/. /profile/ && rm -f /profile/Singleton*' >/dev/null 2>&1; then
+        log "  Kept the browser's sign-ins: its profile now lives on the volume $STEEL_PROFILE_VOLUME"
+    else
+        warn "Could not copy the old browser profile: sites will ask you to sign in again, once."
+    fi
+    sudo rm -rf "$tmp" 2>/dev/null || rm -rf "$tmp"
 }
 ensure_docker_group() {
     id -nG | grep -qw docker && return
@@ -1279,6 +1310,7 @@ provision_browser() {
     fi
     # Remove the old container FIRST so an autopick never flees our own port
     # (an idempotent re-run must land on the same STEEL_PORT, not walk away).
+    keep_browser_profile
     dk rm -f "$STEEL_CONTAINER" >/dev/null 2>&1 || true
     local prev_steel_port
     prev_steel_port="$(env_val STEEL_PORT)"; prev_steel_port="${prev_steel_port:-3877}"
@@ -1298,9 +1330,10 @@ provision_browser() {
     fi
     ensure_browser_firewall
     log "Starting Steel browser container (loopback 127.0.0.1:$STEEL_PORT, network $STEEL_NETWORK)…"
-    if ! dk run -d --name "$STEEL_CONTAINER" --restart unless-stopped \
-        --network "$STEEL_NETWORK" \
-        --shm-size=1g -p "127.0.0.1:$STEEL_PORT:3000" "$STEEL_IMAGE" >/dev/null; then
+    local docker_cmd="docker"
+    id -nG | grep -qw docker || docker_cmd="sudo docker"
+    if ! DOCKER="$docker_cmd" "$STEEL_RUN" --name "$STEEL_CONTAINER" --network "$STEEL_NETWORK" \
+        --publish "127.0.0.1:$STEEL_PORT" --profile-volume "$STEEL_PROFILE_VOLUME" >/dev/null; then
         warn "Failed to start $STEEL_CONTAINER — browser tab skipped. Check 'docker logs $STEEL_CONTAINER'."
         return
     fi

@@ -10,7 +10,7 @@ combination would make, evaluated against your box, and exits without touching
 anything.
 
 The guiding rule: **ShellTeam never writes to your coding-agent config or your
-dotfiles.** Run `claude` / `codex` / `agy` / `opencode` in your own shell and you get *your*
+dotfiles.** Run `claude` / `codex` / `agy` / `pi` in your own shell and you get *your*
 config, untouched. Run an agent *through ShellTeam* and you get your config **plus**
 ShellTeam's additions, composed at launch and persisted only in ShellTeam's own
 namespace. See [design/vps-footprint.md](design/vps-footprint.md) for the why.
@@ -33,9 +33,12 @@ already covers — the edits are unnecessary). Pinned by
 | **Agent launch-layer** (skills, hooks, MCP, persona) | `~/.shellteam/agent-layer/` | `uninstall.sh` |
 | Memory (facts, printed views, bookmarks, its own git history; a box that had the old knowledge files keeps them 30 days at `~/.shellteam/knowledge/`) | `~/.shellteam/memory/` | `uninstall.sh --purge` |
 | Dream run artifacts (audit trail: prompts, deltas, reports) | `~/.shellteam/dream/` | `uninstall.sh --purge` |
-| Images pasted into the chat for Codex, OpenCode and Antigravity (kept 7 days) | `~/.shellteam/attachments/` | `uninstall.sh --purge` |
+| Images pasted into the chat for Codex, Pi and Antigravity (kept 7 days) | `~/.shellteam/attachments/` | `uninstall.sh --purge` |
 | Secrets vault: your API keys (Settings -> Secrets), owner-only `0600`, plus where agents wrote each one | `~/.shellteam/secrets.json` | `uninstall.sh --purge` |
+| What you use in the cockpit: a count per control (a fixed name such as `chat.compact`), per day and per screen. Never anything you wrote. Read with `bin/shellteam-usage` | `~/.config/shellteam/ui-use.json` (owner-only `0600`, kept 400 days) | `uninstall.sh --purge` |
 | Steel browser (opt-in: part of `--full`) | Docker container `shellteam-steel` on its own network `shellteam-browser-net` (inter-container traffic off) | `uninstall.sh` |
+| The browser gate: agents' browser tools connect to the cockpit on loopback `127.0.0.1:3878` (`BROWSER_GATE_PORT`), which forwards to the browser. No new process: it runs inside the cockpit service | a listening port, nothing on disk | stops with ShellTeam |
+| The agent browser's profile: the sites you signed in to from it, so they stay signed in across restarts and updates | Docker volume `shellteam-browser-profile` | `uninstall.sh --purge` |
 | Daily security check | `~/.config/systemd/user/shellteam-security.{service,timer}`; known addresses in `~/.shellteam/security/known.json` | `uninstall.sh` |
 | Command log (opt-in: `--command-log`, part of `--full`) | Installs `auditd`; writes `/etc/audit/rules.d/shellteam.rules` (sudo/su) and `/etc/systemd/system/user@<uid>.service.d/shellteam-command-log.conf` (commands from logins other than ShellTeam's own); makes `/var/log/audit` readable by your group | `uninstall.sh` removes the rules and drop-in; leaves the `auditd` package |
 | Browser firewall (with the Steel browser) | Root unit `/etc/systemd/system/shellteam-browser-firewall.service`: iptables chain `SHELLTEAM-BROWSER` so pages the agent opens reach only ports 80/443 of this host, plus a `DOCKER-USER` drop for the cloud metadata address | `uninstall.sh` |
@@ -59,9 +62,15 @@ gets the same agent-visible ShellTeam layer:
 - **Antigravity** — ShellTeam passes `--add-dir` for its own
   `~/.shellteam/agent-layer/antigravity-workspace`, whose workspace plugin holds
   the same prompt, skills, and MCP servers. It writes nothing to `~/.gemini`.
-- **OpenCode** — ShellTeam sets `OPENCODE_CONFIG=~/.shellteam/agent-layer/opencode.json`
-  (Fireworks provider + the canonical prompt, MCP, and skills). OpenCode **merges**
-  it with your own config; ShellTeam writes nothing to `~/.config/opencode`.
+- **Pi** — ShellTeam launches `pi -e ~/.shellteam/agent-layer/pi/shellteam.ts`,
+  a static extension that registers the Fireworks relay provider and the MCP
+  servers from `~/.shellteam/agent-layer/pi/layer.json` (owner-only `0600`; a
+  per-project copy goes to `runtime/pi-<project>.json`). The canonical prompt and
+  skills come in as `--append-system-prompt` / `--skill` flags. `pi/layer.json`
+  is built even in core mode, with the provider only: it is credential plumbing,
+  not an injection. Pi keeps its own state in `~/.pi/agent` exactly as a hand-run
+  `pi` does (`sessions/`, `auth.json`, `models-store.json`, `mcp-auth.json`);
+  ShellTeam writes nothing there except the session files Pi itself writes.
 
 So for every agent, ShellTeam's additions are composed at launch and your config
 dirs are never written. API keys you set in the cockpit are passed to agents **via
@@ -76,7 +85,7 @@ standard packages left in place.
 | Change | Why | Reversal |
 |---|---|---|
 | apt packages: `nginx`, `nodejs`, plus `curl ca-certificates git python3 python3-venv` | the stack needs them | `apt remove` (manual — you may want them) |
-| Global npm CLIs: `claude`, `codex`, `opencode`; plus the Antigravity CLI `agy` (official installer → `~/.local/bin/agy`) | the agents themselves | `npm -g uninstall` / `rm ~/.local/bin/agy` (manual — you may use them directly) |
+| Global npm CLIs: `claude`, `codex`, `pi`; plus the Antigravity CLI `agy` (official installer → `~/.local/bin/agy`) | the agents themselves | `npm -g uninstall` / `rm ~/.local/bin/agy` (manual — you may use them directly) |
 | **Masks the system `nginx.service`** — only when no nginx was active or enabled before install; an nginx you already run is never touched | a freshly apt-installed distro unit would auto-start and grab `:80`; ShellTeam runs its own `--user` nginx | `uninstall.sh` unmasks it |
 | `loginctl enable-linger` | keeps `--user` services running after logout / at boot | `uninstall.sh --purge` disables it |
 | **Writes `/etc/systemd/system/user@<uid>.service.d/shellteam-restart.conf`** (`Restart=always`) | linger keeps your user manager alive but never restarts it if it *exits*, and a broadcast signal from any of your processes (`kill -1`, a broad `pkill`) makes it exit, taking every ShellTeam unit down until your next login | `uninstall.sh` removes it |
@@ -95,7 +104,7 @@ writes exactly one native session file so the target agent resumes it as its own
 | Claude | `~/.claude/projects/<cwd-encoded>/<new-uuid>.jsonl` |
 | Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<new-uuid7>.jsonl` |
 | Antigravity | none — `agy` keeps conversations in its own store (switching *into* Antigravity is not yet supported) |
-| OpenCode | imported via `opencode import` (its own store) |
+| Pi | `~/.pi/agent/sessions/--<cwd-encoded>--/<stamp>_pi-<new-uuid>.jsonl` |
 
 Stated precisely:
 - It happens **only on an explicit user switch** — never during normal cockpit
@@ -129,6 +138,16 @@ which files it as a Linear issue. The box ships **no maintainer secret** — a
 proof-of-work header gates the public relay instead. Nothing is sent unless you
 submit the form. Point `FEEDBACK_RELAY_URL` at your own relay/webhook, or set it
 empty in `.env`, to redirect or disable this entirely.
+
+With the browser module, starting the agent browser asks `ipinfo.io` one
+question: the timezone of this machine's address, so the browser's clock
+matches where it browses from (a clock in UTC on a French address is one of
+the things that gets a browser refused). The request carries nothing but the
+address it comes from. If it fails, the machine's own timezone is used.
+
+The cockpit counts which of its controls you use, so that its layout can follow
+real use. Those counts never leave the box: the page sends them to the cockpit
+server on this machine, which adds them to one file (see Tier 1).
 
 ## Migrating off an older build
 

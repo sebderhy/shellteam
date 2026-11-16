@@ -141,29 +141,32 @@
         .panel.active { display: flex; flex-direction: column; }
         .panel iframe { width: 100%; height: 100%; border: none; background: var(--surface-0); }
 
-        /* ── Projects column layout (Settings switch, SHE-168) ──────────────────
+        /* ── The projects column (SHE-168, the only layout since SHE-188) ───────
            The column lives inside the cockpit frame, which therefore stays on
-           screen all the time. The top bar and the tab row go away; the other
+           screen all the time. There is no top bar and no tab row; the other
            screens (Terminal, Apps, Settings...) open over the conversation,
-           to the right of the column, whose width the cockpit reports. */
-        body.layout-projects .topbar,
-        body.layout-projects .workspace-tabs { display: none; }
-        body.layout-projects #panel-agents { display: flex; flex-direction: column; }
-        body.layout-projects .panel:not(#panel-agents) {
+           to the right of the column, whose width the cockpit reports. The
+           .tab buttons stay in the page, unseen: they name the screens. */
+        .topbar,
+        .workspace-tabs { display: none; }
+        #panel-agents { display: flex; flex-direction: column; }
+        .panel:not(#panel-agents) {
             left: var(--pj-side, 276px); z-index: 2; background: var(--surface-0);
             border-left: 1px solid var(--border);
         }
         .tool-bar { display: none; }
+        .cockpit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .cockpit-actions .ai-btn { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); }
         /* The panel beside the chat shares the space right of the column half
            and half with the conversation, instead of taking half the window
            (which would squeeze the column and the chat into the other half). */
         @media (min-width: 769px) {
-            body.layout-projects .report-panel { width: calc((100% - var(--pj-side, 276px)) / 2); }
+            .report-panel { width: calc((100% - var(--pj-side, 276px)) / 2); }
         }
         @media (max-width: 720px) {
             /* Phone: a tool takes the whole screen, with a way back on top. */
-            body.layout-projects .panel:not(#panel-agents) { left: 0; top: 48px; border-left: 0; }
-            body.layout-projects.tool-open .tool-bar {
+            .panel:not(#panel-agents) { left: 0; top: 48px; border-left: 0; }
+            body.tool-open .tool-bar {
                 display: flex; align-items: center; gap: 6px; position: absolute; z-index: 3;
                 top: 0; left: 0; right: 0; height: 48px; padding: 0 8px;
                 background: var(--surface-1); border-bottom: 1px solid var(--border);
@@ -175,9 +178,6 @@
             }
             .tool-bar svg { width: 20px; height: 20px; }
         }
-        .layout-switch { display: flex; gap: 8px; flex-wrap: wrap; }
-        .layout-switch .ai-btn { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); }
-        .layout-switch .ai-btn.active { background: var(--brand); color: #0a0a0a; border-color: var(--brand); }
 
         /* Report panel (right half of the split) */
         .report-panel {
@@ -368,10 +368,10 @@
         .ai-test-result .ok { color: var(--positive); }
         .ai-test-result .err { color: var(--negative); }
         .ai-test-result .latency { color: var(--text-tertiary); margin-left: 6px; }
-        .ai-oc-card { padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
-        .ai-oc-title { font-weight: var(--weight-semibold); margin-bottom: 6px; }
-        .ai-oc-body { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.55; }
-        .ai-oc-body code { font-family: var(--font-mono); font-size: .82em; color: var(--text-primary); }
+        .ai-pi-card { padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+        .ai-pi-title { font-weight: var(--weight-semibold); margin-bottom: 6px; }
+        .ai-pi-body { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.55; }
+        .ai-pi-body code { font-family: var(--font-mono); font-size: .82em; color: var(--text-primary); }
         @media (max-width: 520px) {
             #panel-settings { padding: 20px 14px; }
             .card { padding: 16px 14px; }
@@ -614,7 +614,7 @@
     </nav>
 
     <main class="main" id="workspace-main">
-        <!-- Projects column layout, phone only: the way back from a tool. -->
+        <!-- Phone only: the way back from a tool to the agents. -->
         <div class="tool-bar" id="tool-bar">
             <button type="button" id="tool-bar-back" aria-label="Back to agents">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -625,7 +625,7 @@
             <iframe id="agents-iframe" title="Agents" allow="microphone"></iframe>
             <div class="gate" id="agents-gate">
                 <h2>No AI provider connected yet</h2>
-                <p>Connect Claude, OpenAI, Antigravity, or OpenCode to start driving agents — it takes about a minute.</p>
+                <p>Connect Claude, OpenAI, Antigravity, or Pi to start driving agents. It takes about a minute.</p>
                 <button class="ai-btn" id="agents-gate-btn">Set up in Settings</button>
             </div>
         </div>
@@ -752,7 +752,7 @@
                     <h2>AI providers</h2>
                     <p class="muted" style="margin-top:0;margin-bottom:14px">
                         Connect a coding-agent provider. Keys are saved on the server (in your
-                        home config) and never shown in the browser. OpenCode activates when
+                        home config) and never shown in the browser. Pi activates when
                         you add your Fireworks key.
                     </p>
                     <div id="ai-panel-root"></div>
@@ -800,15 +800,17 @@
                     <div id="auto-update-root"></div>
                 </div>
 
-                <div class="card" id="layout-card">
-                    <h2>Layout</h2>
+                <div class="card" id="cockpit-card">
+                    <h2>Cockpit</h2>
                     <p class="muted" style="margin:0 0 12px">
-                        <b>Projects column</b> lists your agents on the left, grouped by
-                        the project they work in, with what each one is doing.
-                        <b>Tabs</b> is the row of tabs across the top. Applies to
-                        every device after a reload.
+                        Things you need rarely, kept out of the chat header.
+                        They open in the Agents screen.
                     </p>
-                    <div id="layout-root"></div>
+                    <div class="cockpit-actions">
+                        <button type="button" class="ai-btn" data-cockpit-action="sign-in" data-use="dash.cockpit.sign-in">Agent sign-in</button>
+                        <button type="button" class="ai-btn" data-cockpit-action="console" data-use="dash.cockpit.console">Console mode</button>
+                        <button type="button" class="ai-btn" data-cockpit-action="shortcuts" data-use="dash.cockpit.shortcuts">Keyboard shortcuts</button>
+                    </div>
                 </div>
 
                 <div class="card" id="dream-engine-card" hidden>
@@ -1057,10 +1059,6 @@
         // ────────────────────────────────────────────────────────────────────
 
         const OWNER_USERNAME = "__OWNER_USERNAME__";
-        // "tabs" or "projects" (Settings switch, SHE-168).
-        const COCKPIT_LAYOUT = "__COCKPIT_LAYOUT__";
-        const PROJECTS_LAYOUT = COCKPIT_LAYOUT === 'projects';
-        if (PROJECTS_LAYOUT) document.body.classList.add('layout-projects');
         const COCKPIT_URL = "__COCKPIT_URL__";
         // Bumps whenever a served HTML shell changes, so iframe URLs can't be
         // served stale from a browser/PWA cache after a deploy.
@@ -1077,8 +1075,7 @@
                 // the browser kept a cached cockpit (old app.js) across deploys
                 // until a hard refresh, so new handlers like the report side
                 // panel silently didn't exist (SHE-39).
-                case 'agents':   return COCKPIT_URL + (COCKPIT_URL.includes('?') ? '&' : '?') + 'v=' + ASSET_VERSION
-                                     + (PROJECTS_LAYOUT ? '&layout=projects' : '');
+                case 'agents':   return COCKPIT_URL + (COCKPIT_URL.includes('?') ? '&' : '?') + 'v=' + ASSET_VERSION;
                 case 'terminal': return `/terminal?v=${ASSET_VERSION}`;
                 // Main-origin on purpose: the editor's writes (/_api/) require the
                 // master session cookie, which is host-only on this origin. The
@@ -1143,14 +1140,13 @@
         const LAST_TAB_KEY = 'shellteam_last_tab';
         let currentTab = 'agents';
 
-        // Projects column layout: the column is drawn by the cockpit frame, so
-        // it is told which screen is showing and what this box offers.
+        // The projects column is drawn by the cockpit frame, so it is told
+        // which screen is showing and what this box offers.
         function postToCockpit(message) {
             document.getElementById('agents-iframe').contentWindow?.postMessage(
                 { source: 'shellteam-dashboard', ...message }, '*');
         }
         function sendShellState() {
-            if (!PROJECTS_LAYOUT) return;
             postToCockpit({
                 kind: 'shell-state', tab: currentTab, caps: shellCaps,
                 restartNeeded: !document.getElementById('restart-chip').hidden,
@@ -1177,42 +1173,52 @@
             history.replaceState(null, '', `#${tab}`);
             localStorage.setItem(LAST_TAB_KEY, tab);
             currentTab = tab;
-            if (PROJECTS_LAYOUT) {
-                // The cockpit frame carries the column: it must exist whatever
-                // screen the owner landed on.
-                ensureLoaded('agents');
-                document.body.classList.toggle('tool-open', tab !== 'agents');
-                document.getElementById('tool-bar-title').textContent =
-                    document.querySelector(`.tab[data-tab="${tab}"]`)?.textContent.trim() || '';
-                sendShellState();
-            }
+            // The cockpit frame carries the column: it must exist whatever
+            // screen the owner landed on.
+            ensureLoaded('agents');
+            document.body.classList.toggle('tool-open', tab !== 'agents');
+            document.getElementById('tool-bar-title').textContent =
+                document.querySelector(`.tab[data-tab="${tab}"]`)?.textContent.trim() || '';
+            sendShellState();
         }
         document.getElementById('tool-bar-back').addEventListener('click', () => switchTab('agents'));
 
-        // ─── Layout switch (Settings) ───────────────────────────────────────
-        (function layoutSwitch() {
-            const root = document.getElementById('layout-root');
-            const LABELS = { projects: 'Projects column', tabs: 'Tabs' };
-            root.innerHTML = `<div class="layout-switch" role="group" aria-label="Layout">${Object.entries(LABELS).map(([value, label]) =>
-                `<button type="button" class="ai-btn${value === COCKPIT_LAYOUT ? ' active' : ''}" aria-pressed="${value === COCKPIT_LAYOUT}" data-layout="${value}">${label}</button>`).join('')}</div><div class="fk-err"></div>`;
-            root.addEventListener('click', async (e) => {
-                const btn = e.target.closest('[data-layout]');
-                if (!btn || btn.dataset.layout === COCKPIT_LAYOUT) return;
-                const resp = await apiFetch('/api/settings/layout', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ layout: btn.dataset.layout }),
-                });
-                if (resp.error) {
-                    const err = root.querySelector('.fk-err');
-                    err.textContent = resp.error; err.style.display = 'block';
-                    return;
-                }
-                // Land on the agents, not back on Settings, in the new layout.
-                history.replaceState(null, '', '#agents');
-                localStorage.setItem(LAST_TAB_KEY, 'agents');
-                location.reload();
-            });
-        })();
+        // ─── The browser's live views (SHE-170) ─────────────────────────────
+        // The live view (/browser, in the side panel or as a screen) is this
+        // origin; the cockpit, which knows who has the browser, is another. So
+        // this page carries the state one way and the owner's "take control" /
+        // "hand back" the other, over a channel only this origin's pages can join.
+        const browserChannel = new BroadcastChannel('shellteam-browser');
+        browserChannel.onmessage = (e) => {
+            const d = e.data || {};
+            if (d.kind === 'control') postToCockpit({ kind: 'browser-control', take: d.take === true });
+            else if (d.kind === 'hello') postToCockpit({ kind: 'browser-hello' });
+        };
+
+        // ─── Cockpit card (Settings) ────────────────────────────────────────
+        // What used to sit behind a gear in every chat header (rarely needed):
+        // the cockpit runs it, so go to the agents and ask it to.
+        document.getElementById('cockpit-card').addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-cockpit-action]');
+            if (!btn) return;
+            switchTab('agents');
+            postToCockpit({ kind: 'cockpit-action', action: btn.dataset.cockpitAction });
+        });
+
+        // ─── What the owner uses (SHE-204) ──────────────────────────────────
+        // Each click on a control of this page adds one to its NAME (data-use,
+        // else its id) in the cockpit's private count, kept on this box only.
+        // No text the owner wrote is read. See computer/ai-chat/public/use.js.
+        document.addEventListener('click', (e) => {
+            const named = e.target.closest('[data-use]');
+            const el = named || e.target.closest('button, a[href], summary, [role="button"], [role="tab"]');
+            if (!el) return;
+            const raw = named ? named.dataset.use : el.id;
+            if (!raw) return;
+            const name = raw.startsWith('dash.') ? raw
+                : 'dash.' + raw.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase();
+            postToCockpit({ kind: 'use', name });
+        }, true);
 
         // ─── Laptop import (Environment Mirror) ─────────────────────────────
         // Each call mints a fresh 24h upload credential server-side, so the
@@ -1423,7 +1429,7 @@
             if (!s || s.error) return false;
             const modes = Object.values(s.authMode || {});
             return modes.some(mode => mode && mode !== 'none') || !!(s.hasApiKey || s.hasOAuth
-                || s.hasOpenAIKey || s.hasCodexOAuth || s.hasAntigravityOAuth || s.openCodeAvailable);
+                || s.hasOpenAIKey || s.hasCodexOAuth || s.hasAntigravityOAuth || s.piAvailable);
         }
 
         function applyGate() {
@@ -1597,8 +1603,8 @@
                 dot.classList.toggle('attention', expired);
                 dot.classList.toggle('on', !expired && providerMode(key) !== 'none');
             }
-            const ocDot = root.querySelector('.ai-tab[data-provider="opencode"] .dot');
-            if (ocDot) ocDot.classList.toggle('on', !!aiStatus.openCodeAvailable);
+            const piDot = root.querySelector('.ai-tab[data-provider="pi"] .dot');
+            if (piDot) piDot.classList.toggle('on', !!aiStatus.piAvailable);
         }
 
         function selectAIProviderTab(provider, focus = false) {
@@ -1624,12 +1630,12 @@
         function renderAIPanel() {
             const root = document.getElementById('ai-panel-root');
             if (!root) return;
-            const ocOn = !!(aiStatus && aiStatus.openCodeAvailable);
+            const piOn = !!(aiStatus && aiStatus.piAvailable);
             root.innerHTML = `
                 <div class="ai-err"></div>
                 <div class="ai-tabs" role="tablist" aria-label="AI providers">
-                    ${['claude', 'openai', 'antigravity', 'opencode'].map(key => {
-                        const label = key === 'opencode' ? 'OpenCode' : AI_PROVIDERS[key].label;
+                    ${['claude', 'openai', 'antigravity', 'pi'].map(key => {
+                        const label = key === 'pi' ? 'Pi' : AI_PROVIDERS[key].label;
                         const active = key === selectedAIProvider;
                         return `<button class="ai-tab${active ? ' active' : ''}" id="ai-tab-${key}" type="button" role="tab" data-provider="${key}" aria-controls="ai-panel-${key}" aria-selected="${active}" tabindex="${active ? 0 : -1}"><span class="dot"></span>${label}</button>`;
                     }).join('')}
@@ -1697,12 +1703,12 @@
                         <div class="ai-test-result"></div>
                     </div>`;
                 }).join('')}
-                <div class="ai-panel${selectedAIProvider === 'opencode' ? ' active' : ''}" id="ai-panel-opencode" data-panel="opencode" role="tabpanel" aria-labelledby="ai-tab-opencode"${selectedAIProvider === 'opencode' ? '' : ' hidden'}>
-                    <div class="ai-oc-card">
-                        <div class="ai-oc-title">${ocOn ? '✓ OpenCode active (your Fireworks key)' : 'OpenCode needs a Fireworks key'}</div>
-                        <div class="ai-oc-body">${ocOn
-                            ? 'OpenCode is the open-source coding agent on state-of-the-art open models, running on your Fireworks key. Pick an OpenCode model in the Agents tab.'
-                            : 'OpenCode runs on Fireworks. Add your Fireworks key in Settings → Secrets below — it activates immediately. Or connect Claude / OpenAI / Antigravity above.'}</div>
+                <div class="ai-panel${selectedAIProvider === 'pi' ? ' active' : ''}" id="ai-panel-pi" data-panel="pi" role="tabpanel" aria-labelledby="ai-tab-pi"${selectedAIProvider === 'pi' ? '' : ' hidden'}>
+                    <div class="ai-pi-card">
+                        <div class="ai-pi-title">${piOn ? '✓ Pi active (your Fireworks key)' : 'Pi needs a Fireworks key'}</div>
+                        <div class="ai-pi-body">${piOn
+                            ? 'Pi is an open-source coding agent on state-of-the-art open models, running on your Fireworks key. Pick a Pi model in the Agents tab.'
+                            : 'Pi runs on Fireworks. Add your Fireworks key in Settings → Secrets below and it activates immediately. Or connect Claude / OpenAI / Antigravity above.'}</div>
                     </div>
                 </div>`;
 
@@ -2499,7 +2505,7 @@
                 try {
                     const x = new URL(u, location.href);
                     if (x.host !== location.host) return false;
-                    return x.pathname.startsWith('/_editor/') || x.pathname === '/reports' || x.pathname === '/knowledge';
+                    return x.pathname.startsWith('/_editor/') || x.pathname === '/reports' || x.pathname === '/knowledge' || x.pathname === '/browser';
                 } catch { return false; }
             }
             // Icon + word; the word hides when the panel is narrow (container query).
@@ -2707,6 +2713,8 @@
                         .catch(e => console.error('[jump] reports list', e));
                 }
                 else if (d.kind === 'report-close') closeReport();
+                // Who has the browser (SHE-170): passed on to every open live view.
+                else if (d.kind === 'browser-state') browserChannel.postMessage({ kind: 'state', control: d.control, holder: d.holder, ask: d.ask });
                 else if (d.kind === 'provider-settings') openAIProviderSettings(d.provider);
                 // Unread conversation tabs, Slack-style: "(2) ShellTeam" in the browser tab.
                 else if (d.kind === 'unread-count') document.title = (d.count > 0 ? `(${d.count}) ` : '') + BASE_TITLE;

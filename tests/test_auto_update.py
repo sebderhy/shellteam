@@ -228,7 +228,7 @@ class TestSelfUpdateScript:
             f'#!/bin/bash\necho "npm $*" >> "{calls}"\n'
             'prefix=""; while [ $# -gt 0 ]; do [ "$1" = --prefix ] && prefix="$2"; shift; done\n'
             'mkdir -p "$prefix/bin"\n'
-            'for b in claude codex opencode; do printf "#!/bin/sh\\necho 9.9.9\\n" > "$prefix/bin/$b"; chmod +x "$prefix/bin/$b"; done\n'
+            'for b in claude codex pi; do printf "#!/bin/sh\\necho 9.9.9\\n" > "$prefix/bin/$b"; chmod +x "$prefix/bin/$b"; done\n'
         )
         (bin_dir / "curl").write_text(
             '#!/bin/bash\n'
@@ -246,7 +246,7 @@ class TestSelfUpdateScript:
         assert result.returncode == 0, result.stderr
         calls = managed["calls"].read_text()
         assert f"--prefix {managed['home']}/.local" in calls, "no sudo on a managed box: CLIs go to ~/.local"
-        for pkg in ("@anthropic-ai/claude-code@latest", "@openai/codex@latest", "opencode-ai@latest"):
+        for pkg in ("@anthropic-ai/claude-code@latest", "@openai/codex@latest", "@earendil-works/pi-coding-agent@latest"):
             assert pkg in calls
         report = [line for line in calls.splitlines() if line.startswith("curl")]
         assert len(report) == 1 and "https://relay.example/relay/update-status" in report[0]

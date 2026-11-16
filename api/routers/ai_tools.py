@@ -1,4 +1,4 @@
-"""Proxy endpoints for AI tools (STT + the Fireworks proxy for OpenCode).
+"""Proxy endpoints for AI tools (STT + the Fireworks proxy for Pi).
 
 Keys stay on the host — in-box tools authenticate with per-user HMAC tokens.
 """
@@ -136,15 +136,16 @@ async def text_to_speech(req: SpeakRequest):
     return Response(content=audio, media_type="audio/mpeg")
 
 
-# --- Fireworks proxy (the OpenCode family) ---
+# --- Fireworks proxy (the Pi family) ---
 #
-# OpenCode runs on the box and never sees FIREWORKS_API_KEY.
-# It points `@ai-sdk/openai-compatible` at these endpoints with a per-user HMAC
+# Pi runs on the box and never sees FIREWORKS_API_KEY.
+# Its launch-layer extension (computer/pi-layer/shellteam.ts) points an
+# OpenAI-compatible provider at these endpoints with a per-user HMAC
 # bearer; we swap in the real Fireworks key server-side. This means every user
 # gets a working coding agent without bringing their own credentials.
 
 FIREWORKS_UPSTREAM = "https://api.fireworks.ai/inference/v1"
-# The set of upstream model ids we forward is the catalog's OpenCode models
+# The set of upstream model ids we forward is the catalog's Pi models
 # (config/models.json → api/services/model_catalog.py). Add a Fireworks model
 # there + restart the API to allowlist it — no code change here.
 from api.services.model_catalog import fireworks_allowlist

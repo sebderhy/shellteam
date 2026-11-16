@@ -102,11 +102,12 @@ install (pure core / full harness) — and every answer maps to
 a flag (`--remote`, `--domain`, `--full`), so non-interactive runs and re-runs
 never prompt. The script is idempotent — re-run it after `git pull`. It will:
 
-1. Install system packages (`nginx`, Python 3, `libcap2-bin`) + Node 20+ (fetches
-   Node 22 only if the box has nothing ≥ 20) + `uv`.
+1. Install system packages (`nginx`, Python 3, `libcap2-bin`) + Node 22.19+ (fetches
+   Node 22 only if the box has nothing that recent; Pi needs it) + `uv`.
 2. Sync Python deps and the ai-chat Node deps.
 3. Install the coding-agent CLIs: `claude` (`@anthropic-ai/claude-code`), `codex`
-   (`@openai/codex`), and `opencode` (`opencode-ai`) globally via npm, plus `agy`
+   (`@openai/codex`), and `pi` (`@earendil-works/pi-coding-agent`, needs Node
+   22.19+) globally via npm, plus `agy`
    (the Antigravity CLI) via its official installer into `~/.local/bin`
    (failures are reported at the end — the rest of the install continues).
 4. Create `.env` from `.env.example` and auto-generate `SHELLTEAM_AI_TOKEN`.
@@ -420,7 +421,7 @@ sed -i 's|^OPENAI_API_KEY=.*|OPENAI_API_KEY=sk-...|'           .env   # for Code
 systemctl --user restart shellteam-api shellteam-ai-chat
 ```
 
-Other optional keys in `.env`: `FIREWORKS_API_KEY` (enables the OpenCode agent),
+Other optional keys in `.env`: `FIREWORKS_API_KEY` (enables the Pi agent),
 `ELEVENLABS_API_KEY` (voice input — speech-to-text in the cockpit),
 `COMPOSIO_API_KEY` (500+ app integrations over MCP — off unless set),
 `LINEAR_API_KEY` (for the `linear` module).

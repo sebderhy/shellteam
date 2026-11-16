@@ -16,7 +16,11 @@ in-box tooling. Every login mints a random session here:
   - sessions expire (``SESSION_TTL_DAYS``, default 14) and can be revoked one
     by one (log out) or all at once (log out everywhere);
   - the store is bound to the current master by an HMAC "epoch": rotating
-    ``OWNER_TOKEN`` revokes every session on the next lookup.
+    ``OWNER_TOKEN`` revokes every session when the API next starts
+    (``reconcile_rotation``). Any other process whose token does not match the
+    store (an in-box script, an agent shell with no token) sees no sessions
+    and can never rewrite the store (SHE-213: one such read signed the owner
+    out of every device).
 
 This module is the single owner of ``DATA_DIR/<owner>/sessions.json`` (0600).
 The OSS control plane is one uvicorn process; a process lock serialises
@@ -97,7 +101,7 @@ def _read() -> dict:
     return _cache["data"]
 
 
-def _write(data: dict) -> None:
+def _store(data: dict) -> None:
     """Atomic 0600 write. Caller holds _lock."""
     path = store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -110,29 +114,55 @@ def _write(data: dict) -> None:
     _cache.update(mtime=path.stat().st_mtime_ns, data=data)
 
 
+def _ours(data: dict) -> bool:
+    """True if the store on disk was written under this process's token (or
+    has no token yet: a first start)."""
+    epoch = str(data.get("epoch", ""))
+    return not epoch or hmac.compare_digest(epoch, _epoch())
+
+
+def _write(data: dict) -> None:
+    """Write the store, refusing when it belongs to another token. Caller holds _lock."""
+    if not _ours(_read()):
+        raise RuntimeError(
+            "this process holds a different OWNER_TOKEN than the sessions store; "
+            "refusing to rewrite it (a rotation applies when the API restarts)"
+        )
+    _store(data)
+
+
 def _live() -> dict:
-    """The current store with expired sessions dropped and, when OWNER_TOKEN
-    was rotated since the store was written, EVERY session dropped. Caller holds
-    _lock."""
+    """The current store with expired sessions dropped. When it was written
+    under another token, an empty view: this process can't use those
+    sessions, and only ``reconcile_rotation`` may revoke them. Caller holds _lock."""
     data = _read()
+    if not _ours(data):
+        return _empty()
     now = time.time()
-    changed = False
-    if not hmac.compare_digest(str(data.get("epoch", "")), _epoch()):
-        n = len(data.get("sessions", {}))
-        if n:
-            log.warning("OWNER_TOKEN changed since the sessions were issued: revoked %d session(s)", n)
-        if data.get("epoch"):  # a previous token existed: this is a change, not a first start
-            from api.services import security_watch
-            security_watch.note_token_changed(n)
-        data = _empty()
-        changed = True
     expired = [sid for sid, s in data["sessions"].items() if s["expires"] <= now]
     for sid in expired:
         del data["sessions"][sid]
-        changed = True
-    if changed:
+    if expired:
         _write(data)
     return data
+
+
+def reconcile_rotation() -> int:
+    """Called once by the API at startup, the one process that holds the token
+    from .env: if OWNER_TOKEN changed since the store was written, revoke every
+    session and tell the owner. Returns how many were revoked."""
+    if not _master():
+        return 0
+    with _lock:
+        data = _read()
+        if _ours(data):
+            return 0
+        n = len(data.get("sessions", {}))
+        _store(_empty())
+    log.warning("OWNER_TOKEN changed since the sessions were issued: revoked %d session(s)", n)
+    from api.services import security_watch
+    security_watch.note_token_changed(n)
+    return n
 
 
 def files_cred_for(sid: str) -> str:

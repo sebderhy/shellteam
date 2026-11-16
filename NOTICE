@@ -49,7 +49,7 @@ redistributed in this repo):
   @anthropic-ai/claude-code   (Anthropic, via npm)
   @openai/codex               (OpenAI, via npm)
   agy — Antigravity CLI       (Google, verified release archive)
-  opencode-ai                 (opencode, via npm)
+  @earendil-works/pi-coding-agent (Earendil, via npm)
   @upstash/context7-mcp       (Upstash, via npm)
   gh — GitHub CLI             (GitHub, via apt)
 

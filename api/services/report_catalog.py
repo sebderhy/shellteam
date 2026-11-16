@@ -15,7 +15,7 @@ Backs the dashboard's Reports tab (SHE-84). A report is a document under
    the earliest transcript that wrote it, and persist the mapping so
    subsequent scans only read transcripts modified since the last watermark.
 
-   Transcripts of the other CLIs (Codex/OpenCode/Antigravity) carry no such
+   Transcripts of the other CLIs (Codex/Pi/Antigravity) carry no such
    call, so for every cockpit chat the cockpit also records, when a turn ends,
    the reports that turn named and changed (``_WRITES_RELPATH``, SHE-177).
 
@@ -68,7 +68,7 @@ _MOVES_RELPATH = Path(".config") / "shellteam" / "moved-sessions.jsonl"
 
 # Reports a cockpit chat wrote, recorded by the cockpit when the turn ends
 # (computer/ai-chat/lib/report-writes.mjs, SHE-177): {"report", "cwd",
-# "session", "ts" in ms}. This is the evidence for Codex, OpenCode and
+# "session", "ts" in ms}. This is the evidence for Codex, Pi and
 # Antigravity, whose transcripts carry no Write call: the turn named the report
 # AND the file changed while the turn ran, so a mention alone still fails.
 _WRITES_RELPATH = Path(".config") / "shellteam" / "report-writes.jsonl"
@@ -258,7 +258,7 @@ def refresh_attribution(user_id: str, home: Path) -> dict[str, dict]:
     Incremental: only transcripts modified since the stored watermark are
     read. Only WRITE evidence attributes (see ``_WRITE_RE``); among writers,
     the earliest-mtime transcript keeps the claim (creation beats a later
-    edit by another workspace). Reports written by Codex/OpenCode/Antigravity
+    edit by another workspace). Reports written by Codex/Pi/Antigravity
     or by plain shell commands are not found here; the cockpit's write record
     covers them (``_apply_recorded_writes``).
     """

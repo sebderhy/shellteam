@@ -19,7 +19,7 @@
 ![The ShellTeam cockpit — attach a chart, Opus reads it, then switch agents mid-conversation to GPT-5.6 and the context carries over natively](docs/assets/demo.gif)
 
 ShellTeam turns a Linux box into a cloud computer you command through a team of
-coding agents. Drive Claude Code, Codex, Antigravity, and OpenCode from one cockpit —
+coding agents. Drive Claude Code, Codex, Antigravity, and Pi from one cockpit —
 stream their work, steer mid-task, run parallel slots — while they build software
 and ship it to live URLs on the same machine.
 
@@ -40,7 +40,7 @@ directly: install packages, manage services, run servers, edit anything.
 | | |
 |---|---|
 | **Portable sessions** | Switch the *same conversation* to another vendor's agent mid-task, from a dropdown — context carries over natively. No other tool does this. |
-| **One cockpit, four agents** | Drive Claude Code / Codex / Antigravity / OpenCode side by side: stream output, steer mid-task, interrupt, rewind, fork, compact, run parallel tabs. |
+| **One cockpit, four agents** | Drive Claude Code / Codex / Antigravity / Pi side by side: stream output, steer mid-task, interrupt, rewind, fork, compact, run parallel tabs. |
 | **A live URL for everything** | An agent builds an app on `localhost:3000` → it's reachable from any device. Every file in `$HOME` gets a URL (owner-gated; `~/public` is public). |
 | **Your subscriptions, not API keys** | Sign in with the Claude / Codex plans you already pay for. API keys are optional (headless/CI). |
 | **Phone-ready** | Voice input, paste-a-screenshot, readable diffs and tables on a 6-inch screen — check on a build from anywhere. |
@@ -173,7 +173,7 @@ Key variables:
 | `SHELLTEAM_AI_TOKEN` | HMAC secret between the control plane and in-box tools (auto-generated). |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | LLM keys (set the ones you use; Antigravity signs in via its own Google OAuth). |
 | `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` / `OPENAI_BASE_URL` | Optional: your company's AI gateway, used ahead of any subscription (also settable in Settings). |
-| `FIREWORKS_API_KEY` | Enables the OpenCode agent (relayed through `/internal/ai`). |
+| `FIREWORKS_API_KEY` | Enables the Pi agent (relayed through `/internal/ai`). |
 | `ELEVENLABS_API_KEY` | Voice in the cockpit, both ways: dictating to an agent, and having its replies read out loud. |
 | `COMPOSIO_API_KEY` | Optional — enables Composio's 500+ app integrations over MCP. |
 | `LINEAR_API_KEY` | Needed by the `linear` module (Linear MCP). |

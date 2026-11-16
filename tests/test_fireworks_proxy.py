@@ -20,7 +20,7 @@ from api.services.internal_auth import make_token
 
 
 USER_ID = "fw-user-123"
-ALLOWED_MODEL = "accounts/fireworks/models/kimi-k3"
+ALLOWED_MODEL = "accounts/fireworks/models/kimi-k3p1-pro"
 CHAT_PATH = "/internal/ai/fireworks/v1/chat/completions"
 MODELS_PATH = "/internal/ai/fireworks/v1/models"
 
@@ -83,8 +83,8 @@ class TestFireworksAllowlist:
         ids = {m["id"] for m in data["data"]}
         assert ALLOWED_MODEL in ids
         assert ids == fireworks_allowlist()
-        # Kimi K3 (the OpenCode default) must be forwardable.
-        assert "accounts/fireworks/models/kimi-k3" in ids
+        # Kimi K3 (a Pi model) must be forwardable.
+        assert "accounts/fireworks/models/kimi-k3p1-pro" in ids
 
 
 class TestFireworksProxy:

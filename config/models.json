@@ -3,13 +3,13 @@
     "Single source of truth for the model catalog the cockpit offers, per coding-agent family.",
     "Add a model as soon as it ships \u2014 no code change, no version bump: append it here and restart",
     "the stack (systemctl --user restart shellteam-api shellteam-ai-chat). Both the Python control",
-    "plane (api/services/model_catalog.py \u2014 Fireworks proxy allowlist + OpenCode provider config)",
+    "plane (api/services/model_catalog.py \u2014 Fireworks proxy allowlist + Pi provider registration)",
     "and the Node cockpit (computer/ai-chat/lib/model-catalog.mjs \u2014 routing + dropdown) read this file.",
     "",
     "match.prefixes drive model->agent routing (a model is also routed by exact membership in an",
-    "agent's models[] list). OpenCode models are Fireworks-hosted and proxied through the control",
+    "agent's models[] list). Pi models are Fireworks-hosted and proxied through the control",
     "plane; each carries its upstream Fireworks id, so adding one only needs a line here.",
-    "'default' (OpenCode) is the model picked when the user selects the OpenCode family.",
+    "'default' (Pi) is the model picked when the user selects the Pi family.",
     "",
     "limit.context = the model's context window in tokens; the cockpit's context-budget meter",
     "(renderContextMeter in public/app.js) shows usage against it. Claude values are the 1M window",
@@ -197,8 +197,8 @@
       ]
     },
     {
-      "id": "opencode",
-      "label": "OpenCode (included)",
+      "id": "pi",
+      "label": "Pi (included)",
       "provider": "fireworks",
       "default": "glm-5p3",
       "match": {
@@ -219,22 +219,22 @@
         "keep it filled in.",
         "",
         "'default' is glm-5p3 (owner call, 2026-08-31): near-frontier coding at 3.4x",
-        "less than Kimi K3's output price, on the box owner's own Fireworks key — the",
-        "right landing spot for someone with no Claude/Codex subscription. K3 stays",
+        "less than Kimi K3.1 Pro's output price, on the box owner's own Fireworks key — the",
+        "right landing spot for someone with no Claude/Codex subscription. K3.1 Pro stays",
         "one click away as the premium pick. glm-5p3-flash is the budget tier at a",
         "tenth of GLM 5.3's input price.",
         "Every model runs at its maximum (verified 2026-10-18): options.reasoningEffort",
         "goes upstream as reasoning_effort, and limit.output is the 131072-token ceiling",
         "each accepts, which the reasoning trace counts against. GLM 5.3's default",
         "already reasons like max, but Kimi K3's default thinks briefly and got a test",
-        "problem wrong 2 of 4 times where max got 4 of 4. OpenCode clamps every reply to",
-        "32000 tokens unless OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX is raised, so the",
-        "cockpit sets it from these limits (opencodeOutputTokenMax in model-catalog.mjs).",
+        "problem wrong 2 of 4 times where max got 4 of 4. Pi registers each model with",
+        "maxTokens = limit.output (api/services/model_catalog.py pi_provider_models).",
         "DeepSeek V4 Pro was dropped the same day: Fireworks stopped serving it",
         "serverless (NOT_FOUND) and neither successor is serverless.",
         "",
         "The list is a short menu of models worth picking, not an archive: GLM 5.2",
-        "was dropped the day 5.3 shipped here (as 5.1 was for 5.2, and K2.6 for K3),",
+        "was dropped the day 5.3 shipped here (as 5.1 was for 5.2, K2.6 for K3, and K3",
+          "for K3.1 Pro on 2026-11-16: cheaper per token, newer, same window),",
         "since a superseded model is strictly worse on every axis the dropdown shows.",
         "Tabs pinned to a dropped id migrate to this family's default (resolveModelId",
         "in computer/ai-chat/lib/model-catalog.mjs), so dropping one is safe."
@@ -257,9 +257,10 @@
           }
         },
         {
-          "id": "kimi-k3",
-          "name": "Kimi K3",
-          "upstream": "accounts/fireworks/models/kimi-k3",
+          "id": "kimi-k3p1-pro",
+          "name": "Kimi K3.1 Pro",
+          "upstream": "accounts/fireworks/models/kimi-k3p1-pro",
+          "replaces": ["kimi-k3"],
           "limit": {
             "context": 1048576,
             "output": 131072
@@ -268,8 +269,8 @@
             "reasoningEffort": "max"
           },
           "cost": {
-            "input": 3.0,
-            "output": 15.0
+            "input": 2.0,
+            "output": 10.0
           }
         },
         {

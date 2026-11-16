@@ -28,7 +28,7 @@ import { agentIdFor } from "./agents/registry.mjs";
 import { uuid4 } from "./portable/csf.mjs";
 
 // Cockpit lineage markers (handoff / fork session_events) are ShellTeam metadata,
-// not part of a CLI's own transcript. For Codex/Gemini/OpenCode they live in the
+// not part of a CLI's own transcript. For Codex/Gemini/Pi they live in the
 // cockpit protocol JSONL that replay reads directly. Claude owns its native
 // .jsonl, so we persist markers INTO it as an isMeta user line carrying this
 // sentinel + the JSON payload: Claude tolerates/ignores isMeta lines on resume,
@@ -114,12 +114,15 @@ export function findSessionFile(sessionId) {
 /**
  * Resolve which agent family owns a session ID, so we never resume a session
  * with the wrong CLI (e.g. `claude --resume <codex-thread-id>`, which fails with
- * "No conversation found"). Returns "codex" | "claude" | "opencode" | null.
+ * "No conversation found"). Returns "codex" | "claude" | "pi" | null.
  * null means "unknown" — caller should not treat that as a mismatch.
  */
 export function familyOfSession(sessionId) {
   if (!sessionId) return null;
-  // OpenCode session IDs are distinctively prefixed and not stored as JSONL files.
+  // The cockpit mints Pi session ids with a "pi-" prefix (pi-agent.mjs).
+  if (sessionId.startsWith("pi-")) return "pi";
+  // OpenCode's ids (retired 2026-11-16): open tabs still hold them until the
+  // cockpit carries them over to Pi (session-manager adoptRetiredSession).
   if (sessionId.startsWith("ses_")) return "opencode";
   const file = findSessionFile(sessionId);
   if (!file) return null;

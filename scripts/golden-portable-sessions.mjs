@@ -4,7 +4,7 @@
  *
  * For each of the 12 ordered family pairs: plant a codeword in a SOURCE session
  * (written exactly as the cockpit persists it — Claude native JSONL, or the
- * cockpit-owned protocol JSONL for Codex/Gemini/OpenCode, i.e. the same input
+ * cockpit-owned protocol JSONL for Codex/Gemini/Pi, i.e. the same input
  * history.mjs:readSessionForReplay consumes), run the real handoffSession(), then
  * resume with the TARGET CLI and assert the codeword is recalled.
  *
@@ -19,20 +19,22 @@
 
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { HOME, CODEX_HISTORY_DIR } from "../computer/ai-chat/lib/constants.mjs";
 import { encodeCwd, uuid4 } from "../computer/ai-chat/lib/portable/csf.mjs";
 import { handoffSession } from "../computer/ai-chat/lib/portable/index.mjs";
+import { piLayer } from "../computer/ai-chat/lib/agent-layer.mjs";
+import { piModelArgs } from "../computer/ai-chat/lib/pi-agent.mjs";
 
 const execFileP = promisify(execFile);
 
-const FAMILIES = ["claude", "codex", "gemini", "opencode"];
+const FAMILIES = ["claude", "codex", "gemini", "pi"];
 const MODEL = {
   claude: "claude-haiku-5-5",
   codex: "gpt-6-luna",
   gemini: "gemini-3-flash-preview",
-  opencode: "glm-5p3-flash",
+  pi: "glm-5p3-flash",
 };
 
 const WS = "/tmp/portable-golden-ws";
@@ -60,9 +62,9 @@ function seedClaudeSource(codeword) {
   return sid;
 }
 
-// Codex/Gemini/OpenCode cockpit sessions live as protocol JSONL in CODEX_HISTORY_DIR.
+// Codex/Gemini/Pi cockpit sessions live as protocol JSONL in CODEX_HISTORY_DIR.
 function seedProtocolSource(family, codeword) {
-  const sid = family === "opencode" ? `ses_golden${Date.now()}` : uuid4();
+  const sid = family === "pi" ? `pi-${uuid4()}` : uuid4();
   mkdirSync(CODEX_HISTORY_DIR, { recursive: true });
   const lines = [
     JSON.stringify({ type: "session_meta", model: MODEL[family], cwd: WS, timestamp: Date.now() }),
@@ -83,11 +85,11 @@ function seedSource(family, codeword) {
 const QUESTION = "What codeword did I ask you to remember? Reply with only the word.";
 
 async function resume(family, sessionId) {
-  // OpenCode runs on the shared Fireworks endpoint (glm-5p3-flash), which is
+  // Pi runs on the shared Fireworks relay (glm-5p3-flash), which is
   // materially slower per turn than the local-auth CLIs — give it real
   // headroom so the matrix measures translation correctness, not endpoint
   // latency. (The translation itself is fast; the model turn is the wait.)
-  const timeout = family === "opencode" ? 420000 : 180000;
+  const timeout = family === "pi" ? 420000 : 180000;
   const opts = { cwd: WS, timeout, maxBuffer: 64 * 1024 * 1024 };
   if (family === "claude") {
     const { stdout } = await execFileP("claude", ["--dangerously-skip-permissions", "--model", MODEL.claude, "--resume", sessionId, "-p", QUESTION], opts);
@@ -101,9 +103,18 @@ async function resume(family, sessionId) {
     const { stdout } = await execFileP("gemini", ["-y", "-m", MODEL.gemini, "--resume", sessionId, "-p", QUESTION], { ...opts, env: { ...process.env, GEMINI_CLI_TRUST_WORKSPACE: "true" } });
     return stdout;
   }
-  if (family === "opencode") {
-    const { stdout } = await execFileP("opencode", ["run", "--session", sessionId, "--format", "json", "--dangerously-skip-permissions", "--model", `fireworks/${MODEL.opencode}`, QUESTION], opts);
-    return stdout;
+  if (family === "pi") {
+    // Pi's print mode waits on an open stdin, so it gets none.
+    const layer = piLayer(WS);
+    const args = ["-p", ...piModelArgs(MODEL.pi), ...layer.args, "--session-id", sessionId, QUESTION];
+    return new Promise((resolve, reject) => {
+      const child = spawn("pi", args, { cwd: WS, env: { ...process.env, ...layer.env }, stdio: ["ignore", "pipe", "pipe"] });
+      let out = "", err = "";
+      const timer = setTimeout(() => { child.kill("SIGTERM"); reject(new Error(`pi timed out after ${timeout}ms`)); }, timeout);
+      child.stdout.on("data", (d) => { out += d; });
+      child.stderr.on("data", (d) => { err += d; });
+      child.on("close", (code) => { clearTimeout(timer); code === 0 ? resolve(out) : reject(new Error(`pi exited ${code}: ${err.trim()}`)); });
+    });
   }
   throw new Error(`no resumer for ${family}`);
 }

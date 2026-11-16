@@ -37,7 +37,26 @@
         .browser-tab-close:hover{color:var(--text-primary);}
         .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
             clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+        /* Who has the browser (SHE-170). Always in sight, a phone included:
+           during the owner's turn "Hand back" must never scroll away. */
+        #browser-control{display:flex;align-items:center;gap:10px;flex:none;min-height:44px;padding:6px 10px;
+            background:var(--surface-1);border-bottom:1px solid var(--border);
+            font-size:var(--text-sm,0.85rem);color:var(--text-secondary);}
+        #browser-control[hidden]{display:none;}
+        #browser-control.owner{background:rgba(245,158,11,0.12);color:var(--text-primary);border-bottom-color:rgba(245,158,11,0.4);}
+        #browser-control.ask{color:var(--text-primary);}
+        #browser-control-text{flex:1;min-width:0;line-height:1.35;}
+        #browser-control-text b{font-weight:600;}
+        #browser-control-btn{flex:none;min-height:36px;padding:0 16px;border-radius:var(--radius-sm,6px);cursor:pointer;
+            font:inherit;font-weight:600;border:1px solid var(--border);background:var(--surface-2);color:var(--text-primary);}
+        #browser-control.owner #browser-control-btn,#browser-control.ask #browser-control-btn{background:var(--brand);border-color:var(--brand);color:#0a0a0a;}
+        #browser-control.nudge{animation:control-nudge .5s ease 2;}
+        @keyframes control-nudge{50%{background:rgba(245,158,11,0.22);}}
+        @media(prefers-reduced-motion:reduce){#browser-control.nudge{animation:none;}}
+        body.watching #browser-canvas{cursor:not-allowed !important;}
         @media(max-width:520px){
+            #browser-control{flex-wrap:wrap;}
+            #browser-control-btn{min-height:44px;flex:1 0 100%;}
             #browser-toolbar{flex-wrap:wrap;padding:4px;}
             #browser-url{min-height:36px;}
             .browser-zoom-controls{width:100%;margin-left:0;padding-left:0;border-left:0;
@@ -48,6 +67,10 @@
 <body>
     <main class="panel active" id="panel-browser">
                 <h1 class="sr-only">Browser</h1>
+                <div id="browser-control" role="status" hidden>
+                    <span id="browser-control-text"></span>
+                    <button type="button" id="browser-control-btn"></button>
+                </div>
                 <div id="browser-toolbar" role="toolbar" aria-label="Browser controls">
                     <button class="tkey" type="button" id="browser-back" style="min-height:28px;padding:4px 10px;font-size:1rem;" aria-label="Go back">&#8592;</button>
                     <button class="tkey" type="button" id="browser-forward" style="min-height:28px;padding:4px 10px;font-size:1rem;" aria-label="Go forward">&#8594;</button>
@@ -67,6 +90,59 @@
                 </div>
     </main>
     <script>
+        // ─── Who has the browser (SHE-170) ──────────────────────────────────
+        // Agents and the owner must not drive one page at the same time: an
+        // agent that clicks while the owner types a password is the accident
+        // this prevents. The cockpit's gate refuses agents while the owner has
+        // control; this page does the other half: until the owner takes
+        // control, their clicks and keys are not sent, and the bar says so.
+        // The state comes from the cockpit through the dashboard, over a
+        // channel only this origin's pages can join. Opened on its own (no
+        // dashboard answers), the page works as a plain live view.
+        const browserControl = (() => {
+            const bar = document.getElementById('browser-control');
+            const text = document.getElementById('browser-control-text');
+            const btn = document.getElementById('browser-control-btn');
+            const channel = new BroadcastChannel('shellteam-browser');
+            let state = null;   // null = no cockpit told us: nothing is gated
+            const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+            function render() {
+                bar.hidden = !state;
+                if (!state) return;
+                const mine = state.control === 'owner';
+                document.body.classList.toggle('watching', !mine);
+                bar.className = mine ? 'owner' : (state.ask ? 'ask' : '');
+                text.innerHTML = mine
+                    ? '<b>You have the browser.</b> Agents are paused until you hand it back.'
+                    : state.ask ? `<b>${esc(state.ask.chat)} needs you:</b> ${esc(state.ask.what)}`
+                    : state.holder ? `<b>${esc(state.holder)}</b> is browsing. You are watching.`
+                    : 'You are watching. Take control to click and type.';
+                btn.textContent = mine ? 'Hand back' : 'Take control';
+            }
+            channel.onmessage = (e) => {
+                if (e.data?.kind !== 'state') return;
+                state = { control: e.data.control, holder: e.data.holder || '', ask: e.data.ask || null };
+                render();
+            };
+            btn.addEventListener('click', () => channel.postMessage({ kind: 'control', take: state?.control !== 'owner' }));
+            channel.postMessage({ kind: 'hello' });
+            const allowed = () => !state || state.control === 'owner';
+            return {
+                allowed,
+                /** Everything this page sends the browser for the owner goes
+                 *  through here: dropped, with a nudge, unless they have control. */
+                gate(ws) {
+                    const send = ws.send.bind(ws);
+                    ws.send = (data) => {
+                        if (allowed()) return send(data);
+                        // Moving the pointer over the picture is not an attempt to act.
+                        if (/"mouseMoved"|"getSelectedText"/.test(String(data))) return;
+                        bar.classList.remove('nudge'); void bar.offsetWidth; bar.classList.add('nudge');
+                    };
+                },
+            };
+        })();
+
         const browserViewer = (() => {
             const canvas = document.getElementById('browser-canvas');
             const ctx = canvas.getContext('2d');
@@ -177,6 +253,7 @@
                 // Steel wires its message listener only after several awaits, so wait for
                 // the first frame (proof it's listening) before sending.
                 const tmp = new WebSocket(castUrl(`pageId=${encodeURIComponent(pageId)}`));
+                browserControl.gate(tmp);
                 let sent = false;
                 tmp.onmessage = () => {
                     if (sent) return;
@@ -250,6 +327,7 @@
                 if (castWs) { castWs.onclose = null; castWs.close(); }
                 castFramesLive = false;
                 const ws = new WebSocket(castUrl(`pageId=${encodeURIComponent(pageId)}`));
+                browserControl.gate(ws);
                 castWs = ws;
                 let watchdog = null;
                 ws.onopen = () => {

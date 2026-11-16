@@ -4,9 +4,10 @@
  * could disagree with the modal picker in the model menu ("it seems to work
  * better when I choose the workspace through the model's menu").
  *
- * Decision (Seb, 2026-08-21): keep the workspace visible AND clickable in the
- * top bar, but drive the exact same code path — the header element is now a
- * button into openWorkspacePicker(), and the combo machinery is gone.
+ * Decision (Seb, 2026-08-21): one picker. Since the projects column is the
+ * only layout (SHE-188) a chat's folder is its project: it is chosen when the
+ * chat starts ("New agent" under a project) and changed with "Move to a
+ * project", which keeps the conversation. Both header pickers are gone.
  */
 
 import { test } from "node:test";
@@ -20,16 +21,11 @@ const app = readFileSync(join(root, "public/app.js"), "utf8");
 const html = readFileSync(join(root, "public/index.html"), "utf8");
 const css = readFileSync(join(root, "public/styles.css"), "utf8");
 
-test("the header workspace element opens the one modal picker", () => {
-  const el = html.match(/<button[^>]*id="workspaceSelect"[^>]*>/);
-  assert.ok(el, "header workspace element must be a button, not a free-text input");
-  assert.match(el[0], /openWorkspacePicker\(\)/, "it must open the same picker as the model menu");
-});
-
-test("the second picker's machinery is gone", () => {
+test("both header folder pickers and their machinery are gone", () => {
   for (const relic of [
     "workspaceDropdown", "selectWorkspace", "onWorkspaceInput",
     "showWorkspaceDropdown", "handleDirectoriesList", "_workspaceDropVisible",
+    "openWorkspacePicker", "workspaceSelect", "workspacePicker", "changeWorkspace",
   ]) {
     assert.ok(!app.includes(relic), `app.js must not keep combo relic "${relic}"`);
     assert.ok(!html.includes(relic), `index.html must not keep combo relic "${relic}"`);

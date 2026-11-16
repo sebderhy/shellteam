@@ -18,7 +18,7 @@ process.env.HOME = FAKE_HOME;
 
 const LAYER = join(FAKE_HOME, ".shellteam", "agent-layer");
 
-let agentLaunchEnv, antigravityLayerArgs, claudeLayerArgs, codexHarnessEnv, codexLayerArgs, codexSecretEnv, harnessPromptPath, opencodeConfigPath, ownMemoryEnv, terminalSpawn;
+let agentLaunchEnv, antigravityLayerArgs, claudeLayerArgs, codexHarnessEnv, codexLayerArgs, codexSecretEnv, harnessPromptPath, piLayer, ownMemoryEnv, terminalSpawn;
 
 before(async () => {
   ({
@@ -28,7 +28,7 @@ before(async () => {
     codexLayerArgs,
     codexSecretEnv,
     harnessPromptPath,
-    opencodeConfigPath,
+    piLayer,
     ownMemoryEnv,
   } = await import("../lib/agent-layer.mjs"));
   ({ agentLaunchEnv, terminalSpawn } = await import("../lib/agents/registry.mjs"));
@@ -46,8 +46,8 @@ test("missing layer: codex gets NO -c overrides", () => {
   assert.deepEqual(codexLayerArgs(), []);
 });
 
-test("missing layer: opencode gets no OPENCODE_CONFIG override", () => {
-  assert.equal(opencodeConfigPath(), null);
+test("missing layer: Pi gets no layer flags", () => {
+  assert.deepEqual(piLayer(), { args: [], env: {} });
 });
 
 test("missing layer: Antigravity gets no session plugin and Codex keeps its original HOME", () => {
@@ -105,9 +105,12 @@ test("codex overrides add the OpenAI provider exactly when the spawn env carries
   rmSync(join(FAKE_HOME, ".config", "shellteam", "openai-api-key"));
 });
 
-test("built layer: opencode config path is returned once the file exists", () => {
-  writeFileSync(join(LAYER, "opencode.json"), "{}");
-  assert.equal(opencodeConfigPath(), join(LAYER, "opencode.json"));
+test("built layer: Pi loads ShellTeam's extension once it exists", () => {
+  mkdirSync(join(LAYER, "pi"), { recursive: true });
+  writeFileSync(join(LAYER, "pi", "shellteam.ts"), "// extension");
+  writeFileSync(join(LAYER, "pi", "layer.json"), JSON.stringify({ provider: {}, mcpServers: {} }));
+  assert.deepEqual(piLayer().args.slice(0, 2), ["-e", join(LAYER, "pi", "shellteam.ts")]);
+  assert.equal(piLayer().env.SHELLTEAM_PI_LAYER, join(LAYER, "pi", "layer.json"));
 });
 
 // --- Purity-gate manifest (layer.json) ---
@@ -120,13 +123,15 @@ test("core manifest: nothing loads even though artifact files exist on disk", ()
     artifacts: {
       claude_plugin: false, claude_mcp: false, claude_system_prompt: false,
       codex_overrides: false, codex_session_home: false, harness_skills: false,
-      antigravity_plugin: false, opencode_config: true,
+      antigravity_plugin: false, pi_layer: true,
     },
   }));
   assert.deepEqual(claudeLayerArgs(), []);
   assert.deepEqual(codexLayerArgs(), []);
-  // OpenCode keeps its provider-only config (credential plumbing, documented).
-  assert.equal(opencodeConfigPath(), join(LAYER, "opencode.json"));
+  // Pi keeps its provider-only layer (credential plumbing, documented): the
+  // extension and nothing else, no prompt, no skills.
+  assert.deepEqual(piLayer().args, ["-e", join(LAYER, "pi", "shellteam.ts")]);
+  assert.equal(piLayer().env.SHELLTEAM_PI_LAYER, join(LAYER, "pi", "layer.json"));
 });
 
 test("full manifest: everything loads again", () => {
@@ -137,7 +142,7 @@ test("full manifest: everything loads again", () => {
     artifacts: {
       claude_plugin: true, claude_mcp: true, claude_system_prompt: true,
       codex_overrides: true, codex_session_home: true, harness_skills: true,
-      antigravity_plugin: true, opencode_config: true,
+      antigravity_plugin: true, pi_layer: true,
     },
   }));
   assert.deepEqual(claudeLayerArgs(), [
@@ -179,12 +184,13 @@ function linearLayer(manifestExtra) {
   mkdirSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam"), { recursive: true });
   writeFileSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam", "mcp_config.json"),
     JSON.stringify({ mcpServers: {} }));
-  writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({ mcp: {} }));
+  mkdirSync(join(LAYER, "pi"), { recursive: true });
+  writeFileSync(join(LAYER, "pi", "layer.json"), JSON.stringify({ provider: {}, mcpServers: {} }));
   writeFileSync(join(LAYER, "layer.json"), JSON.stringify({
     modules: ["linear"],
     artifacts: {
       claude_plugin: false, claude_mcp: true, claude_system_prompt: false, codex_overrides: true,
-      codex_session_home: false, harness_skills: false, antigravity_plugin: true, opencode_config: true,
+      codex_session_home: false, harness_skills: false, antigravity_plugin: true, pi_layer: true,
     },
     ...manifestExtra,
   }));
@@ -195,12 +201,13 @@ function linearLayer(manifestExtra) {
 function linearServersFor(cwd) {
   const claudeArgs = claudeLayerArgs(cwd);
   const claude = JSON.parse(readFileSync(claudeArgs[claudeArgs.indexOf("--mcp-config") + 1], "utf8"));
-  const oc = JSON.parse(readFileSync(opencodeConfigPath(cwd), "utf8"));
+  const piJson = piLayer(cwd).env.SHELLTEAM_PI_LAYER;
+  const pi = JSON.parse(readFileSync(piJson, "utf8"));
   const agArgs = antigravityLayerArgs(cwd);
   const ag = JSON.parse(readFileSync(join(agArgs[1], ".agents", "plugins", "shellteam", "mcp_config.json"), "utf8"));
-  const written = [claudeArgs[claudeArgs.indexOf("--mcp-config") + 1], opencodeConfigPath(cwd),
+  const written = [claudeArgs[claudeArgs.indexOf("--mcp-config") + 1], piJson,
     join(agArgs[1], ".agents", "plugins", "shellteam", "mcp_config.json")].map((p) => readFileSync(p, "utf8"));
-  return { claude: claude.mcpServers.linear, oc: oc.mcp.linear, ag: ag.mcpServers.linear,
+  return { claude: claude.mcpServers.linear, pi: pi.mcpServers.linear, ag: ag.mcpServers.linear,
     codexArgs: codexLayerArgs(cwd), codexEnv: codexSecretEnv(cwd), written, context7: claude.mcpServers.context7 };
 }
 
@@ -211,7 +218,7 @@ test("linear MCP follows the active project, through the relay: no key in any fi
   assert.equal(s.claude.url, url);
   assert.equal(s.claude.headers.Authorization, RELAY.authorization);
   assert.equal(s.context7.command, "context7-mcp");
-  assert.equal(s.oc.url, url);
+  assert.equal(s.pi.url, url);
   assert.equal(s.ag.serverUrl, url);
   assert.ok(s.codexArgs.includes(`mcp_servers.linear.url=${JSON.stringify(url)}`));
   // The relay token travels in Codex's environment, never in argv (SHE-165).
@@ -259,7 +266,7 @@ test("manifest/disk mismatch: promised-but-missing artifact is skipped loudly, n
     artifacts: {
       claude_plugin: true, claude_mcp: false, claude_system_prompt: true,
       codex_overrides: false, codex_session_home: false, harness_skills: false,
-      antigravity_plugin: false, opencode_config: true,
+      antigravity_plugin: false, pi_layer: true,
     },
   }));
   rmSync(join(LAYER, "system-prompt.md"));
@@ -277,7 +284,7 @@ function writeManifest(modules, artifacts = {}) {
     artifacts: {
       claude_plugin: false, claude_mcp: false, claude_system_prompt: false,
       codex_overrides: false, codex_session_home: false, harness_skills: false,
-      antigravity_plugin: false, opencode_config: true, ...artifacts,
+      antigravity_plugin: false, pi_layer: true, ...artifacts,
     },
   }));
 }
@@ -475,7 +482,6 @@ test("knowledge tree: all four agents receive the same launch text", () => {
   mkdirSync(join(LAYER, "codex"), { recursive: true });
   writeFileSync(join(LAYER, "codex", "overrides.json"), "[]");
   mkdirSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam"), { recursive: true });
-  writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({ instructions: [] }));
   seedTree();
   const cwd = join(FAKE_HOME, "acmeproj");
   const shared = launchText(cwd);
@@ -487,8 +493,8 @@ test("knowledge tree: all four agents receive the same launch text", () => {
   assert.equal(JSON.parse(codex.slice("developer_instructions=".length)), shared);
   const antigravity = antigravityLayerArgs(cwd);
   assert.equal(readFileSync(join(antigravity[1], ".agents", "plugins", "shellteam", "rules", "shellteam.md"), "utf8"), shared);
-  const opencode = JSON.parse(readFileSync(opencodeConfigPath(cwd), "utf8"));
-  assert.ok(opencode.instructions.some((p) => readFileSync(p, "utf8") === shared));
+  const pi = piLayer(cwd).args;
+  assert.equal(readFileSync(pi[pi.indexOf("--append-system-prompt") + 1], "utf8"), shared);
 });
 
 test("knowledge tree: an exam run on another tree never writes the file live chats read", () => {
@@ -530,7 +536,6 @@ test("knowledge tree: module off means no memory, whatever is on disk", () => {
 test("dreaming ON without persona: all four agents receive the same memory-only prompt", () => {
   const cwd = join(FAKE_HOME, "acmeproj");
   mkdirSync(join(LAYER, "antigravity-workspace", ".agents", "plugins", "shellteam"), { recursive: true });
-  writeFileSync(join(LAYER, "opencode.json"), JSON.stringify({ provider: { fireworks: {} } }));
   writeManifest(["dreaming"], { antigravity_plugin: true });
   seedTree();
 
@@ -541,8 +546,8 @@ test("dreaming ON without persona: all four agents receive the same memory-only 
   assert.equal(promptFileOf(claudeLayerArgs(cwd)), sharedPath);
   const codexDeveloper = codexLayerArgs(cwd).find((value) => String(value).startsWith("developer_instructions="));
   assert.equal(JSON.parse(codexDeveloper.slice("developer_instructions=".length)), shared);
-  const oc = JSON.parse(readFileSync(opencodeConfigPath(cwd), "utf8"));
-  assert.deepEqual(oc.instructions, [sharedPath]);
+  const pi = piLayer(cwd).args;
+  assert.equal(pi[pi.indexOf("--append-system-prompt") + 1], sharedPath);
   const agArgs = antigravityLayerArgs(cwd);
   assert.equal(readFileSync(join(agArgs[1], ".agents", "plugins", "shellteam", "rules", "shellteam.md"), "utf8"), shared);
 });
@@ -552,20 +557,15 @@ test("pure core: dreaming absent → no knowledge, no flags beyond core", () => 
   assert.deepEqual(claudeLayerArgs(join(FAKE_HOME, "acmeproj")), []);
 });
 
-test("opencode: dreaming ON adds the composed memory file to instructions", () => {
-  writeFileSync(join(LAYER, "opencode.json"),
-    JSON.stringify({ instructions: ["~/.claude/CLAUDE.md"] }));
+test("Pi: dreaming ON appends the composed memory file, dreaming OFF adds no prompt", () => {
   writeManifest(["dreaming"]);
   seedTree();
-  const cfg = JSON.parse(readFileSync(opencodeConfigPath(join(FAKE_HOME, "acmeproj")), "utf8"));
-  assert.equal(cfg.instructions.length, 2);
-  assert.match(cfg.instructions[1], /runtime\/harness-prompt-tree-acmeproj-[0-9a-f]{6}\.md$/);
-  assert.ok(readFileSync(cfg.instructions[1], "utf8").includes("ACME-CARD"));
-});
-
-test("opencode: dreaming OFF returns exactly the static config path", () => {
+  const on = piLayer(join(FAKE_HOME, "acmeproj")).args;
+  const prompt = on[on.indexOf("--append-system-prompt") + 1];
+  assert.match(prompt, /runtime\/harness-prompt-tree-acmeproj-[0-9a-f]{6}\.md$/);
+  assert.ok(readFileSync(prompt, "utf8").includes("ACME-CARD"));
   writeManifest([]);
-  assert.equal(opencodeConfigPath(join(FAKE_HOME, "acmeproj")), join(LAYER, "opencode.json"));
+  assert.ok(!piLayer(join(FAKE_HOME, "acmeproj")).args.includes("--append-system-prompt"));
 });
 
 test("dreaming ON: trailing-slash cwds resolve like their normalized form (no crash)", () => {
@@ -587,8 +587,8 @@ test("dreaming ON: levels whose names collide after slugging get distinct runtim
   assert.ok(!readFileSync(upperPath, "utf8").includes("lower fact"));
 });
 
-test("opencode: corrupt static opencode.json degrades loudly to the static path, not a spawn crash", () => {
-  writeFileSync(join(LAYER, "opencode.json"), "{ this is not json");
-  writeManifest(["dreaming"]);
-  assert.equal(opencodeConfigPath(join(FAKE_HOME, "acmeproj")), join(LAYER, "opencode.json"));
+test("Pi: a corrupt layer.json degrades loudly to the static path, not a spawn crash", () => {
+  linearLayer({ mcp_relay: RELAY });
+  writeFileSync(join(LAYER, "pi", "layer.json"), "{ this is not json");
+  assert.equal(piLayer(join(FAKE_HOME, "acmeproj")).env.SHELLTEAM_PI_LAYER, join(LAYER, "pi", "layer.json"));
 });

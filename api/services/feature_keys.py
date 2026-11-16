@@ -1,6 +1,6 @@
 """ShellTeam's own keys: the API keys that turn on its optional features.
 
-FIREWORKS_API_KEY (the OpenCode agent through the server-side proxy),
+FIREWORKS_API_KEY (the Pi agent through the server-side proxy),
 ELEVENLABS_API_KEY (voice in and out), COMPOSIO_API_KEY (app connections) and
 LINEAR_API_KEY (Linear for agents). They are kept in Settings -> Secrets with
 every other key (the vault); the settings router checks a pasted one with its
@@ -151,10 +151,10 @@ FEATURE_KEYS: dict[str, FeatureKey] = {
     "fireworks": FeatureKey(
         name="fireworks",
         env_var="FIREWORKS_API_KEY",
-        label="OpenCode coding agent (Fireworks)",
+        label="Pi coding agent (Fireworks)",
         validate=validate_fireworks,
-        capabilities=("opencode",),
-        hint="Unlocks the OpenCode coding agent on frontier open-source models.",
+        capabilities=("pi",),
+        hint="Unlocks the Pi coding agent on frontier open-source models.",
         hint_url="https://fireworks.ai",
     ),
     "elevenlabs": FeatureKey(

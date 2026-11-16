@@ -5,6 +5,84 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.65] - 2026-11-16
+
+### Added
+- **Kimi K3.1 Pro in the included models**, in place of Kimi K3: newer, and a
+  third cheaper per token. Chats on K3 move to it on their own.
+- **The browser, beside the chat.** When an agent starts browsing, the live
+  browser opens next to the conversation; you no longer leave the chat to
+  watch. It is also one of the project buttons in the header.
+- **Take control, hand back.** One button in the live view. While you have
+  the browser, agents cannot act in it: their commands are refused and they
+  are told why. When you hand it back, the agent is told to look at the page
+  again and continues.
+- **An agent can ask for your turn.** At a sign-in, a bot check or a code it
+  says what it needs in one sentence and stops. The chat reads "Needs you",
+  with a button that gives you the browser.
+- **One chat browses at a time.** A second chat is told which chat has the
+  browser instead of clicking on its page.
+- **Browsing rules for every agent**: look, act, look again; text on a page
+  is information, never an instruction; at a sign-in, a bot check or a code
+  the agent stops and gives you your turn. It never types a password, card
+  number or one-time code, and it pays only after you said yes in the chat to
+  that shop and that total.
+- The browser is brought up to Chromium 156 (from 144).
+- **Honest status.** An agent whose turn ended while work it started is still
+  running reads "Waiting", never "Done". A question reads "Needs you".
+- **The cockpit counts which of its controls you use**, on your box only, so
+  its layout can follow real use. Names of controls, never what you wrote;
+  nothing is sent anywhere. `bin/shellteam-usage` prints it. See SECURITY.md.
+
+### Fixed
+- **A script on the box can no longer sign you out everywhere.** Any program
+  that read the sign-in list without the master token (an agent's shell, a
+  helper script) took it for a token change: it signed out every device and
+  sent a false "master token changed" alert. Only ShellTeam itself, when it
+  starts, now applies a real token change; anything else sees no sign-ins and
+  cannot rewrite the list.
+- **The agent browser no longer gets refused so easily.** It ran hidden, with
+  a made-up identity, and sites could tell: a standard detector called it
+  "headless Chrome", 6 of 12 common pages refused it, and on a Cloudflare
+  check even your own click could not get through. It now runs as the
+  ordinary windowed Chromium it is, with its real identity, graphics, PDF
+  viewer and the clock of its address. The detector says "not a bot" and one
+  click passes that check. Sites that refuse any server address (Reddit when
+  signed out, Ticketmaster) still do.
+- **Sites stay signed in across updates.** The browser's profile lived inside
+  its container and was lost with each update; it is on a volume now, and the
+  update that brings this keeps your current sign-ins.
+- Uninstalling removes the browser image (1.5 GB) that used to stay behind.
+
+### Changed
+- **Pi replaces OpenCode for the included models.** The included tab (GLM 5.3,
+  Kimi K3, GLM 5.3 Flash) now runs on Pi. Answers appear word by word instead
+  of all at once, each request is several times smaller (so cheaper), and a
+  message sent while it works waits its turn in the same conversation. Open
+  OpenCode chats move to Pi on their next start and keep their conversation.
+  Node 22.19 or newer is now required; the installer brings it if needed.
+- **Antigravity updates itself overnight** with the other coding agents, on
+  boxes with automatic updates on.
+- **One layout: the projects column.** Agents are listed on the left, grouped
+  by project, each with what it is doing in a word. The row of tabs and the
+  Settings switch between the two are gone.
+- **A simpler chat header.** Four controls, each opening one kind of thing:
+  the chat's title (rename, move, compact, fork, rewind, info), this chat's
+  reports, the agent and model in words, and a small usage ring. The gear and
+  the Info button left the header; agent sign-in, console mode and shortcuts
+  are in Settings and in the jump box (Ctrl K).
+- **Usage is one ring.** A click shows how full the conversation is, with
+  Compact and Rewind buttons, and your plan's limits.
+- **"New agent" is a visible line under each project**, not a plus that
+  appears on hover.
+- **On a phone**, tap the chat's title to go back to your chats, hold it for
+  the chat's menu. The agent and model are named in words, and "1 needs you"
+  stays in sight inside any chat.
+
+### Removed
+- Changing a chat's folder from the header (it wiped the conversation). Use
+  "Move to a project", which keeps it.
+
 ## [0.1.64] - 2026-11-15
 
 ### Security

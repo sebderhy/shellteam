@@ -8,30 +8,26 @@
  *  - returns { nativeSessionId, file, synthesized, toolCalls }.
  *
  * The native shapes here are the exact ones proven resumable on this box on
- * 2026-07-02 (Claude 2.1.197, Codex 0.142.4, Gemini 0.49.0, OpenCode 1.17.12) —
- * no checksums or crypto validation exist in any of them.
+ * 2026-07-02 (Claude 2.1.197, Codex 0.142.4, Gemini 0.49.0) and 2026-11-16 (Pi
+ * 1.5.2): no checksums or crypto validation exist in any of them.
  */
 
-import { writeFileSync, mkdirSync, mkdtempSync, existsSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { join } from "node:path";
 import { HOME } from "../constants.mjs";
-import { opencodeDefaultModel } from "../model-catalog.mjs";
+import { piDefaultModel, piModel } from "../model-catalog.mjs";
+import { newPiSessionId } from "../pi-agent.mjs";
 import {
   uuid4,
   uuid7,
-  opencodeId,
   encodeCwd,
   pairCheck,
   capToolResults,
   sanitizeCodexToolName,
 } from "./csf.mjs";
 
-const execFileP = promisify(execFile);
-
-const EXPORTERS = { claude: exportToClaude, codex: exportToCodex, opencode: exportToOpenCode };
+const EXPORTERS = { claude: exportToClaude, codex: exportToCodex, pi: exportToPi };
 
 /** Dispatch to the right exporter by target family. */
 export async function exportSession(family, csf, opts = {}) {
@@ -168,102 +164,76 @@ function exportToCodex(csf, { cliVersion = "0.142.4", root = HOME } = {}) {
   return { nativeSessionId: sid, file, synthesized, toolCalls };
 }
 
-// --- OpenCode → export-shaped JSON, then `opencode import` ---
+// --- Pi → ~/.pi/agent/sessions/--<cwd>--/<stamp>_<id>.jsonl ---
+//
+// The session format is Pi's docs/session-format.md (version 3): a header
+// line, then entries chained by id/parentId. No system message is written: Pi
+// declares its prompt and tools on the next request, as for a session that
+// predates system messages. The cockpit then opens it with --session-id.
 
-// The fallback tracks the catalog's OpenCode default rather than naming a model
-// here: a hardcoded id goes stale the day the default moves, and every message
-// in the synthesized session would be stamped with a model the user didn't pick.
-async function exportToOpenCode(csf, { model = opencodeDefaultModel() } = {}) {
+// Pi's built-in tools, by the names the other agents use, so the history shows
+// the tools this model actually has. Any other name (MCP tools) is kept.
+const PI_TOOL_NAMES = { Bash: "bash", Read: "read", Edit: "edit", Write: "write" };
+
+/** Pi's session folder for a cwd: leading separator dropped, then / \ : become -. */
+export function piSessionDir(cwd, root = HOME) {
+  const slug = cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-");
+  return join(root, ".pi", "agent", "sessions", `--${slug}--`);
+}
+
+function exportToPi(csf, { model = piDefaultModel(), root = HOME } = {}) {
   const { events, synthesized, toolCalls } = prepare(csf);
-  const cwd = csf.session.cwd;
-  let seq = 0;
-  const sesId = opencodeId("ses", seq++);
-  const now = Date.now();
+  const upstream = piModel(model)?.upstream;
+  if (!upstream) throw new Error(`Model "${model}" is not one of Pi's models in config/models.json`);
+  const sid = newPiSessionId();
+  const now = new Date();
+  const dir = piSessionDir(csf.session.cwd, root);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${now.toISOString().replace(/[:.]/g, "-")}_${sid}.jsonl`);
 
-  // Tool calls become real OpenCode tool parts, each carrying its result. They
-  // used to be flattened into assistant text ("[called Write({...})]") and the
-  // model copied that format: GLM 5.3 "called" TodoWrite and Write by typing
-  // them out, and no file was written (SHE-118).
-  const results = new Map();
-  for (const ev of events) if (ev.type === "tool_result") results.set(ev.callId, ev);
-
-  const messages = [];
-  let parentId = null; // OpenCode requires each message to chain to the prior one
-  const add = (role, parts) => {
-    const msg = ocMessage(role, sesId, seq++, model, parts, parentId);
-    parentId = msg.info.id;
-    messages.push(msg);
+  const lines = [JSON.stringify({ type: "session", version: 3, id: sid, timestamp: now.toISOString(), cwd: csf.session.cwd })];
+  let parentId = null;
+  const entry = (fields) => {
+    const id = randomBytes(4).toString("hex");
+    lines.push(JSON.stringify({ id, parentId, timestamp: now.toISOString(), ...fields }));
+    parentId = id;
   };
+  const message = (msg) => entry({ type: "message", message: { ...msg, timestamp: now.getTime() } });
+  entry({ type: "model_change", provider: "shellteam", modelId: upstream });
+
+  const names = new Map();  // call id -> the tool name written, for its result
   for (const ev of events) {
-    if (ev.type === "tool_result") continue; // attached to its call below
     if (ev.type === "compaction") {
-      add("user", [{ type: "text", text: `[Conversation compacted earlier; summary:] ${ev.summary || ""}` }]);
+      message({ role: "user", content: [{ type: "text", text: `[Conversation compacted earlier; summary:] ${ev.summary || ""}` }] });
+    } else if (ev.type === "tool_result") {
+      message({
+        role: "toolResult", toolCallId: ev.callId, toolName: names.get(ev.callId) || "tool",
+        content: [{ type: "text", text: ev.output }], isError: !!ev.isError,
+      });
     } else if (ev.role === "user") {
-      add("user", [{ type: "text", text: userText(ev) }]);
+      message({ role: "user", content: [{ type: "text", text: userText(ev) }] });
     } else {
-      const parts = [];
+      const content = [];
       for (const p of ev.parts || []) {
-        if (p.type === "text" && p.text) parts.push({ type: "text", text: p.text });
-        else if (p.type === "tool_call") parts.push(opencodeToolPart(p, results.get(p.id)));
+        if (p.type === "text" && p.text) content.push({ type: "text", text: p.text });
+        else if (p.type === "tool_call") {
+          const name = PI_TOOL_NAMES[p.name] || p.name;
+          names.set(p.id, name);
+          content.push({ type: "toolCall", id: p.id, name, arguments: p.input || {} });
+        }
       }
-      if (parts.length) add("assistant", parts);
+      if (!content.length) continue;
+      message({
+        role: "assistant", content, api: "openai-completions", provider: "shellteam", model: upstream,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: content.some((c) => c.type === "toolCall") ? "toolUse" : "stop",
+      });
     }
   }
 
-  const doc = {
-    info: {
-      id: sesId, slug: "portable-handoff", projectID: "global", directory: cwd, path: "",
-      title: csf.session.title, agent: "build",
-      model: { id: model, providerID: "fireworks", variant: "default" },
-      version: "1.17.12", time: { created: now, updated: now },
-    },
-    messages,
-  };
-
-  // The whole conversation: a private directory, never a guessable name in /tmp.
-  const tmpfile = join(mkdtempSync(join(tmpdir(), "portable-oc-")), `${sesId}.json`);
-  writeFileSync(tmpfile, JSON.stringify(doc), { mode: 0o600 });
-  try {
-    const { stdout, stderr } = await execFileP("opencode", ["import", tmpfile], { cwd });
-    // opencode import may mint its own session id; prefer any ses_ it reports.
-    const reported = `${stdout}\n${stderr}`.match(/ses_[A-Za-z0-9]+/);
-    const nativeSessionId = reported ? reported[0] : sesId;
-    return { nativeSessionId, file: tmpfile, synthesized, toolCalls };
-  } finally {
-    // `opencode import` copies the doc into its own store — the temp is spent.
-    rmSync(dirname(tmpfile), { recursive: true, force: true });
-  }
-}
-
-function ocMessage(role, sesId, seq, model, parts, parentId = null) {
-  const msgId = opencodeId("msg", seq);
-  const info = role === "user"
-    ? { id: msgId, sessionID: sesId, role: "user", time: { created: Date.now() }, agent: "build", model: { providerID: "fireworks", modelID: model } }
-    : { id: msgId, sessionID: sesId, role: "assistant", mode: "build", agent: "build", path: { cwd: "", root: "" }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, modelID: model, providerID: "fireworks", time: { created: Date.now(), completed: Date.now() }, finish: "stop" };
-  if (parentId) info.parentID = parentId;
-  return {
-    info,
-    parts: parts.map((p) => ({ id: opencodeId("prt", seq), sessionID: sesId, messageID: msgId, ...p })),
-  };
-}
-
-// The other agents' names for OpenCode's built-in tools (the inverse of
-// opencode-agent.mjs TOOL_NAME_MAP), so the history shows the tools this model
-// actually has. Any other name (MCP tools, agent-specific ones) is kept.
-const OPENCODE_TOOL_NAMES = {
-  Bash: "bash", Edit: "edit", Read: "read", Write: "write", Grep: "grep", Glob: "glob",
-  WebFetch: "webfetch", WebSearch: "websearch", Task: "task", TodoWrite: "todowrite", Skill: "skill",
-};
-
-function opencodeToolPart(call, result) {
-  const now = Date.now();
-  const input = call.input || {};
-  const output = result?.output ?? "";
-  const tool = OPENCODE_TOOL_NAMES[call.name] || call.name;
-  const state = result?.isError
-    ? { status: "error", input, error: output, time: { start: now, end: now } }
-    : { status: "completed", input, output, title: tool, metadata: {}, time: { start: now, end: now } };
-  return { type: "tool", tool, callID: call.id, state };
+  writeFileSync(file, lines.join("\n") + "\n", { mode: 0o600 });
+  return { nativeSessionId: sid, file, synthesized, toolCalls };
 }
 
 // --- shared text helpers ---

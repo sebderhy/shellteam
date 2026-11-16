@@ -291,8 +291,12 @@ def test_docker_group_is_the_browser_modules_consent_not_bootstraps():
     assert "usermod" not in fn and "docker" not in fn
     browser = text.split("provision_browser() {")[1].split("\nif [ \"$WITH_BROWSER\"")[0]
     assert "ensure_docker_group" in browser
-    for verb in ("pull", "rm -f", "run -d", "logs --tail"):
+    for verb in ("pull", "rm -f", "logs --tail"):
         assert f"dk {verb}" in browser, f"docker {verb} must go through dk"
+    # The container itself starts through the one launch script, with the
+    # same sudo fallback handed to it.
+    assert 'id -nG | grep -qw docker || docker_cmd="sudo docker"' in browser
+    assert 'DOCKER="$docker_cmd" "$STEEL_RUN"' in browser
     assert "\n    docker " not in browser and "! docker " not in browser
     assert 'sudo usermod -aG docker "$(id -un)"' in text
 
@@ -325,7 +329,7 @@ def test_installer_leaves_existing_clis_untouched_and_installs_latest():
     for package in (
         "@anthropic-ai/claude-code",
         "@openai/codex",
-        "opencode-ai",
+        "@earendil-works/pi-coding-agent",
         "@upstash/context7-mcp",
     ):
         assert f'"{package}"' in text, f"{package} must be installed"
@@ -347,9 +351,11 @@ def test_installer_is_additive_to_shell_profiles():
 
 def test_browser_module_is_pinned_and_probes_a_real_session():
     text = (REPO / "install.sh").read_text()
-    # Tag+digest form: the digest pins, the tag documents where it came from.
-    assert "ghcr.io/steel-dev/steel-browser:latest@sha256:" in text
-    assert "--shm-size=1g" in text
+    # The pin and every launch setting live in the one launch script
+    # (tests/test_browser_launch.py); the installer only calls it.
+    assert 'STEEL_IMAGE="$("$STEEL_RUN" --image)"' in text
+    assert '"$STEEL_RUN" --name "$STEEL_CONTAINER" --network "$STEEL_NETWORK"' in text
+    assert "ghcr.io/steel-dev/steel-browser" not in text, "one place names the image"
     # The session probe targets the configurable STEEL_PORT (default 3877 —
     # deliberately off :3000, which belongs to the user's own dev servers).
     assert 'http://127.0.0.1:$STEEL_PORT/v1/sessions' in text

@@ -1,11 +1,11 @@
-// Pins for the grouped header controls (AI / Info / System menus).
+// Pins for the chat header (docs/plans/active/cockpit-map/prd.md).
 //
-// The mobile redesign replaced the 7 inline desktop buttons + flat kebab with
-// three grouped menus present at every width, and replaced the inline
-// <select id="modelSelect"> with a modal model picker. These tests pin the
-// wiring so a refactor can't silently resurrect the old dual-surface layout
-// or leave a dangling modelSelect reference (every one of those would be a
-// runtime TypeError on load).
+// The header holds four controls, each opening one kind of thing: the chat's
+// title (the chat menu), this chat's reports, the agent and model (the model
+// list and nothing else), and the usage ring. The model button used to hold
+// eight unrelated things, next to an Info button and a gear; these tests pin
+// the map so a refactor can't put them back, or leave a dangling reference to
+// a removed element (every one of those would be a runtime TypeError on load).
 //
 // Run: node --test 'computer/ai-chat/test/*.test.mjs'
 import { test } from "node:test";
@@ -18,6 +18,7 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)),
 const html = read("../public/index.html");
 const appSrc = read("../public/app.js");
 const dropdownSrc = read("../public/dropdown.js");
+const projectsSrc = read("../public/projects.js");
 const editorSrc = read("../../file-editor.html");
 
 function loadPathLinkHarness() {
@@ -46,13 +47,31 @@ function loadPathLinkHarness() {
   return context;
 }
 
-test("index.html carries the three grouped header menus", () => {
-  for (const id of ["aiMenu", "infoPanel", "sysMenu", "actionsBackdrop"]) {
-    assert.match(html, new RegExp(`id="${id}"`), `#${id} must exist in the header`);
+test("the header holds four controls, each opening one kind of thing (U4)", () => {
+  for (const id of ["pjTitle", "chatMenu", "btnAI", "quotaMeter", "quotaPanel", "infoPanel", "actionsBackdrop", "modelPicker"]) {
+    assert.match(html, new RegExp(`id="${id}"`), `#${id} must exist`);
   }
-  // Second-level pickers behind the AI menu
-  for (const id of ["modelPicker", "workspacePicker"]) {
-    assert.match(html, new RegExp(`id="${id}"`), `#${id} modal must exist`);
+  // The model button opens the model list directly: no menu in between.
+  assert.match(html, /id="btnAI"[^>]*onclick="openModelPicker\(\)"/);
+  // Gone from the header: the 8-item AI menu, the Info button, the gear, the
+  // help button, the folder switcher. Their actions live in the chat menu,
+  // the jump box and Settings.
+  for (const id of ["aiMenu", "btnInfo", "btnSys", "sysMenu", "btnHelp", "workspaceCombo", "workspacePicker", "contextMeter"]) {
+    assert.ok(!html.includes(`id="${id}"`), `#${id} must be gone from the header`);
+    assert.ok(!appSrc.includes(`getElementById('${id}')`), `app.js must not reference the removed #${id}`);
+  }
+});
+
+test("nothing is lost (U8): what left the header is in the chat menu, the jump box and Settings", () => {
+  const rows = projectsSrc.match(/\n    function chatMenuRows\(\) \{[\s\S]*?\n    \}\n/)[0];
+  for (const run of ["beginRenameOn", "openMoveDialog", "setTabUnread", "openModelPicker", "compactSession", "forkSession",
+                     "rewindSession", "newSession", "showSessionPicker", "closeSessionTab", "Menus.toggle('reportsMenu')",
+                     "togglePanel", "Menus.toggle('infoPanel')"]) {
+    assert.ok(rows.includes(run), `the chat menu must offer ${run}`);
+  }
+  const jump = projectsSrc.match(/\n    function jumpItems\(\) \{[\s\S]*?\n    \}\n/)[0];
+  for (const run of ["openAIConfig", "TerminalMode.toggle()", "showShortcutsHelp"]) {
+    assert.ok(jump.includes(run), `the jump box must offer ${run}`);
   }
 });
 
@@ -62,14 +81,14 @@ test("the old inline model <select> is gone — no dangling references", () => {
     "app.js must not reference the removed #modelSelect (would TypeError at runtime)");
 });
 
-test("app.js defines the menu renderers dropdown.js dispatches to", () => {
-  for (const fn of ["renderInfoPanel", "renderAIMenuValues", "openModelPicker",
-                    "openWorkspacePicker", "setModelDisplay", "updateInfoWarning"]) {
+test("the menu renderers dropdown.js dispatches to are defined", () => {
+  for (const fn of ["renderInfoPanel", "renderQuotaPanel", "renderReportsMenu", "openModelPicker", "setModelDisplay", "updateInfoWarning"]) {
     assert.match(appSrc, new RegExp(`function ${fn}\\(`), `${fn}() must be defined`);
   }
-  for (const hook of ["renderInfoPanel", "renderAIMenuValues"]) {
+  for (const hook of ["renderInfoPanel", "renderQuotaPanel", "renderReportsMenu", "renderChatMenu"]) {
     assert.ok(dropdownSrc.includes(hook), `Menus.toggle must render ${hook} on open`);
   }
+  assert.match(projectsSrc, /function renderChatMenu\(\)/);
 });
 
 test("ActionsMenu compat shim survives (session actions call ActionsMenu.hide())", () => {
@@ -91,10 +110,7 @@ test("inline-handler args go through jsArg, not bare escHtml", () => {
   // workspace path like ~/it's-mine would terminate the JS string. jsArg
   // JS-escapes first, then HTML-escapes.
   assert.match(appSrc, /function jsArg\(/, "jsArg() must be defined");
-  // (selectWorkspace left this list with the header combo — the top bar now
-  // opens the same modal picker as the model menu, SHE-100.)
-  for (const site of ["pickModel('${jsArg(", "pickWorkspace('${jsArg(",
-                      "resumeSession('${jsArg("]) {
+  for (const site of ["pickModel('${jsArg(", "resumeSession('${jsArg("]) {
     assert.ok(appSrc.includes(site), `${site}…)')" must use jsArg`);
   }
   // No inline handler may interpolate into a JS string without it.
@@ -117,27 +133,25 @@ test("editor deep links normalize native absolute home paths", () => {
     "the editor must strip /home/<user>/, not only /home/user/");
 });
 
-test("aiMenu items carry unique mnemonic keys that match their underlined letter", () => {
-  // Each AI-menu row has a data-key; pressing that letter while the menu is open
-  // activates the row (dropdown.js). The letter must also be the one underlined
-  // in the label (<span class="actions-mn">X</span>) so the hint matches the key,
-  // and no two rows may share a key.
-  const menu = html.match(/id="aiMenu"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/);
-  assert.ok(menu, "aiMenu block must be found");
-  const items = menu[0].match(/<button class="actions-item"[^>]*data-key="[^"]*"[\s\S]*?<\/button>/g) || [];
-  assert.ok(items.length >= 7, `expected >=7 keyed items, got ${items.length}`);
+test("chat menu rows carry unique mnemonic keys that are a letter of their label", () => {
+  // Each row has a key; pressing that letter while the menu is open (also
+  // after "/") runs the row (dropdown.js). The letter is underlined in the
+  // label by renderChatMenu, so it must be in it, and no two rows share one.
+  const rows = [...projectsSrc.matchAll(/row\('([a-z.-]+)', '([a-z]?)', '[a-z]+', ([^,]+),/g)];
+  assert.ok(rows.length >= 12, `expected >=12 rows, got ${rows.length}`);
   const seen = new Set();
-  for (const item of items) {
-    const key = item.match(/data-key="([a-z])"/)?.[1];
-    const mn = item.match(/class="actions-mn">([A-Za-z])</)?.[1];
-    assert.ok(key, `item missing data-key: ${item.slice(0, 60)}`);
-    assert.ok(mn, `item ${key} missing an .actions-mn underline`);
-    assert.equal(mn.toLowerCase(), key, `mnemonic "${mn}" must match data-key "${key}"`);
-    assert.ok(!seen.has(key), `duplicate mnemonic key "${key}"`);
+  for (const [, use, key, label] of rows) {
+    if (!key) continue;
+    assert.ok(!seen.has(key), `duplicate mnemonic key "${key}" (${use})`);
     seen.add(key);
+    // A label that is a plain string must contain its key; computed labels
+    // ("Mark as read/unread", "Move to...") are checked by their constant part.
+    assert.ok(label.toLowerCase().includes(key), `"${label}" has no letter "${key}" (${use})`);
   }
-  // Rewind + Compact are the examples the user asked for by name.
-  assert.ok(seen.has("r") && seen.has("c"), "r (Rewind) and c (Compact) must be mapped");
+  // Rewind + Compact are the examples the owner asked for by name; the old
+  // AI-menu letters keep working.
+  for (const k of ["m", "n", "s", "f", "r", "c"]) assert.ok(seen.has(k), `${k} must stay mapped`);
+  assert.match(projectsSrc, /<span class="actions-mn">/, "the key's letter is underlined in the label");
 });
 
 test("dropdown.js activates the open menu's item by matching data-key", () => {
@@ -161,12 +175,36 @@ test("dropdown.js gives the open menu full keyboard navigation", () => {
 });
 
 test("menu actions are native buttons with menuitem semantics", () => {
-  const genericActions = html.match(/<div class="actions-item"/g) || [];
-  assert.deepEqual(genericActions, [], "interactive menu rows must not be generic divs");
-  const menuitems = html.match(/<button class="actions-item"[^>]*role="menuitem"[^>]*tabindex="-1"/g) || [];
-  assert.ok(menuitems.length >= 10, `expected at least 10 semantic menu actions, got ${menuitems.length}`);
-  for (const id of ["btnAI", "btnInfo", "btnSys"]) {
-    assert.match(html, new RegExp(`id="${id}"[^>]*aria-controls="[^"]+"[^>]*aria-expanded="false"`),
+  const generic = [...html.matchAll(/<div class="actions-item"/g), ...projectsSrc.matchAll(/<div class="actions-item"/g)];
+  assert.deepEqual(generic, [], "interactive menu rows must not be generic divs");
+  assert.match(projectsSrc, /<button class="actions-item" type="button" role="menuitem" tabindex="-1" data-row=/);
+  for (const id of ["pjTitle", "quotaMeter"]) {
+    assert.match(html, new RegExp(`id="${id}"[\\s\\S]{0,200}?aria-controls="[^"]+"[\\s\\S]{0,40}?aria-expanded="false"`),
       `${id} must expose controlled and expanded state`);
   }
+});
+
+test("SHE-208: Rewind sits next to Compact in the usage panel, one click from the header", () => {
+  // The owner, the day the header was redone: "Rewind has disappeared. It's a
+  // critical feature, I use it all the time. It should be next to compact."
+  // It had moved into the chat menu only, while Compact also got a button in
+  // the usage ring's panel, which is where he looked.
+  const panel = appSrc.match(/\nfunction renderQuotaPanel\(\) \{[\s\S]*?\n\}\n/)[0];
+  const actions = panel.match(/<div class="quota-actions">[\s\S]*?<\/div>/);
+  assert.ok(actions, "the two actions share one row");
+  assert.match(actions[0], /data-use="chat\.compact\.ring" onclick="compactSession\(\)"/);
+  assert.match(actions[0], /data-use="chat\.rewind\.ring" onclick="rewindSession\(\)"/);
+  assert.ok(actions[0].indexOf("compactSession") < actions[0].indexOf("rewindSession"), "Compact, then Rewind");
+  assert.match(actions[0], />Rewind<\/button>/);
+  // Rewinding needs a conversation and an agent that is not mid-reply, like compacting.
+  assert.equal((actions[0].match(/\$\{canCompact \? '' : 'disabled'\}/g) || []).length, 2);
+  // It closes the panel it was clicked in, like Compact does.
+  assert.match(appSrc, /function rewindSession\(\) \{[\s\S]{0,400}?ActionsMenu\.hide\(\)|function rewindSession\(\) \{[\s\S]{0,400}?Menus\.hide\(\)/);
+  // And it is still in the chat menu, right under Compact.
+  const rows = projectsSrc.match(/\n    function chatMenuRows\(\) \{[\s\S]*?\n    \}\n/)[0];
+  assert.ok(rows.indexOf("'chat.compact'") < rows.indexOf("'chat.rewind'") && rows.indexOf("'chat.rewind'") < rows.indexOf("'chat.fork'"));
+  const css = read("../public/projects.css");
+  assert.match(css, /\.quota-actions \{ display: flex; gap: 8px;/);
+  // Daily on a phone too: 44 px of touch.
+  assert.match(css.slice(css.indexOf("@media (max-width: 720px)")), /\.quota-action \{ min-height: 44px;/);
 });

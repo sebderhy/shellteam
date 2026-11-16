@@ -39,7 +39,7 @@ bash mirror-inventory.sh
    `~/.mirror-inbox/` or your extraction directory.
 3. **Everything you do for Claude Code, do for Codex too.** Config, memory,
    logins, MCP servers, chat history — the two agents get equal treatment
-   (same for OpenCode/Gemini where files exist).
+   (same for Pi/Gemini where files exist).
 4. **Secrets that did NOT travel are re-provisioned in one pass at the end**,
    driven by `SECRETS-MAP.md`. Never ask the user to paste secrets mid-migration.
 5. **Don't touch ShellTeam's own layer** (`~/.shellteam/agent-layer/` and the
@@ -101,8 +101,8 @@ bash mirror-inventory.sh
 6. **Agent config.** Install their `CLAUDE.md`, skills, commands, project
    memory (`agents/claude/project-memory/*` → `~/.claude/projects/<dir>/memory/`),
    and MCP definitions into `~/.claude`; Codex's `config.toml`, `AGENTS.md`,
-   and `prompts/` into `~/.codex`; OpenCode/Gemini configs likewise. If
-   `secure/logins/mcp/mcp-servers.json` was installed in step 2, it wins over
+   and `prompts/` into `~/.codex`; Pi's `agents/pi/*` into `~/.pi/agent`;
+   Gemini configs likewise. If `secure/logins/mcp/mcp-servers.json` was installed in step 2, it wins over
    the redacted `agents/claude/mcp-servers.json` copy.
 7. **Chat history** (`secure/history/`, when present). The laptop's home path
    differs from this box's — remap it, for both agents:

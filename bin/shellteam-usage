@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+// shellteam-usage: what the owner uses in the cockpit, most used first (SHE-204).
+// Read this before any UX change: where a control lives follows how often it is used.
+//   shellteam-usage            last 30 days
+//   shellteam-usage --days 7   another window
+//   shellteam-usage --json     for a script
+import { ranking, shelf } from "../computer/ai-chat/lib/ui-use.mjs";
+
+const args = process.argv.slice(2);
+const at = args.indexOf("--days");
+const days = at >= 0 ? Number(args[at + 1]) : 30;
+if (!Number.isInteger(days) || days < 1) { console.error("--days needs a whole number of days"); process.exit(2); }
+const { since, activeDays, rows } = ranking({ days });
+if (args.includes("--json")) { console.log(JSON.stringify({ since, activeDays, rows: rows.map((r) => ({ ...r, shelf: shelf(r, activeDays) })) }, null, 2)); process.exit(0); }
+if (!rows.length) { console.log(`Nothing counted since ${since}. Counting starts when the cockpit is used after the update.`); process.exit(0); }
+console.log(`Since ${since}: ${activeDays} day(s) with use. "per day" divides by those days.\n`);
+console.log(`${"control".padEnd(34)}${"total".padStart(7)}${"desktop".padStart(9)}${"phone".padStart(7)}${"per day".padStart(9)}  shelf`);
+for (const r of rows) {
+  console.log(`${r.name.padEnd(34)}${String(r.total).padStart(7)}${String(r.desktop).padStart(9)}${String(r.phone).padStart(7)}${(r.total / activeDays).toFixed(1).padStart(9)}  ${shelf(r, activeDays)}`);
+}

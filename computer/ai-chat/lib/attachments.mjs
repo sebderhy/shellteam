@@ -2,7 +2,7 @@
 // ({type:"image", source:{media_type, data}}). Claude Code takes those blocks
 // as-is; every other CLI takes a prompt STRING, and their adapters used to keep
 // only the text blocks, so a pasted screenshot silently never reached Codex,
-// OpenCode or Antigravity ("it says it can't see my screenshot").
+// Pi or Antigravity ("it says it can't see my screenshot").
 //
 // Here the images become files the CLI can open: Codex attaches them natively
 // (`--image`), the others get the paths in the prompt and read them with their

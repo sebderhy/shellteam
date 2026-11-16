@@ -86,6 +86,11 @@ async def lifespan(app: FastAPI):
             "(install.sh --remote/--domain does this), or set ALLOW_TOKENLESS_PUBLIC=1 if "
             "this box is only reachable over a trusted private overlay."
         )
+    # A rotated OWNER_TOKEN revokes every session here, in the one process
+    # that holds the token from .env, never in a stray script (SHE-213).
+    from api.services import sessions
+
+    sessions.reconcile_rotation()
     port_service.seed_from_disk()
     app_routes.seed_from_disk()
     # Host security self-checks (SHE-136): passwordless sudo, Steel off its
@@ -574,10 +579,6 @@ if FRONTEND_DIR.exists():
         from api.config import MODULES
 
         html = html.replace("__HAS_BROWSER__", "true" if "browser" in MODULES else "false")
-        # Tab row or projects column (Settings switch, SHE-168).
-        from api.routers.settings import cockpit_layout
-
-        html = html.replace("__COCKPIT_LAYOUT__", cockpit_layout())
         # Steel's host-side loopback port (browser.html builds the screencast WS
         # URL from it; default deliberately off :3000 — see api/config.py).
         from api.config import STEEL_PORT

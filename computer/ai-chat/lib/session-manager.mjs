@@ -10,7 +10,7 @@ import {
   modelPermitted,
   permittedModelOr,
 } from "./session.mjs";
-import { loadAdapterClass, supports, agentIdFor } from "./agents/registry.mjs";
+import { loadAdapterClass, supports, agentIdFor, isAgentFamily } from "./agents/registry.mjs";
 import { resolveModelId } from "./model-catalog.mjs";
 import { handoffSession } from "./portable/index.mjs";
 import { importSession } from "./portable/import.mjs";
@@ -18,6 +18,7 @@ import { renderTranscript } from "./portable/transcript.mjs";
 import { CSF_DIR } from "./portable/csf.mjs";
 import { keepClaudeTranscript, syncKeptTranscripts } from "./transcript-keep.mjs";
 import { recordTurnReports } from "./report-writes.mjs";
+import { enabledModules } from "./agent-layer.mjs";
 import {
   findSessionFile,
   readSessionForReplay,
@@ -299,6 +300,30 @@ export function reorderSlots(orderedIds) {
   saveTabs();
 }
 
+/** With the browser module, an agent is started knowing which chat it is: the
+ *  gate in front of the browser finds the chat of a connection from the
+ *  process that opened it (lib/peer-chat.mjs). Pure core adds nothing. */
+export function chatEnv(slotId) {
+  return enabledModules().includes("browser") ? { SHELLTEAM_CHAT: String(slotId) } : {};
+}
+
+/** The agent asked for the owner's turn in the browser ("sign in to this
+ *  shop") and ended its turn: the chat reads "Needs you" until the owner hands
+ *  the browser back or writes to it. Returns whether the slot exists. */
+export function setNeedsOwner(slotId, what) {
+  const slot = slots.get(slotId);
+  if (!slot) return false;
+  slot.needsOwner = what ? { what, at: Date.now() } : null;
+  saveTabs();
+  return true;
+}
+
+/** Work the agent started and left running: how many, and since when. */
+function waitingOf(s) {
+  const tasks = s.bgTasks || [];
+  return { waitingOn: tasks.length, waitingSince: tasks.length ? Math.min(...tasks.map((t) => t.startedAt || Date.now())) : 0 };
+}
+
 export function listSlots() {
   return [...slots.entries()].map(([id, s]) => ({
     id,
@@ -312,6 +337,10 @@ export function listSlots() {
     // The projects column shows "Working 4 min" and "Has a question" (SHE-168).
     turnStartedAt: s.isGenerating ? (s.turnStartedAt || 0) : 0,
     asking: !!s.pendingAskUser,
+    // Work the agent started and left running (SHE-115): the column says
+    // "Waiting" for as long as there is some, never "Done".
+    ...waitingOf(s),
+    needsOwner: s.needsOwner?.what || "",
     label: deriveLabel(id),
     ...s.config,
   }));
@@ -361,7 +390,7 @@ export function setSlotModel(slotId, model) {
   // Session files are model-agnostic within an agent family: `<cli> --resume`
   // accepts a different model, so a same-family switch keeps the conversation.
   // Cross-family session IDs are not portable (Codex thread IDs ≠ Claude UUIDs
-  // ≠ OpenCode ses_…) — there the conversation must reset.
+  // ≠ Pi pi-…) — there the conversation must reset.
   if (agentIdFor(oldModel) === agentIdFor(model)) {
     console.log(`[session-mgr] Slot ${slotId}: model changed ${oldModel} → ${model} (same family) — keeping session ${slot.sessionId}`);
     stopAgent(slotId);
@@ -431,10 +460,7 @@ export async function switchSlotModel(slotId, model) {
   // Seed the cockpit-owned protocol JSONL for non-Claude targets (mirrors the
   // `init` handler): the CLI wrote its native file, but the cockpit persists its
   // own protocol history for agents whose CLI does not own history.
-  if (!supports(model, "cliOwnsHistory")) {
-    appendCodexHistory(handoff.nativeSessionId, { type: "session_meta", model, cwd, timestamp: Date.now() });
-    for (const msg of slot.history) appendCodexHistory(handoff.nativeSessionId, msg);
-  }
+  seedCockpitHistory(slot, handoff.nativeSessionId, model, cwd);
 
   // Visible, persisted handoff marker (invariant: no invisible magic). addToHistory
   // persists it to whichever store backs the slot — protocol JSONL for non-Claude,
@@ -523,7 +549,7 @@ async function forkIntoReservedSlot(source, sourceSlotId, newSlotId, toModel) {
   fork.createdAt = Date.now();
   fork.history = [];
 
-  // For CLIs whose history the cockpit owns (Codex/Gemini/OpenCode), seed the
+  // For CLIs whose history the cockpit owns (Codex/Gemini/Pi), seed the
   // protocol JSONL under the fork's new session id so it survives a restart /
   // reconnect replay. (Claude owns its own file, already written by handoff.)
   if (!supports(model, "cliOwnsHistory")) {
@@ -606,10 +632,7 @@ export async function moveSlot(slotId, dir) {
   slot.config.cwd = cwd;
   slot.sessionId = handoff.nativeSessionId;
   slot.sessionFamily = family;
-  if (!supports(model, "cliOwnsHistory")) {
-    appendCodexHistory(handoff.nativeSessionId, { type: "session_meta", model, cwd, timestamp: Date.now() });
-    for (const msg of slot.history) appendCodexHistory(handoff.nativeSessionId, msg);
-  }
+  seedCockpitHistory(slot, handoff.nativeSessionId, model, cwd);
   addToHistory(slotId, { type: "session_event", event: "moved", fromCwd, toCwd: cwd, timestamp: Date.now() });
   if (slotId === 0) saveSessionIdToDisk(handoff.nativeSessionId);
   touchSlot(slotId);
@@ -650,6 +673,47 @@ export function renameSlot(slotId, title) {
 
 // --- Public API: agent lifecycle ---
 
+/** Persist the cockpit-owned protocol history under a session id, for CLIs that keep none. */
+function seedCockpitHistory(slot, sessionId, model, cwd) {
+  if (supports(model, "cliOwnsHistory")) return;
+  appendCodexHistory(sessionId, { type: "session_meta", model, cwd, timestamp: Date.now() });
+  for (const msg of slot.history) appendCodexHistory(sessionId, msg);
+}
+
+/**
+ * Carry a chat whose session belongs to a retired agent family over to the
+ * family that runs its model now. Returns the new session id, or null when the
+ * conversation could not be carried (the chat then starts fresh, with a
+ * visible note).
+ */
+async function adoptRetiredSession(slotId, sessionId) {
+  const slot = getSlot(slotId);
+  const { model, cwd } = slot.config;
+  const fromFamily = slot.sessionFamily;
+  const toFamily = agentIdFor(model);
+  let handoff;
+  try {
+    handoff = await handoffSession({ fromFamily, fromSessionId: sessionId, fromModel: model, toFamily, toModel: model, cwd });
+  } catch (e) {
+    console.error(`[session-mgr] Slot ${slotId}: could not carry the ${fromFamily} session ${sessionId} over to ${toFamily}: ${e.stack || e.message}`);
+    slot.sessionId = null;
+    slot.sessionFamily = null;
+    if (slotId === 0) saveSessionIdToDisk(null);
+    addToHistory(slotId, { type: "session_event", event: "retired_agent", fromFamily, toFamily, carried: false, timestamp: Date.now() });
+    saveTabs();
+    return null;
+  }
+  slot.sessionId = handoff.nativeSessionId;
+  slot.sessionFamily = toFamily;
+  seedCockpitHistory(slot, handoff.nativeSessionId, model, cwd);
+  addToHistory(slotId, { type: "session_event", event: "retired_agent", fromFamily, toFamily, carried: true, timestamp: Date.now() });
+  if (slotId === 0) saveSessionIdToDisk(handoff.nativeSessionId);
+  saveTabs();
+  console.log(`[session-mgr] Slot ${slotId}: ${fromFamily} is no longer shipped, conversation carried over to ${toFamily} — session ${sessionId} -> ${handoff.nativeSessionId} (csf=${handoff.csfId})`);
+  return handoff.nativeSessionId;
+}
+
+
 export async function startAgent(slotId = 0) {
   const slot = getSlot(slotId);
   if (!slot) { console.warn(`[session-mgr] startAgent on unknown slot ${slotId} refused`); return; }
@@ -658,17 +722,28 @@ export async function startAgent(slotId = 0) {
   let savedSession = slot.sessionId || (slotId === 0 ? loadSessionIdFromDisk() : null);
   const { model, cwd } = slot.config;
 
+  // A chat whose agent ShellTeam no longer ships (OpenCode, replaced by Pi on
+  // 2026-11-16) carries its conversation over to the agent that now runs its
+  // model, through the same portable handoff as a model switch. On failure
+  // the chat starts fresh below, and says so.
+  if (savedSession) {
+    slot.sessionFamily = slot.sessionFamily || familyOfSession(savedSession);
+    if (slot.sessionFamily && !isAgentFamily(slot.sessionFamily)) {
+      savedSession = await adoptRetiredSession(slotId, savedSession);
+    }
+  }
+
   // Backstop: never resume a session we can't safely continue. Drop the saved
   // session and start fresh — instead of failing loudly on every turn — when:
   //  - Cross-family pairing: session IDs are agent-family-specific (Codex thread
-  //    IDs ≠ Claude UUIDs ≠ OpenCode ses_…). A mismatch — caused by model
+  //    IDs ≠ Claude UUIDs ≠ Pi pi-…). A mismatch — caused by model
   //    switches, restored tab state, or stale-agent events — makes
   //    `<cli> --resume <id>` fail with "No conversation found".
   //  - Missing Claude transcript: for a Claude model, findSessionFile reliably
   //    searches ~/.claude/projects, so an unclassifiable id (familyOfSession
   //    null → no JSONL on disk) means `claude --resume <id>` will fail with "No
   //    conversation found" on every message and hang the chat. We only apply
-  //    this to Claude: Codex/OpenCode may store rollouts outside our search
+  //    this to Claude: Codex/Pi may store rollouts outside our search
   //    path, so a null family there is not proof the session is gone.
   if (savedSession) {
     // Claude Code may have deleted an idle transcript since the last turn;
@@ -698,7 +773,7 @@ export async function startAgent(slotId = 0) {
     agent = _agentFactory({ sessionId: savedSession, model, cwd });
   } else {
     const AgentClass = await loadAdapterClass(model);
-    agent = new AgentClass({ sessionId: savedSession, model, cwd, env: getCliEnv(cwd) });
+    agent = new AgentClass({ sessionId: savedSession, model, cwd, env: { ...getCliEnv(), ...chatEnv(slotId) } });
   }
   console.log(`[session-mgr] Slot ${slotId}: starting ${agent.constructor.name} (session=${savedSession || "new"}, model=${model})`);
 
@@ -1143,7 +1218,7 @@ function wireAgentEvents(slotId, agent) {
       slot.sessionFamily = agentIdFor(slot.config.model);
       if (slotId === 0) saveSessionIdToDisk(slot.sessionId);
       saveTabs();
-      // For agents whose CLI does not persist history itself (Codex/Gemini/OpenCode),
+      // For agents whose CLI does not persist history itself (Codex/Gemini/Pi),
       // write a metadata line + retroactively persist any history accumulated before sessionId was set.
       if (isNew && !supports(slot.config.model, "cliOwnsHistory")) {
         appendCodexHistory(data.sessionId, {
@@ -1221,6 +1296,8 @@ function wireAgentEvents(slotId, agent) {
   on("background_tasks", ({ tasks }) => {
     slot.bgTasks = tasks || [];
     saveTabs();
+    // The column and the chat show "Waiting" the moment it starts or ends (SHE-115).
+    slotBroadcast(slotId, "waiting_on", waitingOf(slot));
   });
   on("background_tasks_lost", ({ tasks, exit }) => {
     slot.bgTasks = tasks || [];
@@ -1327,7 +1404,7 @@ function addToHistory(slotId, msg) {
   slot.history.push(msg);
   slot.history = capHistory(slot.history);
   if (!slot.sessionId) return;
-  // Persist history ourselves for agents whose CLI does not (Codex/Gemini/OpenCode).
+  // Persist history ourselves for agents whose CLI does not (Codex/Gemini/Pi).
   if (!supports(slot.config.model, "cliOwnsHistory")) {
     appendCodexHistory(slot.sessionId, msg);
   } else if (msg.type === "session_event") {
@@ -1351,6 +1428,9 @@ function appendCodexHistory(threadId, msg) {
  */
 export function addUserMessage(slotId, content, { internal = false } = {}) {
   touchSlot(slotId);
+  // The owner wrote to the chat: whatever it was waiting on them for is answered.
+  const slot = slots.get(slotId);
+  if (slot?.needsOwner && !(internal || isInternalUserContent(content))) slot.needsOwner = null;
   addToHistory(slotId, {
     type: "user_message",
     content,
@@ -1411,6 +1491,7 @@ function writeTabsNow() {
     answeredAt: s.answeredAt || 0,
     markedUnread: !!s.markedUnread,
     ...(s.bgTasks?.length ? { bgTasks: s.bgTasks } : {}),
+    ...(s.needsOwner ? { needsOwner: s.needsOwner } : {}),
     ...s.config,
   }));
   try { writeFileSync(TABS_FILE, JSON.stringify(data)); }
@@ -1501,6 +1582,7 @@ export function restoreSlots() {
     slot.answeredAt = s.answeredAt || 0;
     slot.markedUnread = !!s.markedUnread;
     slot.bgTasks = Array.isArray(s.bgTasks) ? s.bgTasks : [];
+    slot.needsOwner = s.needsOwner?.what ? s.needsOwner : null;
 
     // Load history and correct cwd from the session's authoritative record
     if (s.sessionId) {

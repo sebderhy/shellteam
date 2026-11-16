@@ -4,7 +4,7 @@
  * There is ONE importer path. The cockpit's history.mjs:readSessionForReplay
  * already normalizes every family into a uniform protocol-message stream:
  *  - Claude: parses the native ~/.claude/projects JSONL.
- *  - Codex/Gemini/OpenCode: parse the cockpit-owned protocol JSONL in
+ *  - Codex/Gemini/Pi: parse the cockpit-owned protocol JSONL in
  *    CODEX_HISTORY_DIR (written by SessionManager as those turns happen).
  * So CSF is built once, from that stream, rather than parsing four native
  * schemas — DRY and reusing proven code. See the decision doc for why this
@@ -21,7 +21,7 @@ import { protocolToCsf, deriveTitle, CSF_VERSION, uuid4 } from "./csf.mjs";
  *
  * @param {object} opts
  * @param {string} opts.sessionId  the source session id
- * @param {string} opts.family     the source agent family (claude|codex|gemini|opencode)
+ * @param {string} opts.family     the source agent family (claude|codex|gemini|pi)
  * @param {string} opts.model      the source model (labels assistant messages)
  * @param {string} opts.cwd        the slot workspace
  * @param {string} [opts.cliVersion]

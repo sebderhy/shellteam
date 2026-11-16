@@ -1,6 +1,6 @@
 // "The subscription panel seems to be loading forever" (Seb, office VDI,
 // 2026-09-27). The bar under the Subscription badge scanned left to right
-// forever. The scanning animation was reused for FINISHED checks that report
+// forever (the bar is a ring since the cockpit map; the rule is the same). The scanning animation was reused for FINISHED checks that report
 // no percentage (a Codex reset count, a credit balance) and for a check that
 // never ran, so a box whose provider never reports a percentage looked stuck
 // loading. The bar now scans only while a request is in flight, and the
@@ -20,14 +20,20 @@ function lift(name) {
 }
 
 // Run the real quotaSummary + renderQuotaMeter against a fake DOM and a given
-// provider/loading state; return whether the bar is scanning.
+// provider/loading state; return whether the usage ring is turning.
 function barFor({ provider, loading }) {
-  const el = () => ({ hidden: false, className: "", style: {}, title: "", setAttribute() {}, removeAttribute() {}, classList: { toggle() {} } });
-  const nodes = { subscriptionMonitor: el(), quotaMeter: el(), quotaMeterTrack: el(), quotaMeterFill: el() };
+  const el = () => {
+    const classes = new Set();
+    return { hidden: false, style: {}, title: "", setAttribute() {}, removeAttribute() {},
+      classList: { toggle(name, on) { on ? classes.add(name) : classes.delete(name); }, contains: (name) => classes.has(name) } };
+  };
+  const nodes = { quotaMeter: el(), useRing: el(), useRingPlan: el(), useRingChat: el() };
   const env = {
     S: { currentModel: "gpt-6-luna", quotaLoading: loading, quotaError: null },
     document: { getElementById: (id) => nodes[id], querySelector: () => null },
     window: {},
+    sessionSlots: [], activeSlotId: 0,
+    contextWindowForSlot: () => 200000,
     agentIdForModel: () => "codex",
     billingModeForModel: () => "subscription",
     billingBadgeForModel: () => ({ label: "Subscription", title: "" }),
@@ -36,9 +42,11 @@ function barFor({ provider, loading }) {
     shortQuotaReset: () => "",
     PROVIDER_LABEL: { codex: "Codex" },
   };
-  const fn = new Function(...Object.keys(env), `${lift("quotaSummary")}${lift("renderQuotaMeter")}; renderQuotaMeter();`);
+  const useTone = APP_JS.match(/\nconst useTone = .*\n/);
+  assert.ok(useTone, "useTone missing from app.js");
+  const fn = new Function(...Object.keys(env), `${lift("quotaSummary")}${lift("conversationUse")}${useTone[0]}${lift("renderQuotaMeter")}; renderQuotaMeter();`);
   fn(...Object.values(env));
-  return nodes.quotaMeterTrack.className.includes("indeterminate");
+  return nodes.useRing.classList.contains("checking");
 }
 
 const resetsOnly = { label: "Codex", status: "live", windows: [], credits_remaining: null, resets_available: 2 };

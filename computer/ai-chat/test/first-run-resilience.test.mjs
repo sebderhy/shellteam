@@ -24,20 +24,20 @@ const ADAPTERS = [
   "../lib/claude-cli-agent.mjs",
   "../lib/codex-agent.mjs",
   "../lib/gemini-cli-agent.mjs",
-  "../lib/opencode-agent.mjs",
+  "../lib/pi-agent.mjs",
   "../lib/antigravity-agent.mjs",
 ];
 
 test("every adapter attaches a process error handler after spawn", () => {
   for (const rel of ADAPTERS) {
     const src = read(rel);
-    assert.match(src, /_process\.on\(\s*"error"/,
+    assert.match(src, /\b(?:_process|proc)\.on\(\s*"error"/,
       `${rel} must handle spawn errors — an unhandled one crashes the server`);
   }
 });
 
 test("spawn failures end the turn instead of hanging in Working…", () => {
-  // claude/codex/gemini/opencode route through the base _failTurn; antigravity
+  // claude/codex/gemini/pi route through the base _failTurn; antigravity
   // has its own equivalent (_finishError) and only borrows the message helper.
   for (const rel of ADAPTERS.filter(r => !r.includes("antigravity"))) {
     assert.match(read(rel), /_failTurn\(this\._processErrorMessage\(/,

@@ -152,13 +152,17 @@ FILE_PORT = int(os.environ.get("FILE_PORT", "80"))
 API_PORT = int(os.environ.get("API_PORT", "8000"))
 AI_CHAT_PORT_NUM = int(os.environ.get("AI_CHAT_PORT", "3456"))
 STEEL_PORT = int(os.environ.get("STEEL_PORT", "3877"))
+# Where agents' browser tools connect: the cockpit's gate in front of Steel
+# (computer/ai-chat/lib/browser-gate.mjs, SHE-170), not Steel itself. The gate
+# is what lets the owner take the browser and keeps two chats off one page.
+BROWSER_GATE_PORT = int(os.environ.get("BROWSER_GATE_PORT", "3878"))
 
 
 def reserved_service_ports() -> set[int]:
     """Ports owned by ShellTeam's own services — never publishable, never
     shareable, and (for the control plane itself) never proxied. Keeping this a
     function keeps test overrides of the env honest."""
-    return {API_PORT, AI_CHAT_PORT_NUM, FILE_PORT, STEEL_PORT}
+    return {API_PORT, AI_CHAT_PORT_NUM, FILE_PORT, STEEL_PORT, BROWSER_GATE_PORT}
 
 # PUBLIC_SHARING=off keeps a box from making ANYTHING world-readable: no
 # public ports, no signed share links, no published reports, and anything

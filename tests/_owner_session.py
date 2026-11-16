@@ -12,3 +12,10 @@ def session_token() -> str:
 def files_token() -> str:
     """A live read-only files credential (``shellteam_files``), bound to a new session."""
     return sessions.mint("test").files_cred
+
+
+def reset_sessions_store() -> None:
+    """Drop the store: a rotation test leaves it under another token, which the
+    real token may no longer rewrite (SHE-213)."""
+    sessions.store_path().unlink(missing_ok=True)
+    sessions._cache.update(mtime=None, data=None)

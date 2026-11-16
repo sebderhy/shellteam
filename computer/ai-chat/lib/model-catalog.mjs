@@ -5,7 +5,7 @@ import { DEFAULT_CLAUDE_MODEL, DEFAULT_CODEX_MODEL, DEFAULT_ANTIGRAVITY_MODEL } 
 
 // config/models.json is the single source of truth for the model catalog (the
 // Python control plane reads it too — see api/services/model_catalog.py). This
-// module gives the cockpit model->agent routing, the OpenCode default, and the
+// module gives the cockpit model->agent routing, Pi's default, and the
 // raw catalog it serves to the browser for the model dropdown.
 //
 // Add a model there + restart the cockpit — no code change here.
@@ -120,7 +120,7 @@ export function resolveModelId(model) {
   const successor = successorOf(model);
   if (successor) return successor;
   const family = agentIdForModel(model);
-  const fallback = family === "opencode" ? opencodeDefaultModel() : _FAMILY_DEFAULTS[family];
+  const fallback = family === "pi" ? piDefaultModel() : _FAMILY_DEFAULTS[family];
   return fallback || DEFAULT_CLAUDE_MODEL;
 }
 
@@ -170,25 +170,18 @@ export function contextLimitForId(model) {
   return 200_000;
 }
 
-export function opencodeAgent() {
-  return agents().find((a) => a.id === "opencode") || null;
+export function piAgent() {
+  return agents().find((a) => a.id === "pi") || null;
 }
 
-/**
- * OpenCode clamps every reply to 32000 tokens unless OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX
- * says otherwise, which overrides the catalog's `limit.output` (a reasoning model then runs
- * out of room mid-thought). The largest catalog limit lifts the clamp; each model's own
- * `limit.output` still applies below it. Null when the catalog has no output limits.
- */
-export function opencodeOutputTokenMax() {
-  const limits = (opencodeAgent()?.models || []).map((m) => m.limit?.output || 0);
-  const max = Math.max(0, ...limits);
-  return max || null;
+/** The catalog entry of one of Pi's models (by catalog id), or null. */
+export function piModel(id) {
+  return (piAgent()?.models || []).find((m) => m.id === id) || null;
 }
 
-/** Short id of OpenCode's default model (e.g. "glm-5p3"). */
-export function opencodeDefaultModel() {
-  const a = opencodeAgent();
+/** Short id of Pi's default model (e.g. "glm-5p3"). */
+export function piDefaultModel() {
+  const a = piAgent();
   if (!a) return "";
   return a.default || a.models?.[0]?.id || "";
 }

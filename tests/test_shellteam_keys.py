@@ -65,10 +65,10 @@ class TestPastingAShellTeamKeyInSecrets:
         assert resp.status_code == 200 and "fw-valid-key-123" not in resp.text
         assert vault.load()["secrets"]["FIREWORKS_API_KEY"]["value"] == "fw-valid-key-123"
         assert _line(env_file, "FIREWORKS_API_KEY") == "FIREWORKS_API_KEY=fw-valid-key-123"
-        assert os.environ["FIREWORKS_API_KEY"] == "fw-valid-key-123", "OpenCode turns on with no restart"
+        assert os.environ["FIREWORKS_API_KEY"] == "fw-valid-key-123", "Pi turns on with no restart"
         assert _line(env_file, "OWNER_TOKEN") == "OWNER_TOKEN=owner-login-secret-value"
         row = next(r for r in resp.json()["secrets"] if r["name"] == "FIREWORKS_API_KEY")
-        assert row["shellteam"]["label"].startswith("OpenCode")
+        assert row["shellteam"]["label"].startswith("Pi")
 
     @respx.mock
     def test_a_key_the_provider_rejects_is_kept_nowhere(self, client, auth_header, env_file):
@@ -183,8 +183,8 @@ class TestInternalAiStatus:
         assert resp.status_code == 200
         # One key can gate more than one capability: ElevenLabs is both the
         # cockpit's ears (stt) and its voice (tts).
-        assert resp.json() == {"stt": False, "tts": False, "opencode": False}
+        assert resp.json() == {"stt": False, "tts": False, "pi": False}
         resp = self._get(client, monkeypatch, ELEVENLABS_API_KEY="el", FIREWORKS_API_KEY="fk")
-        assert resp.json() == {"stt": True, "tts": True, "opencode": True}
+        assert resp.json() == {"stt": True, "tts": True, "pi": True}
 
 

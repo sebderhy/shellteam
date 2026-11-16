@@ -7,6 +7,8 @@ import pytest
 from fastapi import HTTPException
 
 
+from tests._owner_session import reset_sessions_store
+
 def _reload_auth(monkeypatch, **env):
     """Apply isolated auth settings that pytest restores after each test."""
     import api.services.auth as auth
@@ -68,12 +70,15 @@ class TestTokenIsOwner:
         assert auth.token_is_owner(None) is False
 
     def test_verify_token_returns_owner_payload(self, monkeypatch):
+        reset_sessions_store()  # another token's store is not this token's to write (SHE-213)
         auth = _reload_auth(monkeypatch, OWNER_TOKEN="s3cret", OWNER_ID="me", OWNER_EMAIL="me@x")
         minted = auth.sessions.mint("test")
         payload = auth.verify_token(minted.token)
         assert payload["sub"] == "me"
         assert payload["email"] == "me@x"
         assert payload["sid"] == minted.id
+        monkeypatch.undo()
+        reset_sessions_store()
 
     def test_verify_token_refuses_the_master_itself(self, monkeypatch):
         """SHE-136: cookie-borne credentials are sessions; the master is not one."""

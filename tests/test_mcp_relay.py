@@ -72,6 +72,7 @@ def test_a_build_clears_runtime_configs_written_before_the_relay(box):
     runtime = layer_dir(home) / "runtime"
     runtime.mkdir(parents=True)
     (runtime / "claude-mcp-orchard.json").write_text(LINEAR_KEY)
+    (runtime / "pi-orchard.json").write_text(LINEAR_KEY)
     (runtime / "opencode-orchard.json").write_text(LINEAR_KEY)
     (runtime / "antigravity-orchard").mkdir()
     (runtime / "prompt-keep.md").write_text("a live chat's prompt")

@@ -77,7 +77,7 @@ describe("authModeFor — subscription-first", () => {
     assert.equal(getCliEnv().OPENAI_API_KEY, "sk-configured");
   });
 
-  it("Antigravity is OAuth-only; OpenCode is included", () => {
+  it("Antigravity is OAuth-only; Pi is included", () => {
     assert.equal(authModeFor("antigravity"), "none");
     // A partial/corrupt token file (no access_token) must NOT read as connected.
     write(ANTIGRAVITY_TOKEN, JSON.stringify({ token: { token_type: "Bearer" } }));
@@ -85,7 +85,7 @@ describe("authModeFor — subscription-first", () => {
     // A valid token with an access_token is a subscription.
     write(ANTIGRAVITY_TOKEN, JSON.stringify({ token: { access_token: "ya29.real", token_type: "Bearer" } }));
     assert.equal(authModeFor("antigravity"), "subscription");
-    assert.equal(authModeFor("opencode"), "included");
+    assert.equal(authModeFor("pi"), "included");
   });
 
   it("getCliEnv always strips Google keys (agy uses its own OAuth)", () => {

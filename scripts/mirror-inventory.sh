@@ -15,7 +15,7 @@
 # What it collects (whitelist only — nothing else leaves your machine):
 #   - package lists (brew / apt / npm / pipx / uv / cargo), VS Code extensions
 #   - shell + editor + terminal dotfiles
-#   - coding-agent config (Claude Code, Codex, OpenCode, Gemini) — configs and
+#   - coding-agent config (Claude Code, Codex, Pi, Gemini) — configs and
 #     skills only, NEVER credential/session files
 #   - a list of your git repos (paths + remotes + branch), not their contents
 #   - crontab
@@ -291,7 +291,13 @@ stage_file "$HOME_DIR/.codex/config.toml" "agents/codex/config.toml"
 stage_file "$HOME_DIR/.codex/AGENTS.md" "agents/codex/AGENTS.md"
 stage_dir "$HOME_DIR/.codex/prompts" "agents/codex/prompts"
 stage_dir "$HOME_DIR/.agents/skills" "agents/shared-skills"
-stage_file "$HOME_DIR/.config/opencode/opencode.json" "agents/opencode/opencode.json"
+# Pi: config, instructions, skills and prompts. auth.json and mcp-auth.json
+# hold credentials and are NEVER staged.
+stage_file "$HOME_DIR/.pi/agent/settings.json" "agents/pi/settings.json"
+stage_file "$HOME_DIR/.pi/agent/AGENTS.md" "agents/pi/AGENTS.md"
+stage_file "$HOME_DIR/.pi/agent/mcp.json" "agents/pi/mcp.json"
+stage_dir "$HOME_DIR/.pi/agent/skills" "agents/pi/skills"
+stage_dir "$HOME_DIR/.pi/agent/prompts" "agents/pi/prompts"
 stage_file "$HOME_DIR/.gemini/GEMINI.md" "agents/gemini/GEMINI.md"
 stage_file "$HOME_DIR/.gemini/settings.json" "agents/gemini/settings.json"
 

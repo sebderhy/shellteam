@@ -26,7 +26,9 @@ from api.services.agent_layer import (
     codex_overrides_file,
     codex_session_home_dir,
     harness_skills_dir,
-    opencode_config_file,
+    pi_extension_file,
+    pi_layer_dir,
+    pi_layer_file,
 )
 
 FULL = frozenset({"persona", "browser", "composio", "linear"})
@@ -49,6 +51,7 @@ def test_build_does_not_touch_user_dotfiles(home: Path):
     assert not (home / ".gitconfig").exists()
     assert not (home / ".codex").exists()
     assert not (home / ".config" / "opencode").exists()
+    assert not (home / ".pi").exists()
     assert not (home / ".gemini").exists()
 
 
@@ -98,13 +101,79 @@ def test_codex_overrides_omit_runtime_provider(home: Path):
     assert not any("model_provider" in o for o in overrides)
 
 
-def test_opencode_config_points_at_layer_not_user_dirs(home: Path):
+def test_pi_layer_carries_the_relayed_provider_and_the_mcp_servers(home: Path):
+    result = build_agent_layer(home, "alice", modules=FULL)
+    assert result["pi_layer_dir"] == str(pi_layer_dir(home))
+    layer = json.loads(pi_layer_file(home).read_text())
+    provider = layer["provider"]
+    assert provider["baseUrl"].endswith("/internal/ai/fireworks/v1")
+    assert provider["api"] == "openai-completions"
+    # Env var NAMES, never values: Pi resolves `$VAR` itself at launch.
+    assert provider["apiKeyEnv"] == "SHELLTEAM_AI_TOKEN"
+    assert provider["headersEnv"] == {"X-Shellteam-User-Id": "SHELLTEAM_USER_ID"}
+    from api.services.model_catalog import fireworks_allowlist
+    assert {m["id"] for m in provider["models"]} == fireworks_allowlist()
+    glm = next(m for m in provider["models"] if m["alias"] == "glm-5p3")
+    assert glm == {
+        "id": "accounts/fireworks/models/glm-5p3", "name": "GLM 5.3", "alias": "glm-5p3",
+        "contextWindow": 1048576, "maxTokens": 131072, "reasoningEffort": "max",
+        "cost": {"input": 1.4, "output": 4.4},
+    }
+    # Every module's MCP server, in the shape Pi's registerMcpServer takes.
+    canonical = json.loads(claude_mcp_config_file(home).read_text())["mcpServers"]
+    assert set(layer["mcpServers"]) == set(canonical)
+    assert layer["mcpServers"]["deepwiki"]["url"] == canonical["deepwiki"]["url"]
+    browser = layer["mcpServers"]["browser"]
+    assert browser["command"] == canonical["browser"]["command"]
+    assert browser["args"] == canonical["browser"]["args"]
+    assert set(browser) <= {"command", "args", "env"}
+    for cfg in layer["mcpServers"].values():
+        assert set(cfg) <= {"url", "headers", "command", "args", "env"}
+    # Prompt and skills are cockpit flags, not part of the extension's JSON.
+    assert set(layer) == {"provider", "mcpServers"}
+
+
+def test_pi_layer_is_private_and_ships_the_static_extension(home: Path):
+    from api.services.agent_layer import PI_EXTENSION_SOURCE
     build_agent_layer(home, "alice", modules=FULL)
-    cfg = json.loads(opencode_config_file(home).read_text())
-    # Every adapter reads the same canonical skills and rendered prompt.
-    assert cfg["skills"]["paths"] == [str(harness_skills_dir(home))]
-    assert cfg["instructions"] == [str(claude_system_prompt_file(home))]
-    assert "fireworks" in cfg["provider"]
+    # MCP headers can hold bearer tokens: owner-only.
+    assert (pi_layer_file(home).stat().st_mode & 0o777) == 0o600
+    extension = pi_extension_file(home)
+    assert extension.read_bytes() == PI_EXTENSION_SOURCE.read_bytes()
+    assert (extension.stat().st_mode & 0o777) == 0o644
+    manifest = json.loads((home / ".shellteam" / "agent-layer" / "layer.json").read_text())
+    assert manifest["artifacts"]["pi_layer"] is True
+    assert "opencode_config" not in manifest["artifacts"]
+
+
+def test_pi_extension_source_reads_the_layer_it_is_given():
+    """The static extension and the builder agree on names: the env override,
+    the sibling layer.json fallback, the provider id and the `$VAR` form."""
+    from api.services.agent_layer import PI_EXTENSION_SOURCE
+    src = PI_EXTENSION_SOURCE.read_text()
+    assert "export default function (pi: ExtensionAPI)" in src
+    assert "process.env.SHELLTEAM_PI_LAYER" in src
+    assert '"layer.json"' in src
+    assert 'pi.registerProvider("shellteam"' in src
+    assert '"$" + provider.apiKeyEnv' in src
+    assert "pi.registerMcpServer(" in src
+    assert "throw new Error" in src
+
+
+def test_upgrade_drops_the_retired_opencode_config(home: Path):
+    """A box upgraded from the OpenCode era must not keep its config (or the
+    cockpit's per-project copies of it) around."""
+    from api.services.agent_layer import layer_dir
+    layer_dir(home).mkdir(parents=True)
+    (layer_dir(home) / "opencode.json").write_text("{}")
+    runtime = layer_dir(home) / "runtime"
+    runtime.mkdir()
+    (runtime / "opencode-proj.json").write_text("{}")
+    (runtime / "pi-proj.json").write_text("{}")
+    build_agent_layer(home, "alice", modules=FULL)
+    assert not (layer_dir(home) / "opencode.json").exists()
+    assert not (runtime / "pi-proj.json").exists()
+    assert not (runtime / "opencode-proj.json").exists()
 
 
 def test_layer_structure_and_plugin_contents(home: Path):
@@ -141,9 +210,9 @@ def test_shared_harness_has_identical_prompt_skills_and_mcp_set_for_all_agents(h
     assert (antigravity / "rules" / "shellteam.md").read_text() == prompt
 
     canonical_mcp = json.loads(claude_mcp_config_file(home).read_text())["mcpServers"]
-    opencode_mcp = json.loads(opencode_config_file(home).read_text())["mcp"]
+    pi_mcp = json.loads(pi_layer_file(home).read_text())["mcpServers"]
     antigravity_mcp = json.loads((antigravity / "mcp_config.json").read_text())["mcpServers"]
-    assert set(opencode_mcp) == set(canonical_mcp)
+    assert set(pi_mcp) == set(canonical_mcp)
     assert set(antigravity_mcp) == set(canonical_mcp)
     assert antigravity_mcp["deepwiki"]["serverUrl"] == canonical_mcp["deepwiki"]["url"]
 
@@ -231,7 +300,7 @@ def test_skills_with_required_binary_present_are_included(home: Path, monkeypatc
 
 def test_memory_prompt_scopes_compaction_archives_to_claude_code(home: Path):
     """The PreCompact transcript-archive hook ships ONLY in the Claude Code
-    plugin (hooks are not delivered to Codex, Antigravity or OpenCode), so the
+    plugin (hooks are not delivered to the other CLIs), so the
     shared prompt must not promise automatic ~/conversations/ archives
     unconditionally: for three of the four CLIs that claim was false."""
     build_agent_layer(home, "alice", modules=FULL)
@@ -241,7 +310,7 @@ def test_memory_prompt_scopes_compaction_archives_to_claude_code(home: Path):
         not in prompt
     )
     assert "Conversation archives (Claude Code sessions only)" in prompt
-    assert "Codex, Antigravity and OpenCode sessions are not archived" in prompt
+    assert "sessions are not archived" in prompt
 
 
 def test_rebuild_is_idempotent(home: Path):

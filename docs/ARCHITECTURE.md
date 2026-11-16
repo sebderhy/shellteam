@@ -75,7 +75,7 @@ and it resumes it as its own. Same-family switches just `--resume`.
 ## The agent launch-layer (the zero-footprint rule)
 
 ShellTeam **never writes to the owner's coding-agent config** (`~/.claude`,
-`~/.codex`, `~/.gemini`, `~/.config/opencode`, `~/.gitconfig`, …). Its additions
+`~/.codex`, `~/.gemini`, `~/.pi`, `~/.gitconfig`, …). Its additions
 are rendered once under `~/.shellteam/agent-layer/` by
 `api/services/agent_layer.py` and loaded **at spawn time only**. The canonical
 harness is one rendered prompt, one skill tree, and one MCP server map; each
@@ -89,8 +89,10 @@ cockpit agent receives that same content through its native adapter:
   `CODEX_HOME` still points at the user's real auth/config.
 - **Antigravity**: `--add-dir` adds a ShellTeam-owned workspace plugin containing
   the same rules, skills, and translated MCP configuration.
-- **OpenCode**: `OPENCODE_CONFIG` supplies the same prompt, skills, and MCP map,
-  merging with the user's config.
+- **Pi**: `-e` loads ShellTeam's static extension (`pi/shellteam.ts`), which
+  registers the Fireworks relay provider and the MCP map from `pi/layer.json`;
+  `--append-system-prompt` and `--skill` add the same prompt and skills. The
+  user's own `~/.pi/agent` config still loads, and nothing is written there.
 
 Native tool/event systems and lifecycle hooks remain provider-specific; the
 shared contract is the agent-visible prompt, skills, MCP access, and scoped

@@ -7,7 +7,7 @@ Fireworks or Anthropic release — is a one-line edit there plus a stack restart
 code change here.
 
 This module derives the two things the *control plane* needs from that catalog:
-the Fireworks proxy allowlist and the OpenCode provider block.
+the Fireworks proxy allowlist and the Pi provider registration.
 """
 
 import json
@@ -29,18 +29,18 @@ def _agents() -> list[dict]:
     return load_catalog().get("agents", [])
 
 
-def opencode_agent() -> dict:
-    """The OpenCode/Fireworks family entry, or an empty dict if none is defined."""
+def pi_agent() -> dict:
+    """The Pi/Fireworks family entry, or an empty dict if none is defined."""
     for agent in _agents():
-        if agent.get("id") == "opencode":
+        if agent.get("id") == "pi":
             return agent
-    log.warning("model catalog has no 'opencode' agent — OpenCode disabled")
+    log.warning("model catalog has no 'pi' agent — Pi disabled")
     return {}
 
 
-def opencode_default_model() -> str:
-    """Short id of OpenCode's default model (e.g. ``glm-5p3``)."""
-    agent = opencode_agent()
+def pi_default_model() -> str:
+    """Short id of Pi's default model (e.g. ``glm-5p3``)."""
+    agent = pi_agent()
     default = agent.get("default")
     if default:
         return default
@@ -51,30 +51,38 @@ def opencode_default_model() -> str:
 def fireworks_allowlist() -> set[str]:
     """Upstream Fireworks model ids the /internal/ai proxy will forward.
 
-    Sourced from every OpenCode model's ``upstream`` field, so allowlisting a new
+    Sourced from every Pi model's ``upstream`` field, so allowlisting a new
     Fireworks model is just adding it to the catalog.
     """
-    ids = {m["upstream"] for m in opencode_agent().get("models", []) if m.get("upstream")}
+    ids = {m["upstream"] for m in pi_agent().get("models", []) if m.get("upstream")}
     if not ids:
-        log.warning("fireworks allowlist is empty — no OpenCode models in catalog")
+        log.warning("fireworks allowlist is empty — no Pi models in catalog")
     return ids
 
 
-def opencode_provider_models() -> dict:
-    """The ``provider.fireworks.models`` block for OpenCode's config, keyed by short id.
+def pi_provider_models() -> list[dict]:
+    """The ``provider.models`` list of the Pi launch-layer's ``layer.json``.
 
-    Shape matches what ``@ai-sdk/openai-compatible`` expects: ``{id, name, limit, cost?, options?}``.
-    ``cost`` is optional (omitted where we have no verified pricing). ``options`` are
-    request options OpenCode sends upstream (``reasoningEffort`` -> ``reasoning_effort``).
+    One entry per catalog model: ``{id, name, alias, contextWindow, maxTokens,
+    reasoningEffort?, cost?}``. ``id`` is the upstream Fireworks id (what Pi sends
+    as ``model``), ``alias`` the catalog's short id. The static extension
+    (``computer/pi-layer/shellteam.ts``) maps these onto Pi's own model shape.
+    ``cost`` is optional (omitted where we have no verified pricing).
     """
-    models: dict = {}
-    for m in opencode_agent().get("models", []):
-        entry = {"id": m["upstream"], "name": m.get("name", m["id"])}
-        if m.get("limit"):
-            entry["limit"] = m["limit"]
+    models: list[dict] = []
+    for m in pi_agent().get("models", []):
+        limit = m.get("limit", {})
+        entry = {
+            "id": m["upstream"],
+            "name": m.get("name", m["id"]),
+            "alias": m["id"],
+            "contextWindow": limit.get("context"),
+            "maxTokens": limit.get("output"),
+        }
+        effort = m.get("options", {}).get("reasoningEffort")
+        if effort:
+            entry["reasoningEffort"] = effort
         if m.get("cost"):
-            entry["cost"] = m["cost"]
-        if m.get("options"):
-            entry["options"] = m["options"]
-        models[m["id"]] = entry
+            entry["cost"] = {"input": m["cost"]["input"], "output": m["cost"]["output"]}
+        models.append(entry)
     return models

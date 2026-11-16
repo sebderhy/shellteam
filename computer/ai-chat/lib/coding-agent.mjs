@@ -9,7 +9,7 @@ function processGroupOf(pid) {
 }
 
 // Process groups of every live descendant of `pid`. Tools a CLI starts in
-// their own session (OpenCode's bash tool calls setsid) leave the CLI's group,
+// their own session (a bash tool that calls setsid) leave the CLI's group,
 // so signalling that group alone orphans them (SHE-119).
 function descendantGroups(pid) {
   const groups = new Set();
@@ -100,13 +100,12 @@ export class CodingAgent extends EventEmitter {
   get sessionId() { return this._sessionId; }
   get isActive() { return this._isActive; }
 
-  // --- Mid-turn messages for one-process-per-turn CLIs (Codex, OpenCode,
-  // Antigravity) ---
+  // --- Mid-turn messages for one-process-per-turn CLIs (Codex, Antigravity) ---
   //
   // These CLIs have no stdin to hand a follow-up to: each turn is its own
   // process resuming the session. A second process spawned mid-turn runs
   // concurrently on the same session — Codex dies on the thread's writer lock
-  // (SHE-107); OpenCode and Antigravity let both processes answer into one
+  // (SHE-107); Antigravity lets both processes answer into one
   // conversation, and Stop only reaches the newer one (SHE-118). So a message
   // sent while a turn runs waits until that turn's process has exited, then
   // runs as its own turn: the "queued until the agent is free" a mid-turn
@@ -186,7 +185,7 @@ export class CodingAgent extends EventEmitter {
 
   /**
    * Signal the child's whole process GROUP, not just its direct PID. A CLI
-   * agent (Codex/OpenCode) spawns its tools and MCP servers as child
+   * agent (Codex, Pi) spawns its tools and MCP servers as child
    * processes; when spawned `detached` they share the CLI's process group, so
    * `kill(-pid)` reaps the entire tree. Killing only the parent orphaned those
    * children and the turn kept producing output after Stop (SHE-90 follow-up).

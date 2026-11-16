@@ -55,13 +55,12 @@ test("the header button starts hidden, opens its menu, and has a shortcut", () =
   assert.match(appSrc, /new MutationObserver\([\s\S]*?refreshReportsButton\(\)[\s\S]*?\.observe\(E\.messages, \{ childList: true, subtree: true \}\)/);
 });
 
-test("phones get the list from the AI menu: the header has no room for another button", () => {
-  const css = read("../public/styles.css");
-  assert.match(html, /id="aiMenuReportsItem" data-key="p" onclick="Menus\.toggle\('reportsMenu'\)" hidden>/);
-  assert.match(appSrc, /getElementById\('aiMenuReportsItem'\)\.hidden = n === 0/);
-  assert.match(css, /\.ai-menu-reports \{ display: none; \}/, "desktop shows the header button instead");
-  const phone = css.slice(css.indexOf("@media (max-width: 480px)"));
-  assert.match(phone, /#btnReports \{ display: none; \}/);
-  assert.match(phone, /#reportsGroup \{ position: absolute; \}/, "a hidden button must not keep its flex gap");
-  assert.match(phone, /\.ai-menu-reports:not\(\[hidden\]\) \{ display: flex; \}/);
+test("phones get the list from the chat menu: the header has no room for another button", () => {
+  const css = read("../public/projects.css");
+  const projects = read("../public/projects.js");
+  assert.match(projects, /reports \? row\('reports\.open\.menu', 'p', 'doc', 'Reports in this chat', \(\) => Menus\.toggle\('reportsMenu'\), \{ value: String\(reports\), phone: true \}\) : null/);
+  assert.match(projects, /if \(r\.phone && !isPhone\(\)\) return '';/, "desktop shows the header button instead");
+  const phone = css.slice(css.indexOf("@media (max-width: 720px)"));
+  assert.match(phone, /\.btn-reports \{ display: none; \}|, \.btn-reports \{ display: none; \}/);
+  assert.match(phone, /#reportsGroup \{ position: absolute; \}/, "a hidden button must not keep a place in the header");
 });

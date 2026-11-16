@@ -1,7 +1,7 @@
 /**
  * SHE-90 follow-up — "I hit Stop on Codex, it does something, then it continues."
  *
- * Two root causes in the subprocess adapters (Codex, OpenCode):
+ * Two root causes in the subprocess adapters (Codex, and OpenCode before Pi replaced it):
  *   1. Stop signalled only the direct CLI PID, not its process GROUP. Under
  *      --dangerously-bypass-approvals-and-sandbox the CLI runs its tools/MCP
  *      servers as children; killing just the parent orphaned them and the turn

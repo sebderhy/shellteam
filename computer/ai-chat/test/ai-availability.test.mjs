@@ -1,10 +1,10 @@
 // Feature-keys liveness pins (Settings → Secrets; Feature keys until 2026-11-15):
-//   1. The status payload's key-gated flags (hasOpenCode, sttAvailable) come
+//   1. The status payload's key-gated flags (hasPi, sttAvailable) come
 //      from the control plane's live /internal/ai/status, not this process's
 //      spawn-time env — a key saved in the dashboard flips them w/o restart.
 //   2. The control-plane fetch failing falls back LOUDLY (console.warn) to
 //      process env / the last good answer — status building never crashes.
-//   3. The OpenCode setup copy points at Settings → Secrets; no surface
+//   3. The Pi setup copy points at Settings → Secrets; no surface
 //      tells the user to edit .env and restart anymore.
 //
 // Run: node --test 'computer/ai-chat/test/*.test.mjs'
@@ -42,9 +42,9 @@ beforeEach(() => {
 });
 
 test("before any fetch, availability falls back to process env", () => {
-  assert.deepEqual(aiAvailability(), { opencode: false, stt: false, tts: false });
+  assert.deepEqual(aiAvailability(), { pi: false, stt: false, tts: false });
   process.env.FIREWORKS_API_KEY = "fk";
-  assert.deepEqual(aiAvailability(), { opencode: true, stt: false, tts: false });
+  assert.deepEqual(aiAvailability(), { pi: true, stt: false, tts: false });
 });
 
 test("a managed box with only a relay token still gets the mic (env fallback)", () => {
@@ -66,14 +66,14 @@ test("a guest cockpit with only a voice-input token is offered no voice output",
   // promise a capability that 401s on first use.
   delete process.env.SHELLTEAM_AI_TOKEN;
   process.env.ELEVENLABS_API_KEY = "el";
-  assert.deepEqual(aiAvailability(), { opencode: false, stt: true, tts: false });
+  assert.deepEqual(aiAvailability(), { pi: false, stt: true, tts: false });
 });
 
 test("a successful refresh overrides stale process env with the live answer", async () => {
   process.env.FIREWORKS_API_KEY = "stale-spawn-time-key"; // env says yes…
-  const fresh = await refreshAiAvailability({ fetchImpl: okFetch({ opencode: false, stt: true, tts: true }) });
-  assert.deepEqual(fresh, { opencode: false, stt: true, tts: true }); // …control plane wins
-  assert.deepEqual(aiAvailability(), { opencode: false, stt: true, tts: true });
+  const fresh = await refreshAiAvailability({ fetchImpl: okFetch({ pi: false, stt: true, tts: true }) });
+  assert.deepEqual(fresh, { pi: false, stt: true, tts: true }); // …control plane wins
+  assert.deepEqual(aiAvailability(), { pi: false, stt: true, tts: true });
 });
 
 test("a failed refresh warns loudly and falls back to process env", async () => {
@@ -84,14 +84,14 @@ test("a failed refresh warns loudly and falls back to process env", async () => 
   assert.equal(calls.length, 1, "the fallback must be logged");
   assert.match(calls[0], /\[ai-availability\].*failed.*process env/);
   // The env fallback grants tts too: this box holds the key AND the master token.
-  assert.deepEqual(aiAvailability(), { opencode: false, stt: true, tts: true });
+  assert.deepEqual(aiAvailability(), { pi: false, stt: true, tts: true });
 });
 
 test("a failed refresh keeps the last good control-plane answer", async () => {
-  await refreshAiAvailability({ fetchImpl: okFetch({ opencode: true, stt: true, tts: true }) });
+  await refreshAiAvailability({ fetchImpl: okFetch({ pi: true, stt: true, tts: true }) });
   const { calls } = await captureWarn(() => refreshAiAvailability({ fetchImpl: failFetch }));
   assert.match(calls[0], /last good answer/);
-  assert.deepEqual(aiAvailability(), { opencode: true, stt: true, tts: true });
+  assert.deepEqual(aiAvailability(), { pi: true, stt: true, tts: true });
 });
 
 test("a non-200 from the control plane is a failure, not a blank answer", async () => {
@@ -102,15 +102,15 @@ test("a non-200 from the control plane is a failure, not a blank answer", async 
   assert.match(calls[0], /HTTP 500/);
 });
 
-test("status payload wires hasOpenCode + sttAvailable through aiAvailability()", () => {
+test("status payload wires hasPi + sttAvailable through aiAvailability()", () => {
   const src = read("../server.mjs");
   assert.match(src, /const ai = aiAvailability\(\)/,
     "authFlags must read the live control-plane availability");
-  assert.match(src, /hasOpenCode: ai\.opencode/,
-    "hasOpenCode must come from the live answer, not process.env");
+  assert.match(src, /hasPi: ai\.pi/,
+    "hasPi must come from the live answer, not process.env");
   assert.match(src, /sttAvailable: ai\.stt/,
     "the status payload must carry sttAvailable for the mic button");
-  assert.doesNotMatch(src, /hasOpenCode: !!process\.env\.FIREWORKS_API_KEY/,
+  assert.doesNotMatch(src, /hasPi: !!process\.env\.FIREWORKS_API_KEY/,
     "the stale process-env read must be gone");
   assert.match(src, /startAiAvailabilityPolling\(\{ onChange: \(\) => broadcast\(buildStatus\(\)\) \}\)/,
     "a capability change must push a fresh status to connected clients");
@@ -124,12 +124,12 @@ test("the client hides the mic when the server says sttAvailable === false", () 
     "the hidden mic must explain itself via the title/hint copy");
 });
 
-test("no OpenCode setup surface tells the user to edit .env anymore", () => {
+test("no Pi setup surface tells the user to edit .env anymore", () => {
   for (const rel of ["../public/app.js", "../public/index.html", "../../../frontend/dashboard.html"]) {
     const src = read(rel);
-    for (const m of src.matchAll(/[^\n]*OpenCode[^\n]*/g)) {
+    for (const m of src.matchAll(/[^\n]*\bPi\b[^\n]*/g)) {
       assert.doesNotMatch(m[0], /\.env/,
-        `${rel}: OpenCode copy must point at Settings → Secrets, not .env: ${m[0].trim().slice(0, 120)}`);
+        `${rel}: Pi copy must point at Settings → Secrets, not .env: ${m[0].trim().slice(0, 120)}`);
     }
     assert.match(src, /Settings → Secrets/,
       `${rel} must point users at Settings → Secrets`);

@@ -46,220 +46,13 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
    "pop-out" affordance. */
 a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 
-/* --- Session Tabs --- */
-.session-tabs {
-    display: flex; align-items: center;
-    height: 32px; min-height: 32px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    padding: 0 8px; gap: 2px;
-    overflow: hidden; flex-shrink: 0;
-    scrollbar-width: none;
-}
-.session-tabs::-webkit-scrollbar { display: none; }
-.session-tab-list {
-    display: flex; align-items: center; gap: 2px;
-    /* Size to the tabs, not the whole strip: flex:1 stretched the list across
-       the bar and shoved the sibling "+" button to the far right, detached and
-       hard to find (SHE-83/85). flex:0 1 auto lets the list shrink when tabs
-       overflow while the "+" sits right after the last tab. */
-    flex: 0 1 auto; min-width: 0; overflow: hidden;
-}
-.session-tab {
-    display: flex; align-items: center; gap: 4px;
-    height: 24px;
-    font-size: 12px; font-weight: 500;
-    color: var(--text-dim); cursor: pointer;
-    border-radius: 6px; white-space: nowrap;
-    transition: color 0.15s, background 0.15s; user-select: none;
-    /* Shrink to share the strip so every tab stays visible — never scroll.
-       min-width:0 lets a flex item shrink below its content; the label span
-       (below) then ellipsis-truncates. */
-    flex: 0 1 auto; min-width: 0; overflow: hidden;
-}
-.session-tab-open {
-    display: flex; align-items: center; flex: 1; min-width: 0; height: 100%;
-    padding: 4px 4px 4px 10px; border: 0; background: transparent; color: inherit;
-    font: inherit; cursor: pointer; text-align: left;
-}
-.session-tab-label {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-}
-.session-tab:hover { color: var(--text-muted); background: var(--surface); }
-.session-tab.active { color: var(--text); background: var(--surface-el); }
-/* Drag-to-reorder (SHE-75): the lifted tab dims; the drop target shows an
-   accent insertion edge on the side the tab will land. */
-.session-tab.dragging { opacity: 0.4; }
-.session-tab.drag-over { box-shadow: inset 2px 0 0 var(--accent); }
-/* Dropped on its middle, the dragged tab merges into this one (SHE-128). */
-.session-tab.merge-target { box-shadow: inset 0 0 0 2px var(--accent); background: var(--surface-el); }
-.session-tab-close {
-    width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
-    border: none; background: transparent; color: var(--text-dim);
-    cursor: pointer; font-size: 11px; line-height: 1;
-    padding: 0; margin-right: 4px; display: none; align-items: center; justify-content: center;
-}
-.session-tab:hover .session-tab-close { display: flex; }
-.session-tab-close:hover { background: var(--red); color: white; }
-/* A working tab is a filled amber pill (tint + ring) with the pulsing dot
-   INSIDE it, so the indicator is unmistakably bound to its OWN tab. A bare
-   leading dot between two adjacent tabs read as trailing the LEFT tab when it
-   actually belonged to the right one (SHE-89/SHE-91). Placed after .active so
-   the working tint wins even on the tab you're viewing. */
-.session-tab.generating {
-    background: var(--accent-bg);
-    box-shadow: inset 0 0 0 1px var(--accent-border);
-    color: var(--text);
-}
-.session-tab.generating:hover { background: var(--accent-border); }
-/* The working tint above hides .active, so with several tabs working you could
-   not tell which one you were on. The tab you're viewing keeps the pill but
-   gets a solid ring and a stronger fill. */
-.session-tab.generating.active,
-.session-tab.generating.active:hover {
-    background: var(--accent-active-bg);
-    box-shadow: inset 0 0 0 1.5px var(--accent);
-}
-.session-tab.generating::before {
-    content: ''; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent); flex-shrink: 0; margin-left: 8px;
-    box-shadow: 0 0 5px var(--accent);
-    animation: pulse 1s infinite;
-}
-/* Unread, Slack-style: the agent finished a turn you haven't looked at.
-   Bold title + a green "answer waiting" dot, distinct from the amber working
-   pulse. A working tab shows only the working style (nothing to read yet). */
-.session-tab.unread { color: var(--text); font-weight: 700; }
-.session-tab.unread .session-tab-open::after {
-    content: ''; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-    background: var(--green); margin-left: 6px;
-}
-.drawer-item.unread .drawer-item-label { color: var(--text); font-weight: 700; }
-.drawer-item.unread .drawer-item-dot { background: var(--green); }
-/* A count after the caret, not a dot: a dot sat beside the green
-   "connected" status dot and read as the same signal. (A real element: the
-   button's ::after is its enlarged phone tap area.) */
-.conv-switcher-badge {
-    flex-shrink: 0; margin-left: 2px;
-    min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px;
-    background: var(--green); color: #0b0b0b; font-size: 11px; font-weight: 700;
-    display: inline-flex; align-items: center; justify-content: center;
-}
-.conv-switcher-badge[hidden] { display: none; }
-/* Right-click menu on a tab: the header menus' look, placed at the pointer. */
+/* The popup menu of an agent or a project in the column: the header menus' look, placed at the pointer. */
 /* Two classes on purpose: .actions-menu (declared further down) sets
    position/right too, and with one class it won, stretching this menu from
    the pointer to the right edge of the window. */
 .actions-menu.tab-context-menu { position: fixed; top: auto; right: auto; min-width: 170px; max-width: 320px; z-index: 300; }
 .tab-context-menu .actions-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .tab-context-menu .actions-item:disabled { opacity: 0.4; cursor: not-allowed; }
-.session-tab-add {
-    width: 22px; height: 22px; border-radius: 6px;
-    border: 1px solid var(--border); background: transparent;
-    color: var(--text-dim); cursor: pointer; font-size: 14px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; margin-left: 2px;
-}
-.session-tab-add:hover { border-color: var(--accent); color: var(--accent); }
-.app.terminal-mode .session-tabs { display: none !important; }
-
-/* Inline tab-title editing (double-click a tab / drawer label) */
-.session-tab-label.renaming,
-.drawer-item-label.renaming {
-    outline: 1px solid var(--accent); border-radius: 4px;
-    padding: 0 4px; margin: 0 -4px; background: var(--bg);
-    cursor: text; overflow: visible; min-width: 40px;
-    -webkit-user-select: text; user-select: text;
-}
-.drawer-item-rename {
-    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; color: var(--text-dim); cursor: pointer;
-    border-radius: 6px; border: 0; background: transparent;
-}
-.drawer-item-rename:hover { color: var(--accent); background: var(--surface); }
-.drawer-rename-input {
-    flex: 1; min-width: 0; padding: 8px 10px; border-radius: 7px;
-    border: 1px solid var(--accent); background: var(--bg); color: var(--text);
-    font: 14px var(--font); outline: 0;
-}
-
-/* --- Conversation switcher + drawer (mobile) --- */
-.conv-switcher {
-    display: flex; align-items: center; gap: 4px;
-    border: 0; background: transparent; cursor: pointer;
-    color: var(--text); font-family: var(--font);
-    font-size: 14px; font-weight: 600; padding: 4px 2px;
-    min-width: 0; flex: 1;
-}
-.conv-switcher-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-switcher-caret { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-dim); }
-
-.session-drawer-backdrop {
-    position: fixed; inset: 0; z-index: 70; display: none;
-    background: rgba(0,0,0,0.55); backdrop-filter: blur(2px);
-}
-.session-drawer-backdrop.visible { display: block; }
-.session-drawer {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 71;
-    transform: translateY(101%); transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
-    background: var(--surface); border-top: 1px solid var(--border);
-    border-radius: 20px 20px 0 0;
-    padding: 8px 14px calc(16px + env(safe-area-inset-bottom, 0px));
-    max-height: 72vh; display: flex; flex-direction: column;
-    box-shadow: 0 -10px 36px rgba(0,0,0,0.45);
-}
-.session-drawer.visible { transform: translateY(0); }
-.session-drawer-grip {
-    width: 38px; height: 4px; border-radius: 2px; background: var(--border);
-    margin: 4px auto 12px; flex-shrink: 0;
-}
-.session-drawer-head {
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px;
-}
-.session-drawer-head h2 { font: inherit; }
-.session-drawer-close { border: 0; background: transparent; color: var(--text-dim); cursor: pointer; padding: 4px; display: flex; }
-.session-drawer-cwd {
-    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 2px 0 12px;
-}
-.session-drawer-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; -webkit-overflow-scrolling: touch; }
-.drawer-item {
-    display: flex; align-items: center; gap: 11px;
-    padding: 13px 12px; border-radius: 11px;
-    background: var(--surface-el); min-height: 52px;
-    border: 1.5px solid transparent;
-}
-.drawer-item.active { border-color: var(--accent); }
-.drawer-item-open {
-    display: flex; align-items: center; gap: 11px; flex: 1; min-width: 0;
-    padding: 0; border: 0; background: transparent; color: inherit;
-    font-family: var(--font); text-align: left; cursor: pointer;
-}
-.drawer-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-dim); }
-.drawer-item.active .drawer-item-dot { background: var(--accent); }
-.drawer-item-dot.generating { background: var(--accent); animation: pulse 1s infinite; }
-.drawer-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.drawer-item-label {
-    display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: 14.5px; color: var(--text); font-weight: 500;
-}
-/* Resume-picker-style meta badges (model + workspace) under the title */
-.drawer-item-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.drawer-item-close {
-    flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--text-dim); font-size: 22px; line-height: 1;
-    border: 0; background: transparent; cursor: pointer;
-}
-.drawer-item-close:active { background: var(--red); color: #fff; }
-.session-drawer-new {
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    margin-top: 12px; padding: 14px; border-radius: 11px; flex-shrink: 0;
-    border: 1px solid var(--border); background: transparent; cursor: pointer;
-    color: var(--accent); font-family: var(--font); font-size: 14.5px; font-weight: 600;
-    min-height: 50px;
-}
 
 /* --- Status Bar --- */
 .status-bar {
@@ -268,9 +61,7 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
     background: var(--surface); border-bottom: 1px solid var(--border);
     flex-shrink: 0;
 }
-/* The monitor is now just badge + a thin bar, so a subscription no longer needs
-   a taller bar than the base header (was a 3-line meter). */
-.status-bar.quota-active { height: 44px; min-height: 44px; }
+
 .subscription-warning {
     display: flex; align-items: center; gap: 11px; flex-shrink: 0;
     padding: 10px 12px; border-bottom: 1px solid rgba(245, 158, 11, 0.32);
@@ -294,7 +85,6 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
     font: 600 12px/1 var(--font); cursor: pointer; white-space: nowrap;
 }
 .subscription-warning-action:hover { background: rgba(245, 158, 11, 0.12); border-color: var(--accent); }
-.status-left { display: flex; align-items: center; gap: 8px; }
 .status-dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--text-dim); flex-shrink: 0;
@@ -303,8 +93,6 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 .status-dot.generating { background: var(--accent); animation: pulse 1s infinite; }
 .status-dot.disconnected { background: var(--red); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-.status-label { font-size: 13px; color: var(--text-muted); font-weight: 500; }
-.status-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
 /* Billing badge next to the model picker: subscription vs pay-per-token API key.
    The api variant is deliberately loud — a metered API key is the expensive path. */
 .auth-badge {
@@ -324,46 +112,9 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 /* Top bar: the billing badge, plus a compact usage bar on a subscription.
    Deliberately quiet — no numbers, labels or reset text up here; those live in
    the tap-to-open .quota-panel. */
-.subscription-monitor {
-    position: relative; min-width: 0;
-    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-}
-.subscription-monitor[hidden] { display: none; }
-.quota-meter {
-    display: flex; min-width: 0; padding: 0; border: 0;
-    background: transparent; color: var(--text-muted);
-    font: inherit; text-align: left; gap: 4px; flex-direction: column; align-items: flex-start;
-    cursor: default;
-}
-.quota-meter.interactive { cursor: pointer; }
-.quota-meter:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
-.quota-meter-track {
-    display: block; width: 118px; max-width: 100%; height: 5px; overflow: hidden;
-    border-radius: 999px; background: var(--surface-el); border: 1px solid var(--border);
-}
-.quota-meter-track[hidden] { display: none; }
-.quota-meter-fill {
-    display: block; width: 0; height: 100%; border-radius: inherit;
-    background: var(--green); transition: width 260ms ease, background-color 160ms ease;
-}
-.quota-meter-fill.warn { background: var(--accent); }
-.quota-meter-fill.critical { background: var(--red); }
-.quota-meter-fill.unavailable { width: 18%; background: var(--text-dim); }
-.quota-meter-track.indeterminate .quota-meter-fill {
-    width: 34%; background: var(--text-muted); animation: quota-scan 1.25s ease-in-out infinite alternate;
-}
-@keyframes quota-scan { from { transform: translateX(-45%); } to { transform: translateX(195%); } }
-@media (hover: hover) {
-    .quota-meter.interactive:hover .quota-meter-track { border-color: rgba(245,158,11,0.55); }
-}
-@media (pointer: coarse) { .quota-meter.interactive { padding: 3px 0; } }
-@media (prefers-reduced-motion: reduce) {
-    .quota-meter-fill { transition: none; }
-    .quota-meter-track.indeterminate .quota-meter-fill { animation: none; transform: translateX(0); }
-}
 
-/* --- Subscription usage panel (tap the bar) — reuses the .actions-menu shell
-   and the Info panel's .info-bar meter for one consistent look. --- */
+/* --- Usage panel (click the ring) — reuses the .actions-menu shell and the
+   Info panel's .info-bar meter for one consistent look. --- */
 .quota-panel { min-width: 244px; max-width: 300px; padding: 0; cursor: default; }
 .quota-panel-head {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -405,21 +156,7 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
     color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-align: center;
 }
 .quota-action:hover { border-color: var(--text-muted); }
-.workspace-combo {
-    position: relative;
-}
-/* A button into the one workspace picker (the modal the model menu also
-   opens) — the header keeps its own free-text combo no longer (SHE-100). */
-.workspace-input {
-    font-size: 12px; font-family: var(--mono); font-weight: 500;
-    background: var(--surface-el); color: var(--text-muted);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 5px 8px; max-width: 160px;
-    outline: none; cursor: pointer;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    text-align: left;
-}
-.workspace-input:hover, .workspace-input:focus-visible { border-color: var(--accent); color: var(--text); }
+
 /* Header icon buttons (Info, System) */
 .btn-icon {
     width: 32px; height: 32px; border-radius: 8px;
@@ -444,32 +181,12 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 /* Back to Chat button — only visible in terminal mode */
 .btn-back-to-chat { display: none !important; }
 .app.terminal-mode .btn-back-to-chat { display: inline-flex !important; }
-.app.terminal-mode .desktop-only { display: none !important; }
-.app.terminal-mode .mobile-only { display: none !important; }
 .app.terminal-mode .hdr-group { display: none !important; }
 
-/* Desktop: show inline buttons, hide kebab */
-.mobile-only { display: none; }
-.desktop-only { display: inline-flex; }
-
-/* --- Grouped header menus (AI / Info / System) --- */
+/* --- Header menus (chat menu / reports / usage / info) --- */
 .hdr-group { position: relative; }
-/* The AI button: sparkle + current model name + caret. It is both the model
-   indicator and the entry to model/workspace/session actions. */
-.btn-ai { gap: 6px; max-width: 190px; padding: 5px 9px; }
-.btn-ai > svg:first-child { color: var(--accent); flex-shrink: 0; }
-.btn-ai-model {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-}
 .btn-caret { color: var(--text-dim); flex-shrink: 0; }
-/* Amber "look at me" dot on Info: metered API key, missing credential, or
-   context ≥80% full. */
-.btn-info { position: relative; }
-.btn-info.warn::after {
-    content: ''; position: absolute; top: -3px; right: -3px;
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--accent); border: 2px solid var(--surface);
-}
+
 .actions-backdrop {
     display: none; position: fixed; inset: 0; z-index: 99;
 }
@@ -499,7 +216,7 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 .actions-item.kbd-active .actions-mn { text-decoration-color: var(--accent-hover); }
 .actions-item svg { width: 16px; height: 16px; flex-shrink: 0; }
 .actions-sep { height: 1px; background: var(--border); margin: 2px 0; }
-/* Current value shown on a menu row (Model / Workspace), chevron = "opens a picker" */
+/* Current value shown on a menu row (the model, a count) */
 .actions-value {
     margin-left: auto; max-width: 150px; text-align: right;
     font-size: 12px; color: var(--text-dim); font-family: var(--mono);
@@ -523,8 +240,6 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 .reports-item-name, .reports-item-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reports-item-name { color: var(--text); }
 .reports-item-where { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
-/* The AI menu's Reports row is the phone's way in (see the ≤480px block). */
-.ai-menu-reports { display: none; }
 
 /* --- Info panel --- */
 .info-panel { min-width: 280px; max-width: 340px; padding: 4px 0 8px; cursor: default; }
@@ -677,16 +392,16 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
     background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
     user-select: all; cursor: text;
 }
-.setup-oc-card {
+.setup-pi-card {
     padding: 16px; border-radius: 8px;
     background: rgba(76, 175, 80, 0.08); border: 1px solid rgba(76, 175, 80, 0.25);
     text-align: left;
 }
-.setup-oc-title {
+.setup-pi-title {
     font-size: 14px; font-weight: 600; color: var(--green);
     margin-bottom: 6px;
 }
-.setup-oc-body {
+.setup-pi-body {
     font-size: 13px; color: var(--text-muted); line-height: 1.5;
 }
 .setup-included-btn { width: 100%; margin-top: 8px; }
@@ -1215,7 +930,7 @@ a.report-link::after { content: " ⤢"; opacity: 0.6; font-size: 0.85em; }
 .file-thumb.uploading { opacity: 0.5; }
 .file-thumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* --- Keyboard shortcuts cheat sheet ("?" / System menu) --- */
+/* --- Keyboard shortcuts cheat sheet ("?", the jump box, Settings) --- */
 .shortcuts-help { max-width: 560px; padding: 18px 20px; }
 .shortcuts-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 .shortcuts-group { margin-bottom: 14px; }
@@ -1498,50 +1213,13 @@ kbd { font-family: var(--mono); }
 .file-item .match { color: var(--accent); font-weight: 600; }
 .file-empty { padding: 12px 14px; color: var(--text-dim); font-size: 13px; }
 
-/* --- Narrow (small window / dashboard side panel / tablet portrait) ---
-   The header collapses to grouped controls well before phone width. The
-   subscription monitor remains visible: it is an operational constraint, not
-   secondary detail. Context stays compact unless it is a hot warning. */
-@media (max-width: 720px) {
-    .workspace-combo { display: none; }
-    .status-label { display: none; }
-    .status-right { gap: 8px; }
-    .status-bar.quota-active { height: 44px; min-height: 44px; }
-    .quota-meter-track { width: 104px; }
-    #contextMeter:not(.api) { display: none; }
-    .btn-ai { max-width: 136px; }
-}
-
 /* --- Mobile --- */
 @media (max-width: 480px) {
-    /* Mobile: the horizontal tab strip is replaced by the conversation drawer
-       (bottom sheet) + a compact switcher in the header. */
-    .session-tabs { display: none; }
-    .conv-switcher.mobile-only { display: flex; }
-    .status-bar { padding: 0 10px; height: 48px; min-height: 48px; }
-    .status-bar.quota-active { height: 48px; min-height: 48px; }
     .subscription-warning { align-items: flex-start; padding: 11px 10px; flex-wrap: wrap; }
     .subscription-warning-copy { min-width: calc(100% - 38px); }
     .subscription-warning-actions { width: 100%; padding-left: 35px; justify-content: flex-start; }
     .subscription-warning-action { min-height: 44px; }
-    /* The tab switcher lives in .status-left; .status-right is flex-shrink:0,
-       so when the right cluster outgrows the viewport the switcher collapses
-       to zero width and tab switching becomes unreachable (SHE-70). Two
-       guards: compact the right cluster so it FITS a 360px viewport (Help
-       hidden, narrower AI button, context pill relegated to the Info menu),
-       and floor the switcher so right-cluster growth can never zero it. */
-    .status-left { flex: 1; min-width: 96px; gap: 8px; }
-    .status-right { gap: 6px; min-width: 0; flex-shrink: 0; }
-    .hdr-group { flex-shrink: 0; }
-    .btn-ai { max-width: 96px; }
-    .btn-icon { width: 34px; height: 34px; }
-    .btn-help { display: none; }
-    #contextMeter { display: none; }
-    .subscription-monitor { gap: 3px; }
-    .subscription-monitor .auth-badge { font-size: 9px; padding: 3px 6px; }
-    .quota-meter-track { width: 78px; }
-    .desktop-only { display: none !important; }
-    .mobile-only { display: block; }
+
     /* Header menus become bottom sheets — thumb-reachable, full-width */
     .actions-menu {
         position: fixed; left: 8px; right: 8px; top: auto;
@@ -1550,16 +1228,10 @@ kbd { font-family: var(--mono); }
         max-height: 70vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     }
     .actions-item { padding: 14px; min-height: 48px; }
-    /* No room in the header for the Reports button: the AI menu carries a
-       Reports row instead. The group stays (its menu is a fixed bottom sheet
-       here) but takes no space, not even a flex gap. */
-    #btnReports { display: none; }
-    #reportsGroup { position: absolute; }
-    .ai-menu-reports:not([hidden]) { display: flex; }
+
     .info-row { padding: 10px 16px; font-size: 14px; }
     /* Back to chat still visible on mobile terminal mode */
     .app.terminal-mode .btn-back-to-chat { display: inline-flex !important; }
-    .app.terminal-mode .mobile-only { display: none !important; }
 
     /* --- Mobile-first UI polish --- */
 
@@ -1619,25 +1291,6 @@ kbd { font-family: var(--mono); }
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
     }
 
-    /* Header controls: same 44px bar, but the visual design of the 48px
-       status bar is audited and stays untouched — instead each control gets
-       an invisible overlay that extends its interactive hit area to the full
-       44px height. Horizontal growth is 3px per side — half the 6px gap
-       between right-cluster controls — EXCEPT where boxes can touch: the
-       switcher fills all free space and can abut the subscription meter, so
-       the switcher grows nowhere horizontally and the meter grows only to
-       its RIGHT. No two hit areas ever overlap, even at 320px where the
-       switcher and meter visuals meet (release-audit P2-03). A button's
-       pseudo-element is part of its hit-test box, so taps on the overlay
-       activate the control. */
-    .conv-switcher, .quota-meter, .btn-ai, .btn-icon { position: relative; }
-    .conv-switcher::after, .quota-meter::after, .btn-ai::after, .btn-icon::after {
-        content: ''; position: absolute;
-        top: calc(50% - 22px); height: 44px;
-        left: -3px; right: -3px;
-    }
-    .conv-switcher::after { left: 0; right: 0; }
-    .quota-meter::after { left: 0; }
 }
 
 @media (max-width: 360px) {
@@ -1646,8 +1299,5 @@ kbd { font-family: var(--mono); }
        placeholder. Tap targets stay 44px (they must); the space between them
        gives way instead. */
     .composer { gap: 4px; padding-left: 4px; padding-right: 4px; }
-    .btn-help { display: none; }
-    .btn-ai { padding: 5px 8px; }
-    .btn-ai-model, .btn-ai .btn-caret { display: none; }
-    .quota-meter-track { width: 70px; }
+
 }

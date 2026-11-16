@@ -47,6 +47,8 @@ Two facts from his own box shaped the design:
    reports.
 7. **It is opt-in for now.** Settings -> Layout stores `COCKPIT_LAYOUT` in
    `.env` so every device follows. Default is `tabs`.
+   *Superseded on 2026-11-15: the column is the only layout and the switch is
+   gone. See [20261115-cockpit-map-and-usage-counts.md](20261115-cockpit-map-and-usage-counts.md).*
 8. **The word stays "agents".** Not "employees": a tab is a conversation, and
    invented names or avatars would read as a toy.
 

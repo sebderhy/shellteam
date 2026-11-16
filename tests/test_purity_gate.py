@@ -24,7 +24,8 @@ from api.services.agent_layer import (
     codex_session_home_dir,
     harness_skills_dir,
     layer_manifest_file,
-    opencode_config_file,
+    pi_extension_file,
+    pi_layer_file,
 )
 
 CORE = frozenset()
@@ -63,18 +64,22 @@ class TestPureCore:
             "codex_session_home": False,
             "harness_skills": False,
             "antigravity_plugin": False,
-            "opencode_config": True,
+            "pi_layer": True,
         }
 
-    def test_opencode_config_is_provider_only(self, home: Path):
-        """The one core-mode artifact: OpenCode's proxied provider (credential
-        plumbing — without it the agent can't run). Zero behavior injection."""
+    def test_pi_layer_is_provider_only(self, home: Path):
+        """The one core-mode artifact: Pi's proxied provider (credential
+        plumbing — without it the agent can't run). Zero behavior injection:
+        no MCP servers, and no prompt or skills (those are cockpit flags the
+        manifest gates)."""
         build_agent_layer(home, "alice", modules=CORE)
-        cfg = json.loads(opencode_config_file(home).read_text())
-        assert "fireworks" in cfg["provider"]
-        assert "mcp" not in cfg
-        assert "skills" not in cfg
-        assert "instructions" not in cfg
+        layer = json.loads(pi_layer_file(home).read_text())
+        assert set(layer) == {"provider", "mcpServers"}
+        assert layer["provider"]["baseUrl"].endswith("/internal/ai/fireworks/v1")
+        assert layer["provider"]["models"]
+        assert layer["mcpServers"] == {}
+        assert (pi_layer_file(home).stat().st_mode & 0o777) == 0o600
+        assert pi_extension_file(home).is_file()
 
     def test_no_mcp_servers(self, home: Path):
         assert canonical_mcp_servers(home, modules=CORE) == {}
@@ -127,9 +132,9 @@ class TestPerModuleGranularity:
         servers = json.loads(claude_mcp_config_file(home).read_text())["mcpServers"]
         assert "browser" not in servers
         assert {"context7", "deepwiki"} <= set(servers)
-        # OpenCode gets the layer skills + persona instructions again.
-        cfg = json.loads(opencode_config_file(home).read_text())
-        assert str(harness_skills_dir(home)) in cfg["skills"]["paths"]
+        # Pi gets the same MCP servers through its layer.
+        layer = json.loads(pi_layer_file(home).read_text())
+        assert set(layer["mcpServers"]) == set(servers)
 
     def test_linear_requires_key(self, home: Path, monkeypatch):
         monkeypatch.delenv("LINEAR_API_KEY", raising=False)

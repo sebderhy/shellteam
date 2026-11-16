@@ -1,7 +1,7 @@
 /**
  * "I tried uploading a screenshot and ShellTeam says it can't see it" (Seb,
  * office VDI, 2026-09-27, on Codex). Only Claude Code takes pasted images as
- * content blocks. The Codex, OpenCode and Antigravity adapters kept only the
+ * content blocks. The Codex, OpenCode (since replaced by Pi) and Antigravity adapters kept only the
  * text blocks, so the screenshot was silently dropped before the CLI ever ran.
  *
  * Now the image is saved to a file: Codex attaches it natively (--image), the

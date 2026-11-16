@@ -42,6 +42,13 @@ export const PROJECTS_FILE = join(HOME, ".config", "shellteam", "projects.json")
 // Chats moved into a project, one JSON line each. The Reports tab reads it so
 // a moved chat's reports follow it (api/services/report_catalog.py).
 export const SESSION_MOVES_FILE = join(HOME, ".config", "shellteam", "moved-sessions.jsonl");
+// Where agents' browser tools connect: the gate in front of the browser
+// (lib/browser-gate.mjs, SHE-170). Loopback only. The control plane writes the
+// same port into the agents' launch layer (api/config.py BROWSER_GATE_PORT).
+export const BROWSER_GATE_PORT = Number(process.env.BROWSER_GATE_PORT || 3878);
+export const STEEL_PORT = Number(process.env.STEEL_PORT || 3877);
+// A private count of which controls the owner uses (SHE-204, lib/ui-use.mjs). Never leaves the box.
+export const UI_USE_FILE = join(HOME, ".config", "shellteam", "ui-use.json");
 // Reports a chat wrote, one JSON line each, recorded when the turn ends, so
 // reports from every agent land in their project (lib/report-writes.mjs, SHE-177).
 export const REPORT_WRITES_FILE = join(HOME, ".config", "shellteam", "report-writes.jsonl");

@@ -109,10 +109,10 @@ describe("modelPermitted", () => {
     assert.deepEqual(modelPermitted("gpt-6.1-sol-max"), { ok: true });
   });
 
-  it("leaves OpenCode alone: its proxy bills 'included' but is not this allowlist", () => {
+  it("leaves Pi alone: its proxy bills 'included' but is not this allowlist", () => {
     process.env.OPENAI_API_KEY = "sk-demo";
     process.env.INCLUDED_MODELS = "gpt-6-luna-max";
-    assert.deepEqual(modelPermitted("kimi-k3"), { ok: true });
+    assert.deepEqual(modelPermitted("kimi-k3p1-pro"), { ok: true });
     assert.deepEqual(modelPermitted("glm-5p3"), { ok: true });
   });
 

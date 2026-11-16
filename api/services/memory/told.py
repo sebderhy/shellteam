@@ -63,6 +63,8 @@ def chat_start(home: Path, tab: dict) -> float:
         found = list((home / ".claude" / "projects").glob(f"*/{session}.jsonl"))
     elif session and family == "codex":
         found = list((home / ".codex" / "sessions").rglob(f"rollout-*{session}.jsonl"))
+    elif session and family == "pi":
+        found = list(reading.pi_sessions_root(home).glob(f"*/*_{session}.jsonl"))
     for path in found:
         with path.open() as f:
             for raw in f:

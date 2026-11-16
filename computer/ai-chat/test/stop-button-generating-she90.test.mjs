@@ -142,11 +142,12 @@ test("SHE-90 (client): handleSend sets pendingSend and every resolve path clears
   assert.ok(clears >= 3, `expected >=3 pendingSend clears, found ${clears}`);
 });
 
-test("SHE-89 (client): the running-tab dot lights from pendingSend too", () => {
-  const line = APP_JS.match(/const generating = [^\n]*;/);
-  assert.ok(line, "generating-class assignment exists in renderSessionTabs");
-  assert.ok(
-    /pendingSend/.test(line[0]),
-    `the dot must light on a just-sent tab: ${line[0]}`,
-  );
+test("SHE-89 (client): a chat says Working from pendingSend too, in the column", () => {
+  const src = readFileSync(join(DIR, "../public/projects.js"), "utf8");
+  const stateOf = src.match(/\n    function stateOf\(slot\) \{[\s\S]*?\n    \}\n/);
+  assert.ok(stateOf, "stateOf exists in projects.js");
+  assert.match(stateOf[0], /const working = slot\.isGenerating \|\| slot\.pendingSend;/,
+    "a just-sent chat must read Working before its first token lands");
+  // SHE-81: the open chat is not an exception, it shows its state like the others.
+  assert.ok(!/activeSlotId/.test(stateOf[0]), "the open chat's state is never hidden");
 });

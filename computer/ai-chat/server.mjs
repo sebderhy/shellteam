@@ -20,6 +20,10 @@ import {
   listProjects, ensureProject, projectFor, renameProject, removeProject, reorderProjects,
   createProject, openProject, cloneProject,
 } from "./lib/projects.mjs";
+import { recordUse } from "./lib/ui-use.mjs";
+import { createBrowserGate } from "./lib/browser-gate.mjs";
+import { chatOfLocalPort } from "./lib/peer-chat.mjs";
+import { BROWSER_GATE_PORT, STEEL_PORT } from "./lib/constants.mjs";
 import { moveInPrompt, recordSessionMove } from "./lib/project-move.mjs";
 import { installedAgents } from "./lib/agents/registry.mjs";
 import { enabledModules, codexProviderOverrides } from "./lib/agent-layer.mjs";
@@ -106,6 +110,7 @@ import {
   getHistory,
   refreshSlotFromDisk,
   pruneStaleSlots,
+  setNeedsOwner,
   markSlotUsed,
   isSlotUnread,
   setSlotUnread,
@@ -172,8 +177,69 @@ function broadcast(obj) {
     if (ws.readyState === 1) ws.send(data);
   }
 }
+// --- The browser gate (SHE-170, lib/browser-gate.mjs) ---------------------
+// Agents' browser tools connect to it instead of the browser, so the owner can
+// take the browser (agents are refused until it is handed back), one chat
+// browses at a time, and the cockpit knows which chat that is.
+let browserGate = null;
+const BROWSER_HANDED_BACK = `<cockpit-notice>
+The owner has handed the browser back to you. The page may have changed while they had it: look at it again (take a snapshot) before you act, then continue what you were doing.
+</cockpit-notice>`;
+
+/** The owner hands the browser back: every chat that was waiting for it (it
+ *  asked for the owner's turn, or was refused meanwhile) is told, and resumes. */
+async function handBrowserBack() {
+  const chats = new Set(browserGate.handBack().map(Number));
+  for (const s of listSlots()) if (s.needsOwner) chats.add(s.id);
+  for (const slot of chats) {
+    const row = listSlots().find((s) => s.id === slot);
+    if (!row) continue;
+    setNeedsOwner(slot, null);
+    // Mid-turn, its next browser command simply works again: nothing to say.
+    if (row.isGenerating) continue;
+    addUserMessage(slot, BROWSER_HANDED_BACK);
+    broadcast({ type: "history", messages: getHistory(slot), slot });
+    try {
+      if (!isQueryActive(slot)) await startAgent(slot);
+      await sendMessage(slot, BROWSER_HANDED_BACK);
+      console.log(`[ai-chat] Browser handed back: chat ${slot} told to continue`);
+    } catch (e) {
+      console.error(`[ai-chat] Browser handed back, but chat ${slot} could not be told: ${e.message}`);
+    }
+  }
+  broadcast(buildStatus());
+}
+
+function startBrowserGate() {
+  // An employee's cockpit reaches its own browser sidecar: no gate there.
+  if (!enabledModules().includes("browser") || browserProxyEnabled()) return;
+  const slotOf = (chat) => listSlots().find((s) => String(s.id) === chat);
+  browserGate = createBrowserGate({
+    upstream: `ws://127.0.0.1:${STEEL_PORT}`,
+    identify: chatOfLocalPort,
+    chatName: (chat) => slotOf(chat)?.label || (chat === "terminal" ? "an agent in the terminal" : `chat ${chat}`),
+    isWorking: (chat) => { const s = slotOf(chat); return s ? s.isGenerating : null; },
+    onChange: (e) => {
+      if (e.type === "ask" && !setNeedsOwner(Number(e.chat), e.what)) {
+        console.warn(`[ai-chat] Browser: chat ${e.chat} asked for the owner's turn but is not an open chat`);
+      }
+      // `chat`, not `slot`: this is about the browser, it is not a chat message.
+      broadcast({ type: "browser_event", event: e.type, chat: e.chat != null && e.chat !== "terminal" ? Number(e.chat) : null });
+      broadcast(buildStatus());
+    },
+  });
+  browserGate.listen(BROWSER_GATE_PORT)
+    .then((port) => console.log(`[ai-chat] Browser gate listening on 127.0.0.1:${port} -> the browser on :${STEEL_PORT}`))
+    .catch((err) => {
+      // Loud: without the gate, agents on this box cannot browse.
+      console.error(`[ai-chat] BROWSER GATE FAILED to listen on 127.0.0.1:${BROWSER_GATE_PORT} (${err.message}). Agents cannot use the browser until this is fixed: free the port or set BROWSER_GATE_PORT in .env and restart ShellTeam.`);
+      browserGate = null;
+    });
+}
+
 setBroadcast(broadcast);
 restoreSlots();
+startBrowserGate();
 startTranscriptKeeper();
 // Every folder an open chat works in is a project in the projects column.
 for (const s of listSlots()) ensureProject(s.cwd);
@@ -182,7 +248,7 @@ for (const s of listSlots()) ensureProject(s.cwd);
 // naming them, once clients can receive the reply (SHE-93).
 setTimeout(resumeLostBackgroundTasks, 3000).unref();
 
-// Keep key-gated capability flags (OpenCode, voice input) live: poll the
+// Keep key-gated capability flags (Pi's included models, voice input) live: poll the
 // control plane and push a fresh status to every connected client the moment
 // a feature key is added/removed in the dashboard — no cockpit restart.
 startAiAvailabilityPolling({ onChange: () => broadcast(buildStatus()) });
@@ -193,7 +259,7 @@ startAiAvailabilityPolling({ onChange: () => broadcast(buildStatus()) });
 // truth so the WS `buildStatus` and the HTTP `/api/status` can never drift (a
 // missing `hasAntigravityOAuth` on one side once made the Settings dot flip).
 function authFlags() {
-  // Key-gated capabilities (OpenCode/Fireworks, voice input/ElevenLabs) come
+  // Key-gated capabilities (Pi/Fireworks, voice input/ElevenLabs) come
   // from the control plane's LIVE /internal/ai/status — the dashboard's
   // Feature-keys settings change them at runtime, so this process's spawn-time
   // env would go stale. aiAvailability() falls back to process env only while
@@ -205,10 +271,10 @@ function authFlags() {
     hasOAuth: hasOAuthCredentials(),
     hasCodexOAuth: hasCodexOAuthCredentials(),
     hasAntigravityOAuth: hasAntigravityOAuthCredentials(),
-    // OpenCode runs on the managed Fireworks proxy; it only works when the box
+    // Pi runs the included models on the managed Fireworks relay; it only works when the box
     // actually holds a Fireworks key. Surface that so the UI never treats
-    // OpenCode as a universal fallback on a box that hasn't configured it.
-    hasOpenCode: ai.opencode,
+    // Pi as a universal fallback on a box that hasn't configured it.
+    hasPi: ai.pi,
     // Voice input needs an ElevenLabs key on the control plane — the client
     // hides the mic button when this is false.
     sttAvailable: ai.stt,
@@ -229,7 +295,7 @@ function authFlags() {
       claude: authModeFor("claude"),
       codex: authModeFor("codex"),
       antigravity: authModeFor("antigravity"),
-      opencode: authModeFor("opencode"),
+      pi: authModeFor("pi"),
     },
     // A company LLM gateway per family ({ host, source: "settings"|"env" }),
     // never its token. Set when authMode is "gateway".
@@ -271,6 +337,8 @@ function buildStatus(overrides = {}) {
     guestName: GUEST_NAME,
     home: HOME,
     projects: listProjects(),
+    // Who has the browser: the owner or the agents, and which chat (SHE-170).
+    browser: browserGate ? browserGate.state() : null,
     model: loadModel(),
     cwd: getCwd(primaryId),
     sessionId: getSessionId(primaryId),
@@ -1264,6 +1332,20 @@ chatWSS.on("connection", (ws, req) => {
       }
 
       // --- Projects column (SHE-168) ---
+      // The page reports which controls were used (names only): SHE-204.
+      case "ui_use": {
+        recordUse(msg.screen, msg.counts);
+        break;
+      }
+
+      // The owner takes the browser, or hands it back (the live view's button).
+      case "browser_control": {
+        if (!browserGate) break;
+        if (msg.take === true) browserGate.takeControl();
+        else await handBrowserBack();
+        break;
+      }
+
       case "rename_project": {
         if (renameProject(msg.path, msg.name)) broadcast(buildStatus());
         break;
@@ -1341,33 +1423,6 @@ chatWSS.on("connection", (ws, req) => {
         break;
       }
 
-      case "list_directories": {
-        // Locked cockpit: browsing roots at the lock and never escapes it
-        // (segment-safe via the clamp); unlocked keeps the historic HOME check.
-        const prefix = msg.prefix || WORKSPACE_LOCK || HOME;
-        const abs = resolve(prefix);
-        const outsideRoot = WORKSPACE_LOCK
-          ? clampToWorkspaceLock(abs) !== abs
-          : abs !== HOME && !abs.startsWith(HOME + "/");
-        if (outsideRoot) {
-          ws.send(JSON.stringify({ type: "directories_list", dirs: [] }));
-          break;
-        }
-        const dirs = [];
-        try {
-          const entries = readdirSync(abs, { withFileTypes: true });
-          for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            if (entry.name.startsWith(".") && entry.name !== ".claude") continue;
-            if (entry.name === "node_modules" || entry.name === "__pycache__") continue;
-            dirs.push({ path: join(abs, entry.name), label: entry.name });
-          }
-        } catch { /* dir doesn't exist or not readable */ }
-        ws.send(JSON.stringify({ type: "directories_list", dirs }));
-        break;
-      }
-
-      // --- Session operations ---
       case "list_sessions": {
         ws.send(JSON.stringify({
           type: "sessions_list",

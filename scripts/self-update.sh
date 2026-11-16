@@ -73,18 +73,28 @@ write_state() { # <status> <detail> — detail must stay quote-free
 }
 
 # The agent CLIs a managed box runs, kept at latest (see the header).
-AGENT_PACKAGES="@anthropic-ai/claude-code @openai/codex opencode-ai"
+AGENT_PACKAGES="@anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent"
 cli_version() { "$HOME/.local/bin/$1" --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1; }
 upgrade_agents() {
     local out pkgs=""
     for p in $AGENT_PACKAGES; do pkgs="$pkgs $p@latest"; done
     # shellcheck disable=SC2086 # word-splitting the package list is the point
     if out="$(npm install -g --prefix "$HOME/.local" $pkgs 2>&1)"; then
-        AGENTS="claude $(cli_version claude), codex $(cli_version codex), opencode $(cli_version opencode)"
+        AGENTS="claude $(cli_version claude), codex $(cli_version codex), pi $(cli_version pi)"
         log "agent CLIs at latest: $AGENTS"
     else
         AGENTS="upgrade failed: $(printf '%s' "$out" | tail -1 | tr -d '\\"')"
         log "ERROR: agent CLI $AGENTS" >&2
+    fi
+    # Antigravity is a native binary, not an npm package: it updates itself.
+    # Only when install.sh put it there (~/.local/bin/agy).
+    [ -x "$HOME/.local/bin/agy" ] || return 0
+    if out="$("$HOME/.local/bin/agy" update </dev/null 2>&1)"; then
+        AGENTS="$AGENTS, antigravity $(cli_version agy)"
+        log "Antigravity CLI updated: antigravity $(cli_version agy)"
+    else
+        AGENTS="$AGENTS, antigravity update failed: $(printf '%s' "$out" | tail -1 | tr -d '\\"')"
+        log "ERROR: Antigravity CLI update failed: $(printf '%s' "$out" | tail -3)" >&2
     fi
 }
 fail() {

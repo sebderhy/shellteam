@@ -16,7 +16,7 @@ let _cached = null;
 
 function envFallback() {
   return {
-    opencode: !!process.env.FIREWORKS_API_KEY,
+    pi: !!process.env.FIREWORKS_API_KEY,
     // Voice input also works through the managed relay (Cloud boxes hold a
     // relay token, never the ElevenLabs key) — mirrors api/services/stt.py.
     stt: !!process.env.ELEVENLABS_API_KEY
@@ -29,7 +29,7 @@ function envFallback() {
 }
 
 /**
- * The current availability flags `{ opencode, stt, tts }` — the cached
+ * The current availability flags `{ pi, stt, tts }` — the cached
  * control-plane answer, or the process-env fallback before the first
  * successful fetch. Synchronous so status builders can call it inline.
  */
@@ -57,7 +57,7 @@ export async function refreshAiAvailability({ fetchImpl = fetch } = {}) {
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    _cached = { opencode: !!data.opencode, stt: !!data.stt, tts: !!data.tts };
+    _cached = { pi: !!data.pi, stt: !!data.stt, tts: !!data.tts };
     return _cached;
   } catch (err) {
     console.warn(

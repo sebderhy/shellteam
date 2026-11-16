@@ -1,4 +1,4 @@
-// --- Header menus (AI / Info / System) ---
+// --- Header menus (chat menu / reports / usage / info) ---
 // One controller for every grouped header menu: a single menu open at a time,
 // one shared backdrop, Escape-to-close. Each menu is an .actions-menu block
 // toggled with .visible — an anchored dropdown on desktop, a bottom sheet
@@ -25,7 +25,7 @@ window.Menus = {
         // loads after this file — hence the typeof guards).
         if (id === 'infoPanel' && typeof renderInfoPanel === 'function') renderInfoPanel();
         if (id === 'quotaPanel' && typeof renderQuotaPanel === 'function') renderQuotaPanel();
-        if (id === 'aiMenu' && typeof renderAIMenuValues === 'function') renderAIMenuValues();
+        if (id === 'chatMenu') window.Projects?.renderChatMenu();
         if (id === 'reportsMenu' && typeof renderReportsMenu === 'function') renderReportsMenu();
         const menu = document.getElementById(id);
         menu?.classList.add('visible');
@@ -126,9 +126,6 @@ window.Menus = {
 
 Menus.init();
 
-// Back-compat shim: session actions (newSession, compactSession, terminal.js's
-// TerminalMode.toggle, …) close whatever menu launched them via ActionsMenu.hide().
-window.ActionsMenu = {
-    hide: () => Menus.hide(),
-    toggle: () => Menus.toggle('aiMenu'),
-};
+// Session actions (newSession, compactSession, terminal.js's
+// TerminalMode.toggle, …) close whatever menu launched them through this.
+window.ActionsMenu = { hide: () => Menus.hide() };
