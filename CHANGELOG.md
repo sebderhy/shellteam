@@ -5,6 +5,14 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.68] - 2026-11-16
+
+### Fixed
+- **Merging chats works again.** Drop a chat on the middle of another chat of
+  the same project to merge it there; near the top or bottom edge it moves
+  instead. The chat's menu offers every other chat of the project, most
+  recent first: it used to stop at six, so a new chat could not be chosen.
+
 ## [0.1.67] - 2026-11-16
 
 ### Fixed

@@ -486,14 +486,19 @@ const Projects = (() => {
         if (!slot) return;
         const unread = slot.markedUnread || slotUnread(slot);
         const here = projectOf(slot);
-        const siblings = sessionSlots.filter(s => s.id !== slotId && projectOf(s) === here);
+        // Every other chat of the project, in the column's order (the most
+        // recent first); folded older ones after. No cut-off: the chat to merge
+        // into is usually a new one (SHE-216).
+        const shown = visibleOrder().map(s => s.id);
+        const rank = (s) => { const i = shown.indexOf(s.id); return i < 0 ? Infinity : i; };
+        const siblings = sessionSlots.filter(s => s.id !== slotId && projectOf(s) === here).sort((a, b) => rank(a) - rank(b));
         const items = [
             ['Rename', () => { const span = document.querySelector(`.pj-ag[data-slot="${slotId}"] .pj-ag-name`); if (span) beginRenameOn(span, slotId); }],
             [here ? 'Move to another project...' : 'Move to a project...', () => openMoveDialog(slotId)],
             [unread ? 'Mark as read' : 'Mark as unread', () => setTabUnread(slotId, !unread)],
             ['Fork', () => forkTab(slotId)],
         ];
-        for (const other of siblings.slice(0, 6)) items.push([`Merge into "${slotDisplayLabel(other)}"`, () => mergeTabs(slotId, other.id)]);
+        for (const other of siblings) items.push([`Merge into "${slotDisplayLabel(other)}"`, () => mergeTabs(slotId, other.id)]);
         if (sessionSlots.length > 1) items.push(['Close', () => closeSessionTab(slotId)]);
         popMenu(items, x, y);
     }
@@ -905,8 +910,10 @@ const Projects = (() => {
             else projectMenu(head.dataset.project, at.left, at.bottom);
         });
 
-        // Drag an agent: onto another agent of the same group to reorder, onto
-        // a project (or its agents) to move it there.
+        // Drag an agent onto another agent of its project: the middle half of
+        // that row merges it there (SHE-128, SHE-216), its top and bottom
+        // quarters reorder. Onto another project (or its agents): move it there.
+        const mergeZone = (row, y) => { const r = row.getBoundingClientRect(); return y > r.top + r.height / 4 && y < r.bottom - r.height / 4; };
         side.addEventListener('dragstart', (e) => {
             const ag = e.target.closest('.pj-ag');
             if (!ag) return;
@@ -915,7 +922,7 @@ const Projects = (() => {
             e.dataTransfer.setData('text/plain', String(dragSlot));
             ag.classList.add('dragging');
         });
-        const clearDrop = () => side.querySelectorAll('.drop, .drop-before, .drop-after').forEach(n => n.classList.remove('drop', 'drop-before', 'drop-after'));
+        const clearDrop = () => side.querySelectorAll('.drop, .drop-before, .drop-after, .merge-target').forEach(n => n.classList.remove('drop', 'drop-before', 'drop-after', 'merge-target'));
         side.addEventListener('dragover', (e) => {
             if (dragSlot === null) return;
             const group = e.target.closest('.pj-group');
@@ -927,7 +934,8 @@ const Projects = (() => {
             const ag = e.target.closest('.pj-ag');
             if (same && ag && Number(ag.dataset.slot) !== dragSlot) {
                 const r = ag.getBoundingClientRect();
-                ag.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
+                if (mergeZone(ag, e.clientY)) ag.classList.add('merge-target');
+                else ag.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
             } else if (!same && group.dataset.group) {
                 group.classList.add('drop');
             }
@@ -935,9 +943,11 @@ const Projects = (() => {
         side.addEventListener('drop', (e) => {
             if (dragSlot === null) return;
             e.preventDefault();
+            const target = side.querySelector('.pj-ag.merge-target');
             const before = side.querySelector('.drop-before'), after = side.querySelector('.drop-after'), group = side.querySelector('.pj-group.drop');
             const id = dragSlot;
-            if (before || after) commitTabReorder(id, Number((before || after).dataset.slot), !!before);
+            if (target) mergeTabs(id, Number(target.dataset.slot));
+            else if (before || after) commitTabReorder(id, Number((before || after).dataset.slot), !!before);
             else if (group) {
                 const slot = slotById(id);
                 if (slot && !slot.sessionId) send({ type: 'move_slot', slot: id, cwd: group.dataset.group });
