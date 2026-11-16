@@ -304,7 +304,6 @@ const Projects = (() => {
         const slot = slotById(activeSlotId);
         if (!slot) return [];
         const unread = slot.markedUnread || slotUnread(slot);
-        const reports = ReportPanel.listIn(E.messages).length;
         const row = (use, key, ic, label, run, extra = {}) => ({ use, key, ic, label, run, ...extra });
         return [
             row('chat.rename', 'e', 'pen', 'Rename', () => beginRenameOn(document.getElementById('pjAgent'), activeSlotId)),
@@ -319,8 +318,8 @@ const Projects = (() => {
             row('chat.resume', 's', 'clock', 'Resume a past session', showSessionPicker),
             sessionSlots.length > 1 ? row('chat.close', 'o', 'close', 'Close this chat', () => closeSessionTab(activeSlotId)) : null,
             'sep',
-            // On a phone the header has no room for these: they live here.
-            reports ? row('reports.open.menu', 'p', 'doc', 'Reports in this chat', () => Menus.toggle('reportsMenu'), { value: String(reports), phone: true }) : null,
+            // On a phone the header has no room for these: they live here. (A
+            // chat's reports are a header button at every width: SHE-215.)
             ...(EMBEDDED ? panelsHere().map(([k, label]) => row(`project.${k}.menu`, '', k, `${label} of the project`, () => togglePanel(k), { phone: true })) : []),
             'sep',
             row('chat.info', 'i', 'info', 'Info', () => Menus.toggle('infoPanel')),

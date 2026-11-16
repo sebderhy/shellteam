@@ -65,10 +65,12 @@ test("the header holds four controls, each opening one kind of thing (U4)", () =
 test("nothing is lost (U8): what left the header is in the chat menu, the jump box and Settings", () => {
   const rows = projectsSrc.match(/\n    function chatMenuRows\(\) \{[\s\S]*?\n    \}\n/)[0];
   for (const run of ["beginRenameOn", "openMoveDialog", "setTabUnread", "openModelPicker", "compactSession", "forkSession",
-                     "rewindSession", "newSession", "showSessionPicker", "closeSessionTab", "Menus.toggle('reportsMenu')",
+                     "rewindSession", "newSession", "showSessionPicker", "closeSessionTab",
                      "togglePanel", "Menus.toggle('infoPanel')"]) {
     assert.ok(rows.includes(run), `the chat menu must offer ${run}`);
   }
+  // A chat's reports kept their header button, at every width (SHE-215).
+  assert.match(html, /id="btnReports"[^>]*onclick="Menus\.toggle\('reportsMenu'\)"/);
   const jump = projectsSrc.match(/\n    function jumpItems\(\) \{[\s\S]*?\n    \}\n/)[0];
   for (const run of ["openAIConfig", "TerminalMode.toggle()", "showShortcutsHelp"]) {
     assert.ok(jump.includes(run), `the jump box must offer ${run}`);
@@ -138,7 +140,7 @@ test("chat menu rows carry unique mnemonic keys that are a letter of their label
   // after "/") runs the row (dropdown.js). The letter is underlined in the
   // label by renderChatMenu, so it must be in it, and no two rows share one.
   const rows = [...projectsSrc.matchAll(/row\('([a-z.-]+)', '([a-z]?)', '[a-z]+', ([^,]+),/g)];
-  assert.ok(rows.length >= 12, `expected >=12 rows, got ${rows.length}`);
+  assert.ok(rows.length >= 11, `expected >=11 rows, got ${rows.length}`);
   const seen = new Set();
   for (const [, use, key, label] of rows) {
     if (!key) continue;
@@ -207,4 +209,20 @@ test("SHE-208: Rewind sits next to Compact in the usage panel, one click from th
   assert.match(css, /\.quota-actions \{ display: flex; gap: 8px;/);
   // Daily on a phone too: 44 px of touch.
   assert.match(css.slice(css.indexOf("@media (max-width: 720px)")), /\.quota-action \{ min-height: 44px;/);
+});
+
+// SHE-215: on a phone a chat's reports sat behind a hold on the title, which
+// nothing on screen shows; before the cockpit map they were one tap away.
+// They are an every-day control there (bin/shellteam-usage), so the header
+// shows them: the reports button, with its count, whenever the chat has one.
+test("on a phone, a chat's reports are one tap away in the header (SHE-215)", () => {
+  const css = read("../public/projects.css");
+  const phone = css.slice(css.indexOf("The header: an arrow, then the chat's title"));
+  assert.doesNotMatch(phone.slice(0, 2000), /\.btn-reports\s*\{\s*display:\s*none/,
+    "the phone header must not hide the reports button");
+  assert.doesNotMatch(phone.slice(0, 2000), /,\s*\.btn-reports\s*\{\s*display:\s*none/);
+  assert.match(phone, /#reportsGroup:not\(\[hidden\]\)\s*\{\s*display:\s*contents;/,
+    "the group joins the header's grid; its menu stays a bottom sheet");
+  assert.match(phone, /\.btn-reports\s*\{[^}]*min-width:\s*44px[^}]*height:\s*44px/,
+    "a 44 px touch target");
 });

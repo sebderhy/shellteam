@@ -5,6 +5,13 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.67] - 2026-11-16
+
+### Fixed
+- **On a phone, a chat's reports are one tap away again**: a report icon with
+  their count in the chat's header. Since the new layout they were hidden
+  behind a long press on the title.
+
 ## [0.1.66] - 2026-11-16
 
 ### Fixed

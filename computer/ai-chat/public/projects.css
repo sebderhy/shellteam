@@ -491,17 +491,23 @@ html.pj-side-shut .pj-back svg { transform: rotate(180deg); }
     .pj-first h2 { font-size: 26px; }
 
     /* The header: an arrow, then the chat's title over its agent and model,
-       then who needs you and the usage ring. The title is the big target: a
-       tap goes back to the chats, a long press opens the chat's menu. */
+       then this chat's reports (when it has any), who needs you and the usage
+       ring. The title is the big target: a tap goes back to the chats, a long
+       press opens the chat's menu. Reports are opened every day on a phone
+       (bin/shellteam-usage), so they are a button, not a row behind the hold
+       (SHE-215). */
     .status-bar {
-        display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto auto; grid-template-rows: 40px 22px;
+        display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto auto auto; grid-template-rows: 40px 22px;
         align-items: center; column-gap: 4px;
         height: auto; min-height: 68px; padding: 4px 8px 2px 2px;
     }
     .status-left, .status-right { display: contents; }
-    .status-dot, .pj-tools:not([hidden]), .btn-reports { display: none; }
+    .status-dot, .pj-tools:not([hidden]) { display: none; }
     /* Their menus are sheets fixed to the bottom here: the groups take no room. */
-    .status-right > .hdr-group:not(.pj-model-group), #reportsGroup { position: absolute; }
+    .status-right > .hdr-group:not(.pj-model-group):not(#reportsGroup) { position: absolute; }
+    /* The reports group joins the grid; its menu stays a bottom sheet. */
+    #reportsGroup:not([hidden]) { display: contents; }
+    .btn-reports { grid-column: 4; grid-row: 1 / span 2; min-width: 44px; height: 44px; justify-content: center; padding: 0 8px; border: 0; background: transparent; }
     .pj-back, html.pj-side-shut .pj-back { display: grid; grid-column: 1; grid-row: 1 / span 2; width: 40px; height: 48px; }
     html.pj-side-shut .pj-back svg { transform: none; }
     .pj-title-group { grid-column: 2; grid-row: 1; align-self: end; }
@@ -518,10 +524,10 @@ html.pj-side-shut .pj-back svg { transform: rotate(180deg); }
     .btn-ai-model { color: var(--text-muted); font-weight: 500; }
     .btn-ai .btn-caret { display: none; }
     #workspaceLockBadge { grid-column: 3; grid-row: 1 / span 2; }
-    .pj-needs:not([hidden]), html.pj-side-shut .pj-needs:not([hidden]) { display: inline-flex; grid-column: 4; grid-row: 1 / span 2; height: 30px; }
+    .pj-needs:not([hidden]), html.pj-side-shut .pj-needs:not([hidden]) { display: inline-flex; grid-column: 5; grid-row: 1 / span 2; height: 30px; }
     .pj-needs { position: relative; }
     .pj-needs::after { content: ''; position: absolute; left: 0; right: 0; top: calc(50% - 22px); height: 44px; }
-    .subscription-monitor { grid-column: 5; grid-row: 1 / span 2; }
+    .subscription-monitor { grid-column: 6; grid-row: 1 / span 2; }
     .quota-meter { height: 44px; min-width: 40px; justify-content: center; }
     /* No room for a billing badge: the ring's amber dot flags it, the panel says it. */
     .quota-meter .auth-badge { display: none; }
