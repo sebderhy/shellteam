@@ -5,6 +5,12 @@ All notable changes to ShellTeam are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.66] - 2026-11-16
+
+### Fixed
+- **Release checks pass again.** v0.1.65 shipped with a test file the public
+  checks reject for its formatting; nothing changes in how ShellTeam works.
+
 ## [0.1.65] - 2026-11-16
 
 ### Added

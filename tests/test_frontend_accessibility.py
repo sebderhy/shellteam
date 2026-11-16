@@ -137,19 +137,31 @@ def test_cockpit_menus_and_the_chat_title_have_real_semantics() -> None:
     projects_js = (ROOT / "computer/ai-chat/public/projects.js").read_text()
     assert '<div class="actions-item"' not in COCKPIT + projects_js
     # The chat menu's rows are drawn on open: native buttons with menuitem semantics.
-    assert '<button class="actions-item" type="button" role="menuitem" tabindex="-1" data-row=' in projects_js
-    assert 'id="chatMenu" role="menu" aria-label="This chat" aria-hidden="true"' in COCKPIT
+    assert (
+        '<button class="actions-item" type="button" role="menuitem" tabindex="-1" data-row='
+        in projects_js
+    )
+    assert (
+        'id="chatMenu" role="menu" aria-label="This chat" aria-hidden="true"' in COCKPIT
+    )
     # The chat's title opens that menu: a keyboard-reachable button that says so.
     assert re.search(
         r'id="pjTitle" role="button" tabindex="0"[^>]+aria-haspopup="menu" aria-controls="chatMenu" aria-expanded="false"',
         COCKPIT,
     )
-    assert "if (e.target !== title || (e.key !== 'Enter' && e.key !== ' ')) return;" in projects_js
+    assert (
+        "if (e.target !== title || (e.key !== 'Enter' && e.key !== ' ')) return;"
+        in projects_js
+    )
     assert "event.key === 'Escape'" in COCKPIT_JS or "e.key === 'Escape'" in COCKPIT_JS
     # The column of projects and agents is a named landmark, its rows a list.
-    assert '<aside class="pj-side" id="pjSide" aria-label="Projects and agents"' in COCKPIT
+    assert (
+        '<aside class="pj-side" id="pjSide" aria-label="Projects and agents"' in COCKPIT
+    )
     assert '<nav class="pj-list" id="pjList" aria-label="Projects">' in COCKPIT
-    assert 'role="listitem"' in projects_js and 'aria-current="${active}"' in projects_js
+    assert (
+        'role="listitem"' in projects_js and 'aria-current="${active}"' in projects_js
+    )
 
 
 def test_shipping_pages_have_landmarks_and_headings() -> None:
